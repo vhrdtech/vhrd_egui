@@ -1,0 +1,16 @@
+[package]
+name = "ve_widget"
+description = "Stateful widget that can be serialized to disk and shown in tiles or windows"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+repository.workspace = true
+
+[dependencies]
+egui.workspace = true
+eframe.workspace = true
+erased-serde.workspace = true
+typetag.workspace = true
+inventory.workspace = true
+ve_macro = { path = "../ve_macro" }
