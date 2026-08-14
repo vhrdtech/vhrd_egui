@@ -14,3 +14,4 @@ erased-serde.workspace = true
 typetag.workspace = true
 inventory.workspace = true
 ve_macro = { path = "../ve_macro" }
+tokio = { workspace = true }

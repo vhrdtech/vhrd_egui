@@ -1,16 +1,20 @@
+pub mod context;
 pub mod util;
 
-use std::any::Any;
+pub use erased_serde;
 pub use ve_macro::svt;
 
 use egui::{Id, Ui, WidgetText};
+use erased_serde::{Deserializer, Serialize};
+
+use crate::context::Context;
 
 #[typetag::serde(tag = "type")]
 pub trait Widget {
     /// Initialize non-serializeable state for this widget.
     /// E.g., establish networks connections.
     /// Must be called after deserialization or creation using spawn_fn.
-    fn init(&mut self, cx: &Box<dyn Any>);
+    fn init(&mut self, cx: &Context);
 
     /// Return the static part of the widget title.
     fn base_title(&self) -> &'static str;
@@ -21,7 +25,7 @@ pub trait Widget {
     }
 
     /// Render the widget's UI.
-    fn ui(&mut self, ui: &mut Ui, cx: &Box<dyn Any>, id: Id);
+    fn ui(&mut self, ui: &mut Ui, cx: &Context, id: Id);
 
     /// Return whether tile or window containing this widget is currently closeable.
     fn is_closeable(&self) -> bool {
@@ -30,8 +34,17 @@ pub trait Widget {
 
     /// Called once before each call to [`Self::ui`],
     /// and additionally also called when the UI is hidden, but [`egui::Context::request_repaint`] was called.
-    fn logic(&mut self, cx: &Box<dyn Any>) {
+    fn logic(&mut self, cx: &Context) {
         let _ = cx;
+    }
+
+    fn seed(&self) -> Box<dyn Serialize> {
+        Box::new(())
+    }
+
+    fn set_seed(&mut self, seed: Box<dyn Deserializer>) {
+        let _ = seed;
+        let _ = self;
     }
 }
 
