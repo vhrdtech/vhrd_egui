@@ -1,4 +1,90 @@
-# Agent instructions
+# Working on vhrd_egui
+
+Guidance for AI agents and contributors. Read this before changing code.
+
+vhrd_egui is the common egui platform for the in-house GUI apps (IOWeaver, RockFace, mx3 and future ones): the
+widget trait apps are built on, shared helpers, and a set of small helper crates. Pieces that grow big graduate into
+crates of their own (egui_tabular, eventfull). It is early: two crates, about 100 lines, no app uses it yet.
+
+## FEATURES.md is the source of truth
+
+[FEATURES.md](FEATURES.md) lists every feature with its status, every known bug, and what is planned, with stable
+IDs per area (`WID-2`, `EXT-3`, ...).
+
+- **Read the relevant area before starting.** Most planned work is moving code out of an app; the item names the
+  source files.
+- **Name IDs with a short slug when talking to the user** (answers, plans, summaries, tables):
+  `EXT-1 device-watcher`, never a bare `EXT-1`. The slug is 2-4 kebab-case words from the item's title. Commit
+  messages, CHANGELOG and code `TODO`s keep the bare ID.
+- **Update it in the same commit** as the code: mark items ✅/🚧/🐛 with a pointer to the code, add bugs you find
+  but don't fix (next free ID of the area), move obsolete items to *Dropped and superseded*. Never renumber or
+  reuse IDs.
+- Don't track status anywhere else (README checklists, TODO files). Code `TODO`s that matter reference an ID:
+  `// TODO(WID-3): ...`.
+
+## CHANGELOG.md records every change
+
+[CHANGELOG.md](CHANGELOG.md) is the history, FEATURES.md the current state; keep both.
+
+- Every change a user of the crates would notice gets an entry under `## [Unreleased]` in the same commit:
+  `### Added`, `### Changed`, `### Fixed`, `### Removed`. Short, with the feature ID in parentheses. Mark API
+  breaks with **Breaking:**.
+- Record egui/eframe version bumps: every app on vhrd_egui has to follow them.
+- Pure refactors and typo fixes don't need an entry.
+- On a release, rename `[Unreleased]` to the version and date and start a new empty `[Unreleased]`.
+
+The tpm repo's `/sync-repos` reads this file to log progress, so a missing entry means work nobody sees.
+
+## Layout
+
+Cargo workspace, edition 2024, one shared version (`[workspace.package]`).
+
+- `ve_widget/` — the `Widget` trait (serializable with `typetag`, registered with `inventory` through
+  `WidgetInfo`), `Context` (shared user state behind a tokio `RwLock`).
+- `ve_macro/` — proc macros for widget implementations (`svt!` destructures `self` into seed / visual /
+  transient).
+
+New helpers go into a crate of their own with the `ve_` prefix when they have their own dependencies, otherwise
+into an existing one. When moving code from an app, port the app to use it in the same piece of work (or add a
+task for it) so the copies don't drift.
+
+## Commands
+
+```sh
+cargo build --workspace
+cargo clippy --workspace --all-targets -- -D warnings
+cargo fmt --all
+cargo test --workspace
+```
+
+Before declaring a change done: build, clippy without warnings, fmt, tests. If you changed UI behavior and can't
+run a GUI, say so and describe the manual check.
+
+## Code conventions
+
+- One egui version for the whole stack (FEATURES.md PLT-1). Keep `egui`/`eframe` in the root
+  `[workspace.dependencies]` and don't bump them without saying which apps then need to follow.
+- Widgets keep three kinds of state: *seed* (what the user configured, serialized), *visual* (layout and view
+  state, serialized) and *transient* (connections, caches, rebuilt in `Widget::init`). Never serialize transient
+  state.
+- Keep the UI thread free: no blocking I/O inside `ui()`; long work runs elsewhere and is polled per frame.
+- Public API gets doc comments; these crates exist to be reused.
+- No `unwrap`/`expect` on data from disk, the network or the user.
+
+## Tests
+
+Pure logic: unit tests. UI behavior: headless egui_kittest tests, as egui_tabular does
+(`../egui_tabular/tests/ui/`). A bug fix starts with a failing test when the bug can be reproduced in one.
+
+## Commits
+
+Conventional Commits with the crate as scope: `feat(ve_widget): ...`, `fix(ve_macro): ...`, `build: ...`.
+Short imperative summary, blank line, body with what and why; reference feature IDs
+(`feat(ve_widget): add widget menu builder (WID-3)`).
+
+Never commit on your own initiative. When a change is done, update FEATURES.md and CHANGELOG.md, then show the
+proposed commit message and the files to stage, and ask. Approval covers that one commit only. Never push; the
+user's tooling does that.
 
 ## Versions
 
