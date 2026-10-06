@@ -45,7 +45,7 @@ in tpm (P2605). Statuses were checked against the code.
   version.
 - 🚧 **PLT-3 Tests and CI**: `ve_dash` has unit tests (history, heat gradient) and egui_kittest UI tests
   (`ve_dash/tests/ui.rs`): AccessKit queries for labels and tooltips plus a wgpu-rendered image snapshot
-  (`tests/snapshots/mesh_panel.png`, update with `UPDATE_SNAPSHOTS=1`). Still missing: ve_widget registry tests, CI.
+  (`tests/snapshots/dash_panel.png`, update with `UPDATE_SNAPSHOTS=1`). Still missing: ve_widget registry tests, CI.
 - 💡 **PLT-4 Crash recovery**: clear saved settings after a startup failure (a huge recorded window size makes
   wgpu surface creation fail).
 
@@ -69,9 +69,10 @@ in tpm (P2605). Statuses were checked against the code.
 
 ## Dashboard building blocks (`DASH`)
 
-btop-style pieces for status dashboards, crate `ve_dash`. First consumer: the tpm mesh node dashboard prototype
-(P2620, `ve_dash/examples/mesh_dash.rs`, reads `tpm_mesh status --json`; renders through wgpu with continuous
-vsync-paced repaint, 60 fps). Dark-first: the dark theme is the VHRD brand dark variant (vhrd_brand
+btop-style pieces for status dashboards, crate `ve_dash`. First consumer: the tpm mesh node dashboard
+(P2620, own repo `tpm_mesh_dash`, reads `tpm_mesh status --json`). The in-repo demo is
+`ve_dash/examples/dash_demo.rs`, synthetic data only; it renders through wgpu with continuous
+vsync-paced repaint, 60 fps. Dark-first: the dark theme is the VHRD brand dark variant (vhrd_brand
 `web/palette.json`), with the series accents derived from the brand CAN-teal / analog-purple signal hues,
 darkened into the chart lightness band. The pair's CVD separation sits in the labels-required band, so every
 chart must carry a direct text label (they all do); status colors always ship with a text label.
@@ -90,8 +91,9 @@ chart must carry a direct text label (they all do); status colors always ship wi
   theming hook into `ve_widget` once WID-3 hosts widgets.
 - ✅ **DASH-10 Decay smoother**: asymmetric exponential attack/release (`Decay`), VU-meter needle feel for
   load bars and other indicators fed with jumpy per-frame values. `ve_dash/src/decay.rs`, tested.
-- 💡 **DASH-9 Brand fonts**: embed IBM Plex Sans / Plex Mono (the vhrd_brand web faces) through the theme so
-  dashboards match the datasheets and web pages.
+- ✅ **DASH-9 Brand fonts**: IBM Plex Sans / Plex Mono (the vhrd_brand web faces) embedded behind the `fonts`
+  feature (default on), installed with `install_fonts` as the primary proportional / monospace faces.
+  `ve_dash/src/fonts.rs`, OFL license in `ve_dash/fonts/`; the `dash_panel.png` snapshot renders with them.
 
 ## Extracted from apps (`EXT`)
 

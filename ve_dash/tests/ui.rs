@@ -8,7 +8,7 @@
 use egui::{pos2, vec2};
 use egui_kittest::Harness;
 use egui_kittest::kittest::Queryable;
-use ve_dash::{Meter, Sparkline, StatTile, Status, StatusLight, Theme, panel};
+use ve_dash::{Meter, Sparkline, StatTile, Status, StatusLight, Theme, install_fonts, panel};
 
 /// Deterministic wiggly series for the snapshot charts.
 fn wave(n: usize, scale: f32) -> Vec<f32> {
@@ -68,9 +68,10 @@ fn sparkline_with_too_few_points_renders_placeholder() {
     h.run();
 }
 
-/// Full btop-style composition, pixel-compared against `tests/snapshots/mesh_panel.png`.
+/// Full btop-style composition with the embedded brand fonts (DASH-9),
+/// pixel-compared against `tests/snapshots/dash_panel.png`.
 #[test]
-fn mesh_panel_snapshot() {
+fn dash_panel_snapshot() {
     let theme = Theme::dark();
     let rtt = wave(120, 3.0);
     let events = wave(120, 18.0);
@@ -78,6 +79,7 @@ fn mesh_panel_snapshot() {
         .with_size(vec2(460.0, 330.0))
         .build_ui(move |ui| {
             theme.apply(ui.ctx());
+            install_fonts(ui.ctx());
             // Cover the whole backbuffer, not just the content area, so the
             // snapshot shows the dashboard on its real window background.
             ui.painter()
@@ -105,5 +107,5 @@ fn mesh_panel_snapshot() {
             });
         });
     h.run();
-    h.snapshot("mesh_panel");
+    h.snapshot("dash_panel");
 }

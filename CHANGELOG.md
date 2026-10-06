@@ -7,6 +7,9 @@ versions follow [Semantic Versioning](https://semver.org/). Feature IDs refer to
 
 ### Added
 
+- `ve_dash`: embedded brand fonts IBM Plex Sans / Plex Mono (DASH-9) — `install_fonts` makes them the primary
+  proportional / monospace faces, egui's built-ins stay as fallback. Behind the `fonts` feature, on by
+  default; the faces are OFL-licensed (`ve_dash/fonts/LICENSE.txt`). The image snapshot renders with them.
 - AGENTS.md, FEATURES.md and this changelog.
 - `ve_dash`: btop-style dashboard building blocks — `Theme` with CVD-validated dark palette and `heat` gradient
   (DASH-1), `History` ring buffer (DASH-2), `Sparkline` with hover readout (DASH-3), segmented `Meter` (DASH-4),
@@ -31,6 +34,9 @@ versions follow [Semantic Versioning](https://semver.org/). Feature IDs refer to
 - `mesh_dash` example renders through wgpu (`eframe::Renderer::Wgpu`) and repaints continuously, vsync-paced:
   60 fps chart scrolling (one sample per frame, decaying simulated RTT spikes) at ~16 % of one core in release;
   fps tile and brand-red wordmark in the header.
+- The `mesh_dash` example became `dash_demo`, synthetic data only (no `tpm_mesh` polling, `serde_json`
+  dev-dependency dropped); the live mesh dashboard moved to its own repo, `tpm_mesh_dash`. The image
+  snapshot is now `tests/snapshots/dash_panel.png` (was `mesh_panel.png`).
 
 ## [0.1.0] - 2026-08-14
 

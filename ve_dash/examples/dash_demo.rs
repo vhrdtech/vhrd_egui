@@ -1,91 +1,39 @@
-//! Mesh node dashboard prototype (tpm_mesh, P2620).
+//! Dashboard blocks demo with synthetic data.
 //!
-//! Node names and who-is-connected come from the real daemon
-//! (`tpm_mesh status --json`, polled every 3 s); RTT and traffic are
-//! simulated until the daemon reports them.
+//! A btop-style node dashboard built from the ve_dash blocks: stat tiles,
+//! status lights, sparklines, meters and titled panels, fed by a small
+//! simulation. The real mesh dashboard (live `tpm_mesh` data) lives in the
+//! tpm_mesh_dash repo; this demo stays here so the crate shows off and
+//! exercises every block without external dependencies.
 //!
 //! Renders through wgpu and repaints continuously: vsync paces the loop at the
 //! display's refresh rate, the charts scroll one sample per frame.
 //!
-//! Run: `cargo run -p ve_dash --example mesh_dash`
-
-use std::process::Command;
-use std::sync::mpsc;
-use std::time::Duration;
+//! Run: `cargo run -p ve_dash --example dash_demo`
 
 use eframe::egui;
 use egui::{Align2, FontId, RichText, Ui, vec2};
-use ve_dash::{Decay, History, Meter, Sparkline, StatTile, Status, StatusLight, Theme, panel};
+use ve_dash::{
+    Decay, History, Meter, Sparkline, StatTile, Status, StatusLight, Theme, install_fonts, panel,
+};
 
 fn main() -> eframe::Result {
     let options = eframe::NativeOptions {
         viewport: egui::ViewportBuilder::default()
             .with_inner_size([900.0, 520.0])
-            .with_title("tpm mesh"),
+            .with_title("ve_dash demo"),
         renderer: eframe::Renderer::Wgpu,
         ..Default::default()
     };
     eframe::run_native(
-        "tpm mesh dashboard",
+        "ve_dash demo",
         options,
         Box::new(|cc| Ok(Box::new(App::new(cc)))),
     )
 }
 
-/// What `tpm_mesh status --json` reports.
-#[derive(Clone, Debug, Default)]
-struct MeshStatus {
-    self_name: String,
-    version: String,
-    nodes: Vec<String>,
-    neighbors: Vec<String>,
-}
-
-fn fetch_status() -> Option<MeshStatus> {
-    let out = Command::new("tpm_mesh")
-        .args(["status", "--json"])
-        .output()
-        .ok()?;
-    if !out.status.success() {
-        return None;
-    }
-    let v: serde_json::Value = serde_json::from_slice(&out.stdout).ok()?;
-    let strings = |key: &str| -> Vec<String> {
-        v[key]
-            .as_array()
-            .map(|a| {
-                a.iter()
-                    .filter_map(|s| s.as_str().map(String::from))
-                    .collect()
-            })
-            .unwrap_or_default()
-    };
-    Some(MeshStatus {
-        self_name: v["name"].as_str().unwrap_or("?").to_owned(),
-        version: v["version"].as_str().unwrap_or("?").to_owned(),
-        nodes: strings("nodes"),
-        neighbors: strings("neighbors"),
-    })
-}
-
-/// Poll the daemon in the background so the UI thread never blocks.
-fn spawn_status_poller(ctx: egui::Context) -> mpsc::Receiver<Option<MeshStatus>> {
-    let (tx, rx) = mpsc::channel();
-    std::thread::spawn(move || {
-        loop {
-            if tx.send(fetch_status()).is_err() {
-                return; // UI gone
-            }
-            ctx.request_repaint();
-            std::thread::sleep(Duration::from_secs(3));
-        }
-    });
-    rx
-}
-
 struct Node {
-    name: String,
-    /// Connected to us right now (always true for ourselves).
+    name: &'static str,
     online: bool,
     is_self: bool,
     rtt: History,
@@ -93,16 +41,15 @@ struct Node {
     /// Link load with analog-needle smoothing: the raw per-frame value is
     /// too jittery for the eye, the decayed one reads like a VU meter.
     load: Decay,
-    // Simulation state until the daemon reports real numbers.
     sim_phase: f32,
     sim_rng: u32,
     sim_spike: f32,
 }
 
 impl Node {
-    fn new(name: &str, seed: u32) -> Self {
+    fn new(name: &'static str, seed: u32) -> Self {
         Self {
-            name: name.to_owned(),
+            name,
             online: true,
             is_self: false,
             rtt: History::new(360),
@@ -150,8 +97,6 @@ impl Node {
 
 struct App {
     theme: Theme,
-    status: Option<MeshStatus>,
-    status_rx: mpsc::Receiver<Option<MeshStatus>>,
     nodes: Vec<Node>,
     /// Exponentially smoothed frames per second, for the header tile.
     fps: f32,
@@ -161,39 +106,19 @@ impl App {
     fn new(cc: &eframe::CreationContext<'_>) -> Self {
         let theme = Theme::dark();
         theme.apply(&cc.egui_ctx);
+        install_fonts(&cc.egui_ctx);
+        let mut nodes = vec![
+            Node::new("demo-pc", 0x9e37),
+            Node::new("node-two", 0x9e38),
+            Node::new("node-three", 0x9e39),
+        ];
+        nodes[0].is_self = true;
+        nodes[2].online = false;
         Self {
             theme,
-            status: None,
-            status_rx: spawn_status_poller(cc.egui_ctx.clone()),
-            nodes: Vec::new(),
+            nodes,
             fps: 0.0,
         }
-    }
-
-    fn apply_status(&mut self, st: MeshStatus) {
-        for (i, name) in st.nodes.iter().enumerate() {
-            if !self.nodes.iter().any(|n| &n.name == name) {
-                self.nodes.push(Node::new(name, 0x9e37 + i as u32));
-            }
-        }
-        for node in &mut self.nodes {
-            node.is_self = node.name == st.self_name;
-            node.online = node.is_self || st.neighbors.contains(&node.name);
-        }
-        self.nodes
-            .sort_by(|a, b| (!a.is_self, &a.name).cmp(&(!b.is_self, &b.name)));
-        self.status = Some(st);
-    }
-
-    fn demo_fallback(&mut self) {
-        self.apply_status(MeshStatus {
-            self_name: "demo-pc".into(),
-            version: "offline demo".into(),
-            nodes: ["demo-pc", "gpd-omarchy", "mail-server"]
-                .map(String::from)
-                .to_vec(),
-            neighbors: vec!["gpd-omarchy".into()],
-        });
     }
 
     fn header(&self, ui: &mut Ui) {
@@ -204,7 +129,7 @@ impl App {
             ui.spacing_mut().item_spacing.x = 28.0;
             // Brand wordmark: red, used sparingly — this is the one place.
             ui.label(
-                RichText::new("tpm mesh")
+                RichText::new("ve_dash")
                     .color(self.theme.red)
                     .size(20.0)
                     .strong(),
@@ -223,11 +148,7 @@ impl App {
                 .filter_map(|n| n.rtt.last())
                 .fold(0.0f32, f32::max);
             ui.add(StatTile::new("worst rtt", format!("{worst_rtt:.1}")).unit("ms"));
-            if let Some(st) = &self.status {
-                ui.add(StatTile::new("this pc", st.self_name.clone()));
-                let short_ver = st.version.split(' ').next().unwrap_or("?");
-                ui.add(StatTile::new("daemon", short_ver).min_width(0.0));
-            }
+            ui.add(StatTile::new("data", "synthetic").min_width(0.0));
             ui.add(StatTile::new("fps", format!("{:.0}", self.fps)).min_width(0.0));
         });
     }
@@ -238,7 +159,7 @@ impl App {
         let title = if node.is_self {
             format!("{} (this pc)", node.name)
         } else {
-            node.name.clone()
+            node.name.to_owned()
         };
         panel(ui, &theme, &title, |ui| {
             let (status, label) = match (node.online, node.is_self) {
@@ -292,14 +213,6 @@ impl App {
 impl eframe::App for App {
     fn ui(&mut self, ui: &mut egui::Ui, _frame: &mut eframe::Frame) {
         let ctx = ui.ctx().clone();
-        while let Ok(st) = self.status_rx.try_recv() {
-            match st {
-                Some(st) => self.apply_status(st),
-                None if self.status.is_none() => self.demo_fallback(),
-                None => {} // daemon went away; keep showing the last state
-            }
-        }
-
         // One sample per frame: with continuous repaint and vsync the charts
         // scroll at the display's refresh rate.
         let dt = ctx.input(|i| i.stable_dt).clamp(1e-4, 0.1);
@@ -318,12 +231,6 @@ impl eframe::App for App {
             .show(ui, |ui| {
                 self.header(ui);
                 ui.add_space(10.0);
-                if self.nodes.is_empty() {
-                    ui.label(
-                        RichText::new("waiting for tpm_mesh status…").color(self.theme.text_muted),
-                    );
-                    return;
-                }
                 let cols = self.nodes.len().clamp(1, 3);
                 ui.columns(cols, |columns| {
                     for idx in 0..self.nodes.len() {

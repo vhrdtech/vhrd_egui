@@ -7,10 +7,14 @@ license.workspace = true
 authors.workspace = true
 repository.workspace = true
 
+[features]
+default = ["fonts"]
+# Embed IBM Plex Sans / Plex Mono (the vhrd_brand faces, OFL) and expose `install_fonts`.
+fonts = []
+
 [dependencies]
 egui.workspace = true
 
 [dev-dependencies]
 eframe = { workspace = true, features = ["wgpu"] }
 egui_kittest = { workspace = true, features = ["snapshot", "wgpu"] }
-serde_json = "1"
