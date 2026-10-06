@@ -4,6 +4,9 @@
 //! (`tpm_mesh status --json`, polled every 3 s); RTT and traffic are
 //! simulated until the daemon reports them.
 //!
+//! Renders through wgpu and repaints continuously: vsync paces the loop at the
+//! display's refresh rate, the charts scroll one sample per frame.
+//!
 //! Run: `cargo run -p ve_dash --example mesh_dash`
 
 use std::process::Command;
@@ -19,6 +22,7 @@ fn main() -> eframe::Result {
         viewport: egui::ViewportBuilder::default()
             .with_inner_size([900.0, 520.0])
             .with_title("tpm mesh"),
+        renderer: eframe::Renderer::Wgpu,
         ..Default::default()
     };
     eframe::run_native(
@@ -90,6 +94,7 @@ struct Node {
     // Simulation state until the daemon reports real numbers.
     sim_phase: f32,
     sim_rng: u32,
+    sim_spike: f32,
 }
 
 impl Node {
@@ -98,11 +103,12 @@ impl Node {
             name: name.to_owned(),
             online: true,
             is_self: false,
-            rtt: History::new(120),
-            traffic: History::new(120),
+            rtt: History::new(360),
+            traffic: History::new(360),
             load: 0.0,
             sim_phase: seed as f32 * 1.7,
             sim_rng: seed.max(1),
+            sim_spike: 0.0,
         }
     }
 
@@ -124,12 +130,17 @@ impl Node {
             self.load = 0.0;
             return;
         }
+        // Rare RTT spikes that decay over a few frames, so they stay visible
+        // when a sample is pushed every frame (~60 Hz).
+        if self.noise() > 1.0 - dt * 0.3 {
+            self.sim_spike = 20.0 + self.noise() * 15.0;
+        }
+        self.sim_spike *= (-dt * 6.0).exp();
         let base = if self.is_self { 0.1 } else { 4.0 };
-        let rtt = base
-            + (self.sim_phase * 0.6).sin().abs() * 2.0
-            + self.noise() * if self.noise() > 0.93 { 25.0 } else { 1.5 };
+        let rtt =
+            base + (self.sim_phase * 0.6).sin().abs() * 2.0 + self.noise() * 0.8 + self.sim_spike;
         self.rtt.push(rtt);
-        let traffic = ((self.sim_phase * 0.3).sin() * 0.5 + 0.5) * 40.0 + self.noise() * 15.0;
+        let traffic = ((self.sim_phase * 0.3).sin() * 0.5 + 0.5) * 40.0 + self.noise() * 8.0;
         self.traffic.push(traffic);
         self.load = (traffic / 60.0).clamp(0.0, 1.0);
     }
@@ -140,7 +151,8 @@ struct App {
     status: Option<MeshStatus>,
     status_rx: mpsc::Receiver<Option<MeshStatus>>,
     nodes: Vec<Node>,
-    sim_accum: f32,
+    /// Exponentially smoothed frames per second, for the header tile.
+    fps: f32,
 }
 
 impl App {
@@ -152,7 +164,7 @@ impl App {
             status: None,
             status_rx: spawn_status_poller(cc.egui_ctx.clone()),
             nodes: Vec::new(),
-            sim_accum: 0.0,
+            fps: 0.0,
         }
     }
 
@@ -188,6 +200,13 @@ impl App {
         let all_up = online == total && total > 0;
         ui.horizontal(|ui| {
             ui.spacing_mut().item_spacing.x = 28.0;
+            // Brand wordmark: red, used sparingly — this is the one place.
+            ui.label(
+                RichText::new("tpm mesh")
+                    .color(self.theme.red)
+                    .size(20.0)
+                    .strong(),
+            );
             ui.add(
                 StatTile::new("nodes online", format!("{online}/{total}")).value_color(if all_up {
                     self.theme.good
@@ -207,6 +226,7 @@ impl App {
                 let short_ver = st.version.split(' ').next().unwrap_or("?");
                 ui.add(StatTile::new("daemon", short_ver).min_width(0.0));
             }
+            ui.add(StatTile::new("fps", format!("{:.0}", self.fps)).min_width(0.0));
         });
     }
 
@@ -277,15 +297,18 @@ impl eframe::App for App {
             }
         }
 
-        // Push one sample per ~250 ms, regardless of frame rate.
-        self.sim_accum += ctx.input(|i| i.stable_dt).min(0.1);
-        while self.sim_accum >= 0.25 {
-            self.sim_accum -= 0.25;
-            for node in &mut self.nodes {
-                node.sim_step(0.25);
-            }
+        // One sample per frame: with continuous repaint and vsync the charts
+        // scroll at the display's refresh rate.
+        let dt = ctx.input(|i| i.stable_dt).clamp(1e-4, 0.1);
+        for node in &mut self.nodes {
+            node.sim_step(dt);
         }
-        ctx.request_repaint_after(Duration::from_millis(250));
+        self.fps = if self.fps == 0.0 {
+            1.0 / dt
+        } else {
+            self.fps * 0.95 + 0.05 / dt
+        };
+        ctx.request_repaint();
 
         egui::CentralPanel::default()
             .frame(egui::Frame::new().fill(self.theme.bg).inner_margin(12))

@@ -43,8 +43,9 @@ in tpm (P2605). Statuses were checked against the code.
   a skill, like embedded_bedrock's `firmware_template_skill`: generate a new app, record the template version in
   the app, upgrade existing apps. Includes Windows terminal output and tracking which app is on which template
   version.
-- 🚧 **PLT-3 Tests and CI**: `ve_dash` has unit tests (history, heat gradient). Still missing: registry tests,
-  egui_kittest smoke tests for the widgets, CI.
+- 🚧 **PLT-3 Tests and CI**: `ve_dash` has unit tests (history, heat gradient) and egui_kittest UI tests
+  (`ve_dash/tests/ui.rs`): AccessKit queries for labels and tooltips plus a wgpu-rendered image snapshot
+  (`tests/snapshots/mesh_panel.png`, update with `UPDATE_SNAPSHOTS=1`). Still missing: ve_widget registry tests, CI.
 - 💡 **PLT-4 Crash recovery**: clear saved settings after a startup failure (a huge recorded window size makes
   wgpu surface creation fail).
 
@@ -69,8 +70,11 @@ in tpm (P2605). Statuses were checked against the code.
 ## Dashboard building blocks (`DASH`)
 
 btop-style pieces for status dashboards, crate `ve_dash`. First consumer: the tpm mesh node dashboard prototype
-(P2620, `ve_dash/examples/mesh_dash.rs`, reads `tpm_mesh status --json`). Dark-first; the two series accents were
-validated for CVD separation and surface contrast; status colors always ship with a text label.
+(P2620, `ve_dash/examples/mesh_dash.rs`, reads `tpm_mesh status --json`; renders through wgpu with continuous
+vsync-paced repaint, 60 fps). Dark-first: the dark theme is the VHRD brand dark variant (vhrd_brand
+`web/palette.json`), with the series accents derived from the brand CAN-teal / analog-purple signal hues,
+darkened into the chart lightness band. The pair's CVD separation sits in the labels-required band, so every
+chart must carry a direct text label (they all do); status colors always ship with a text label.
 
 - ✅ **DASH-1 Theme**: color tokens + `heat` good→warn→crit gradient, `Theme::apply` for egui visuals.
   `ve_dash/src/theme.rs`, tested.
@@ -84,6 +88,8 @@ validated for CVD separation and surface contrast; status colors always ship wit
 - ✅ **DASH-7 Titled panel**: rounded border with the title set into the top border line. `ve_dash/src/panel.rs`.
 - 💡 **DASH-8 More blocks as demand appears**: braille-density graph, arc gauge, mini table, log tail view;
   theming hook into `ve_widget` once WID-3 hosts widgets.
+- 💡 **DASH-9 Brand fonts**: embed IBM Plex Sans / Plex Mono (the vhrd_brand web faces) through the theme so
+  dashboards match the datasheets and web pages.
 
 ## Extracted from apps (`EXT`)
 
