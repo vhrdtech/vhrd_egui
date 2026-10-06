@@ -1,0 +1,15 @@
+[package]
+name = "ve_dash"
+description = "btop-style dashboard building blocks: titled panels, sparklines, meters, status dots, stat tiles"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+repository.workspace = true
+
+[dependencies]
+egui.workspace = true
+
+[dev-dependencies]
+eframe.workspace = true
+serde_json = "1"

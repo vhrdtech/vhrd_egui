@@ -33,17 +33,18 @@ in tpm (P2605). Statuses were checked against the code.
 |---|---|
 | `ve_widget` | `Widget` trait, `WidgetInfo` registry, shared `Context`. |
 | `ve_macro` | Proc macros for widget implementations (`svt!`). |
+| `ve_dash` | btop-style dashboard building blocks: theme, sparkline, meter, status light, stat tile, titled panel. |
 
 ## Platform (`PLT`)
 
-- 📋 **PLT-1 One egui version across the stack**: RockFace and IOWeaver are on 0.33, vhrd_egui on 0.35, mx3 and
-  egui_tabular on 0.36 (1 Oct 2026). Shared crates need one version, so move vhrd_egui to 0.36 and port the apps.
+- 🚧 **PLT-1 One egui version across the stack**: vhrd_egui moved to 0.36 (6 Oct 2026), matching mx3 and
+  egui_tabular. RockFace and IOWeaver are still on 0.33 and need porting when they adopt vhrd_egui.
 - 📋 **PLT-2 App template as a skill**: migrate eframe_template into this repo as the app template and turn it into
   a skill, like embedded_bedrock's `firmware_template_skill`: generate a new app, record the template version in
   the app, upgrade existing apps. Includes Windows terminal output and tracking which app is on which template
   version.
-- 📋 **PLT-3 Tests and CI**: there are no tests yet. Add unit tests for the registry and an egui_kittest smoke test
-  once a widget exists.
+- 🚧 **PLT-3 Tests and CI**: `ve_dash` has unit tests (history, heat gradient). Still missing: registry tests,
+  egui_kittest smoke tests for the widgets, CI.
 - 💡 **PLT-4 Crash recovery**: clear saved settings after a startup failure (a huge recorded window size makes
   wgpu surface creation fail).
 
@@ -62,7 +63,27 @@ in tpm (P2605). Statuses were checked against the code.
   2026). Keep it if WID-3 adopts the seed / visual / transient split, otherwise drop it.
 - ⬜ **WID-6 `util` module**: `ve_widget/src/util.rs` is empty.
 - 💡 **WID-7 Widget grid / canvas and indicator / gauge widgets**: from IOWeaver (Widget Canvas, Indicators and
-  gauges) and RockFace (Widget grid).
+  gauges) and RockFace (Widget grid). Basic indicators now exist in `ve_dash` (DASH area); this item keeps the
+  grid / canvas part and richer gauges.
+
+## Dashboard building blocks (`DASH`)
+
+btop-style pieces for status dashboards, crate `ve_dash`. First consumer: the tpm mesh node dashboard prototype
+(P2620, `ve_dash/examples/mesh_dash.rs`, reads `tpm_mesh status --json`). Dark-first; the two series accents were
+validated for CVD separation and surface contrast; status colors always ship with a text label.
+
+- ✅ **DASH-1 Theme**: color tokens + `heat` good→warn→crit gradient, `Theme::apply` for egui visuals.
+  `ve_dash/src/theme.rs`, tested.
+- ✅ **DASH-2 History**: fixed-capacity ring buffer feeding the charts. `ve_dash/src/history.rs`, tested.
+- ✅ **DASH-3 Sparkline**: thin line + gradient fill, auto or fixed range, hover crosshair with value readout.
+  `ve_dash/src/sparkline.rs`.
+- ✅ **DASH-4 Meter**: segmented block meter, heat gradient by position or fixed color, optional value text.
+  `ve_dash/src/meter.rs`.
+- ✅ **DASH-5 Status light**: glowing dot + label (`Status`: good / warn / crit / off). `ve_dash/src/status.rs`.
+- ✅ **DASH-6 Stat tile**: small label over big monospace value with unit. `ve_dash/src/stat.rs`.
+- ✅ **DASH-7 Titled panel**: rounded border with the title set into the top border line. `ve_dash/src/panel.rs`.
+- 💡 **DASH-8 More blocks as demand appears**: braille-density graph, arc gauge, mini table, log tail view;
+  theming hook into `ve_widget` once WID-3 hosts widgets.
 
 ## Extracted from apps (`EXT`)
 
