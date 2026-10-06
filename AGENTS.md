@@ -31,7 +31,10 @@ IDs per area (`WID-2`, `EXT-3`, ...).
   breaks with **Breaking:**.
 - Record egui/eframe version bumps: every app on vhrd_egui has to follow them.
 - Pure refactors and typo fixes don't need an entry.
-- On a release, rename `[Unreleased]` to the version and date and start a new empty `[Unreleased]`.
+- A commit that bumps the version (see *Versions*) moves the `[Unreleased]` entries under a new
+  `## [x.y.z] - YYYY-MM-DD` heading and leaves `[Unreleased]` empty, so every version has its own section.
+- Questions like "what's new" or "what changed since X" are answered from CHANGELOG.md, newest sections first
+  (the user's version or date as the cutoff), with FEATURES.md for current status.
 
 The tpm repo's `/sync-repos` reads this file to log progress, so a missing entry means work nobody sees.
 
