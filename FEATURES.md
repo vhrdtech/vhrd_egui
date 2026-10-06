@@ -88,6 +88,8 @@ chart must carry a direct text label (they all do); status colors always ship wi
 - ✅ **DASH-7 Titled panel**: rounded border with the title set into the top border line. `ve_dash/src/panel.rs`.
 - 💡 **DASH-8 More blocks as demand appears**: braille-density graph, arc gauge, mini table, log tail view;
   theming hook into `ve_widget` once WID-3 hosts widgets.
+- ✅ **DASH-10 Decay smoother**: asymmetric exponential attack/release (`Decay`), VU-meter needle feel for
+  load bars and other indicators fed with jumpy per-frame values. `ve_dash/src/decay.rs`, tested.
 - 💡 **DASH-9 Brand fonts**: embed IBM Plex Sans / Plex Mono (the vhrd_brand web faces) through the theme so
   dashboards match the datasheets and web pages.
 

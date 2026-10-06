@@ -16,6 +16,8 @@ versions follow [Semantic Versioning](https://semver.org/). Feature IDs refer to
   percentage tooltip, garbage-value robustness for the sparkline, and a wgpu-rendered image snapshot of the
   full panel composition (`tests/snapshots/mesh_panel.png`, refresh with `UPDATE_SNAPSHOTS=1`).
 - `ve_dash`: `Theme::red` brand-accent token (wordmark red, used sparingly).
+- `ve_dash`: `Decay` VU-style value smoother (DASH-10) — asymmetric exponential attack/release for indicators
+  fed with jumpy per-frame data; the mesh_dash link-load meters use it so the bars glide instead of flickering.
 
 ### Changed
 

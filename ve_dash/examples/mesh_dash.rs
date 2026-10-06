@@ -15,7 +15,7 @@ use std::time::Duration;
 
 use eframe::egui;
 use egui::{Align2, FontId, RichText, Ui, vec2};
-use ve_dash::{History, Meter, Sparkline, StatTile, Status, StatusLight, Theme, panel};
+use ve_dash::{Decay, History, Meter, Sparkline, StatTile, Status, StatusLight, Theme, panel};
 
 fn main() -> eframe::Result {
     let options = eframe::NativeOptions {
@@ -90,7 +90,9 @@ struct Node {
     is_self: bool,
     rtt: History,
     traffic: History,
-    load: f32,
+    /// Link load with analog-needle smoothing: the raw per-frame value is
+    /// too jittery for the eye, the decayed one reads like a VU meter.
+    load: Decay,
     // Simulation state until the daemon reports real numbers.
     sim_phase: f32,
     sim_rng: u32,
@@ -105,7 +107,7 @@ impl Node {
             is_self: false,
             rtt: History::new(360),
             traffic: History::new(360),
-            load: 0.0,
+            load: Decay::new(),
             sim_phase: seed as f32 * 1.7,
             sim_rng: seed.max(1),
             sim_spike: 0.0,
@@ -127,7 +129,7 @@ impl Node {
         if !self.online {
             self.rtt.push(0.0);
             self.traffic.push(0.0);
-            self.load = 0.0;
+            self.load.update(0.0, dt);
             return;
         }
         // Rare RTT spikes that decay over a few frames, so they stay visible
@@ -142,7 +144,7 @@ impl Node {
         self.rtt.push(rtt);
         let traffic = ((self.sim_phase * 0.3).sin() * 0.5 + 0.5) * 40.0 + self.noise() * 8.0;
         self.traffic.push(traffic);
-        self.load = (traffic / 60.0).clamp(0.0, 1.0);
+        self.load.update((traffic / 60.0).clamp(0.0, 1.0), dt);
     }
 }
 
@@ -281,7 +283,8 @@ impl App {
                     .color(theme.text_muted)
                     .size(11.0),
             );
-            ui.add(Meter::new(node.load).text(format!("{:.0} %", node.load * 100.0)));
+            let load = node.load.value();
+            ui.add(Meter::new(load).text(format!("{:.0} %", load * 100.0)));
         });
     }
 }

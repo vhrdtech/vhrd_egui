@@ -1,7 +1,8 @@
 //! btop-style dashboard building blocks for egui.
 //!
 //! Small, composable pieces for status dashboards: a dark [`Theme`] with
-//! CVD-validated colors, a [`History`] ring buffer, and widgets —
+//! CVD-validated colors, a [`History`] ring buffer, a [`Decay`]
+//! VU-style value smoother, and widgets —
 //! [`Sparkline`] (filled line chart with hover readout), [`Meter`]
 //! (segmented block meter with a heat gradient), [`StatusLight`]
 //! (glowing dot + label), [`StatTile`] (headline number) and a titled
@@ -9,6 +10,7 @@
 //!
 //! Run the demo: `cargo run -p ve_dash --example mesh_dash`.
 
+mod decay;
 mod history;
 mod meter;
 mod panel;
@@ -17,6 +19,7 @@ mod stat;
 mod status;
 mod theme;
 
+pub use decay::Decay;
 pub use history::History;
 pub use meter::Meter;
 pub use panel::panel;
