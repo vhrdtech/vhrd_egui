@@ -5,6 +5,15 @@ versions follow [Semantic Versioning](https://semver.org/). Feature IDs refer to
 
 ## [Unreleased]
 
+## [0.7.0] - 2026-10-07
+
+### Added
+
+- `ve_dash`: steady widths (DASH-12) — `steady_width(ui, id_salt, add)` lays its contents out at least as wide
+  as they have ever been (grows at once, never shrinks, kept in egui temp memory), and `StatTile::steady()`
+  does the same for a tile, so live values changing length don't shove their neighbours around. The demo's
+  live tiles use it.
+
 ## [0.6.0] - 2026-10-07
 
 ### Added

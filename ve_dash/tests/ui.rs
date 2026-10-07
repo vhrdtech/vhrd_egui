@@ -8,7 +8,12 @@
 use egui::{pos2, vec2};
 use egui_kittest::Harness;
 use egui_kittest::kittest::Queryable;
-use ve_dash::{Meter, Sparkline, StatTile, Status, StatusLight, Theme, install_fonts, panel};
+use std::cell::Cell;
+use std::rc::Rc;
+
+use ve_dash::{
+    Meter, Sparkline, StatTile, Status, StatusLight, Theme, install_fonts, panel, steady_width,
+};
 
 /// Deterministic wiggly series for the snapshot charts.
 fn wave(n: usize, scale: f32) -> Vec<f32> {
@@ -46,6 +51,30 @@ fn meter_shows_percent_tooltip_on_hover() {
         h.query_by_label("63 %").is_some(),
         "hovering the meter must reveal the exact percentage"
     );
+}
+
+/// A value that gets shorter keeps its widest width, so what follows stays put.
+#[test]
+fn steady_width_and_tile_keep_their_widest() {
+    let long = Rc::new(Cell::new(true));
+    let x = Rc::new(Cell::new((0.0, 0.0)));
+    let mut h = Harness::new_ui({
+        let (long, x) = (long.clone(), x.clone());
+        move |ui| {
+            ui.horizontal(|ui| {
+                let text = if long.get() { "1023M/s" } else { "5K/s" };
+                steady_width(ui, "rate", |ui| ui.label(text));
+                let after_label = ui.label("|").rect.left();
+                ui.add(StatTile::new("net", text).min_width(0.0).steady());
+                x.set((after_label, ui.label("|").rect.left()));
+            });
+        }
+    });
+    h.run();
+    let wide = x.get();
+    long.set(false);
+    h.run();
+    assert_eq!(x.get(), wide, "shorter values must not move what follows");
 }
 
 #[test]

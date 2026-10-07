@@ -6,7 +6,8 @@
 //! [`Sparkline`] (filled line chart with hover readout, optional load colors), [`Meter`]
 //! (segmented block meter with a heat gradient), [`StatusLight`]
 //! (glowing dot + label), [`StatTile`] (headline number) and a titled
-//! [`panel`] frame.
+//! [`panel`] frame. [`steady_width`] keeps live values from shoving their
+//! neighbours around.
 //!
 //! The `fonts` feature (on by default) embeds the brand faces IBM Plex Sans and
 //! IBM Plex Mono; call [`install_fonts`] once at startup.
@@ -22,6 +23,7 @@ mod panel;
 mod sparkline;
 mod stat;
 mod status;
+mod steady;
 mod theme;
 
 pub use decay::Decay;
@@ -33,4 +35,5 @@ pub use panel::panel;
 pub use sparkline::Sparkline;
 pub use stat::StatTile;
 pub use status::{Status, StatusLight};
+pub use steady::steady_width;
 pub use theme::{DARK, Theme, heat, load_color};

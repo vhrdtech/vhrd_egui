@@ -97,6 +97,9 @@ chart must carry a direct text label (they all do); status colors always ship wi
 - ✅ **DASH-11 Load colors**: `load_color` — series color up to half load, warn at 3/4, crit at full — and
   `Sparkline::load(max)` coloring each segment by `value / max`, so a chart says how close to capacity it
   runs without losing its series identity. `ve_dash/src/theme.rs` (tested), `ve_dash/src/sparkline.rs`.
+- ✅ **DASH-12 Steady widths**: `steady_width` and `StatTile::steady()` keep the widest width a piece of UI has
+  had (grow at once, never shrink), so live values changing length don't move what follows.
+  `ve_dash/src/steady.rs`, kittest in `ve_dash/tests/ui.rs`.
 
 ## Extracted from apps (`EXT`)
 

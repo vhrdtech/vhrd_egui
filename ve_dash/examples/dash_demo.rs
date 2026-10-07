@@ -147,9 +147,17 @@ impl App {
                 .filter(|n| n.online && !n.is_self)
                 .filter_map(|n| n.rtt.last())
                 .fold(0.0f32, f32::max);
-            ui.add(StatTile::new("worst rtt", format!("{worst_rtt:.1}")).unit("ms"));
+            ui.add(
+                StatTile::new("worst rtt", format!("{worst_rtt:.1}"))
+                    .unit("ms")
+                    .steady(),
+            );
             ui.add(StatTile::new("data", "synthetic").min_width(0.0));
-            ui.add(StatTile::new("fps", format!("{:.0}", self.fps)).min_width(0.0));
+            ui.add(
+                StatTile::new("fps", format!("{:.0}", self.fps))
+                    .min_width(0.0)
+                    .steady(),
+            );
         });
     }
 

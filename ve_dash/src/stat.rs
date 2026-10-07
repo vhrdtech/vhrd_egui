@@ -3,6 +3,7 @@
 
 use egui::{Align2, Color32, FontId, Response, Sense, Ui, Vec2, Widget, pos2};
 
+use crate::steady::{remember, remembered};
 use crate::theme::{DARK, Theme};
 
 /// `StatTile::new("nodes online", "3/4").unit("PCs").ui(ui)`
@@ -13,6 +14,7 @@ pub struct StatTile {
     unit: Option<String>,
     value_color: Option<Color32>,
     min_width: f32,
+    steady: bool,
     theme: Theme,
 }
 
@@ -24,6 +26,7 @@ impl StatTile {
             unit: None,
             value_color: None,
             min_width: 90.0,
+            steady: false,
             theme: DARK.clone(),
         }
     }
@@ -42,6 +45,14 @@ impl StatTile {
 
     pub fn min_width(mut self, min_width: f32) -> Self {
         self.min_width = min_width;
+        self
+    }
+
+    /// Keep the widest width this tile has had (see [`crate::steady_width`]),
+    /// so a live value changing length doesn't move the tiles after it.
+    /// Remembered per label within the parent ui.
+    pub fn steady(mut self) -> Self {
+        self.steady = true;
         self
     }
 
@@ -78,10 +89,15 @@ impl Widget for StatTile {
             })
             .unwrap_or(Vec2::ZERO);
 
-        let width = self
+        let mut width = self
             .min_width
             .max(label_size.x)
             .max(value_size.x + unit_size.x + 4.0);
+        if self.steady {
+            let id = ui.id().with("ve_dash::StatTile").with(self.label.as_str());
+            remember(ui, id, width);
+            width = remembered(ui, id);
+        }
         let height = label_size.y + 2.0 + value_size.y;
         let (rect, response) = ui.allocate_exact_size(Vec2::new(width, height), Sense::hover());
         if !ui.is_rect_visible(rect) {
