@@ -94,6 +94,9 @@ chart must carry a direct text label (they all do); status colors always ship wi
 - ✅ **DASH-9 Brand fonts**: IBM Plex Sans / Plex Mono (the vhrd_brand web faces) embedded behind the `fonts`
   feature (default on), installed with `install_fonts` as the primary proportional / monospace faces.
   `ve_dash/src/fonts.rs`, OFL license in `ve_dash/fonts/`; the `dash_panel.png` snapshot renders with them.
+- ✅ **DASH-11 Load colors**: `load_color` — series color up to half load, warn at 3/4, crit at full — and
+  `Sparkline::load(max)` coloring each segment by `value / max`, so a chart says how close to capacity it
+  runs without losing its series identity. `ve_dash/src/theme.rs` (tested), `ve_dash/src/sparkline.rs`.
 
 ## Extracted from apps (`EXT`)
 

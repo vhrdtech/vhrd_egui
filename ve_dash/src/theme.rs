@@ -97,6 +97,25 @@ pub fn heat(theme: &Theme, t: f32) -> Color32 {
     }
 }
 
+/// A series color that turns into an alarm as its load `t` (fraction of
+/// capacity) nears 1: the series' own color up to half load, then toward
+/// warn at 3/4 and crit at full. Keeps a chart's identity at normal load
+/// and says "near full" without a separate meter.
+pub fn load_color(theme: &Theme, base: Color32, t: f32) -> Color32 {
+    let t = if t.is_finite() {
+        t.clamp(0.0, 1.0)
+    } else {
+        0.0
+    };
+    if t <= 0.5 {
+        base
+    } else if t <= 0.75 {
+        base.lerp_to_gamma(theme.warn, (t - 0.5) * 4.0)
+    } else {
+        theme.warn.lerp_to_gamma(theme.crit, (t - 0.75) * 4.0)
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -110,5 +129,16 @@ mod tests {
         assert_eq!(heat(&th, 42.0), th.crit);
         // NaN must not panic and falls back to the low end.
         assert_eq!(heat(&th, f32::NAN), th.good);
+    }
+
+    #[test]
+    fn load_color_keeps_series_then_alarms() {
+        let th = Theme::dark();
+        assert_eq!(load_color(&th, th.accent, 0.0), th.accent);
+        assert_eq!(load_color(&th, th.accent, 0.5), th.accent);
+        assert_eq!(load_color(&th, th.accent, 0.75), th.warn);
+        assert_eq!(load_color(&th, th.accent, 1.0), th.crit);
+        assert_eq!(load_color(&th, th.accent, 7.0), th.crit);
+        assert_eq!(load_color(&th, th.accent, f32::NAN), th.accent);
     }
 }

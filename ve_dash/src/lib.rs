@@ -3,7 +3,7 @@
 //! Small, composable pieces for status dashboards: a dark [`Theme`] with
 //! CVD-validated colors, a [`History`] ring buffer, a [`Decay`]
 //! VU-style value smoother, and widgets —
-//! [`Sparkline`] (filled line chart with hover readout), [`Meter`]
+//! [`Sparkline`] (filled line chart with hover readout, optional load colors), [`Meter`]
 //! (segmented block meter with a heat gradient), [`StatusLight`]
 //! (glowing dot + label), [`StatTile`] (headline number) and a titled
 //! [`panel`] frame.
@@ -33,4 +33,4 @@ pub use panel::panel;
 pub use sparkline::Sparkline;
 pub use stat::StatTile;
 pub use status::{Status, StatusLight};
-pub use theme::{DARK, Theme, heat};
+pub use theme::{DARK, Theme, heat, load_color};

@@ -8,7 +8,7 @@ use egui::{
     pos2, remap_clamp, vec2,
 };
 
-use crate::theme::DARK;
+use crate::theme::{DARK, load_color};
 
 /// `Sparkline::new(history.values()).ui(ui)`; override size, range and color as needed.
 ///
@@ -22,6 +22,7 @@ pub struct Sparkline<'a> {
     range: Option<RangeInclusive<f32>>,
     color: Color32,
     fill: bool,
+    load_max: Option<f32>,
 }
 
 impl<'a> Sparkline<'a> {
@@ -33,6 +34,7 @@ impl<'a> Sparkline<'a> {
             range: None,
             color: DARK.accent,
             fill: true,
+            load_max: None,
         }
     }
 
@@ -64,6 +66,22 @@ impl<'a> Sparkline<'a> {
     pub fn fill(mut self, fill: bool) -> Self {
         self.fill = fill;
         self
+    }
+
+    /// Color each segment by its load, `value / max`, with [`load_color`]:
+    /// the line color up to half of `max`, then warn, crit at `max`.
+    /// Independent of the range, so an auto-scaled chart keeps its shape.
+    pub fn load(mut self, max: f32) -> Self {
+        self.load_max = (max.is_finite() && max > 0.0).then_some(max);
+        self
+    }
+
+    /// Color of a point with value `v`.
+    fn color_at(&self, v: f32) -> Color32 {
+        match self.load_max {
+            Some(max) => load_color(&DARK, self.color, v / max),
+            None => self.color,
+        }
     }
 
     fn value_range(&self) -> RangeInclusive<f32> {
@@ -119,10 +137,9 @@ impl Widget for Sparkline<'_> {
         if self.fill {
             // Per-segment quads down to the baseline; the top edge carries a faint
             // version of the line color, the bottom fades out: a vertical gradient.
-            let top_color = self.color.gamma_multiply(0.25);
             let mut mesh = Mesh::default();
-            for p in &points {
-                mesh.colored_vertex(*p, top_color);
+            for (p, &v) in points.iter().zip(self.values) {
+                mesh.colored_vertex(*p, self.color_at(v).gamma_multiply(0.25));
                 mesh.colored_vertex(pos2(p.x, rect.bottom()), Color32::TRANSPARENT);
             }
             for i in 0..n - 1 {
@@ -132,7 +149,15 @@ impl Widget for Sparkline<'_> {
             }
             painter.add(Shape::mesh(mesh));
         }
-        painter.add(Shape::line(points.clone(), Stroke::new(1.5, self.color)));
+        if self.load_max.is_some() {
+            // One stroke per segment, in the color of its higher end.
+            for (i, w) in points.windows(2).enumerate() {
+                let v = self.values[i].max(self.values[i + 1]);
+                painter.line_segment([w[0], w[1]], Stroke::new(1.5, self.color_at(v)));
+            }
+        } else {
+            painter.add(Shape::line(points.clone(), Stroke::new(1.5, self.color)));
+        }
 
         if let Some(hover) = response.hover_pos() {
             let i = (remap_clamp(hover.x, rect.left()..=rect.right(), 0.0..=(n - 1) as f32).round()
@@ -140,7 +165,7 @@ impl Widget for Sparkline<'_> {
                 .min(n - 1);
             let p = points[i];
             painter.vline(p.x, rect.y_range(), Stroke::new(1.0, DARK.border));
-            painter.circle_filled(p, 2.5, self.color);
+            painter.circle_filled(p, 2.5, self.color_at(self.values[i]));
             let label = format_value(self.values[i]);
             let font = FontId::monospace(11.0);
             let above = Rect::from_min_max(rect.min, pos2(rect.max.x, p.y)).height() > 16.0;

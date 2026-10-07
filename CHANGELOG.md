@@ -5,6 +5,14 @@ versions follow [Semantic Versioning](https://semver.org/). Feature IDs refer to
 
 ## [Unreleased]
 
+## [0.6.0] - 2026-10-07
+
+### Added
+
+- `ve_dash`: load colors (DASH-11) — `load_color(theme, base, t)` keeps a series color up to half load, then
+  turns warn at 3/4 and crit at full; `Sparkline::load(max)` colors each segment (line, fill, hover dot) that
+  way by `value / max`, independent of the chart's range.
+
 ## [0.5.0] - 2026-10-06
 
 ### Added
