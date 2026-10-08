@@ -42,6 +42,9 @@ impl PanelSize {
     }
 }
 
+/// What fills the ⓘ tooltip.
+type InfoFn<'a> = Box<dyn FnOnce(&mut Ui) + 'a>;
+
 /// A bordered panel whose header line carries the title at the left and, at the right, an ⓘ button (its
 /// tooltip holds what the panel has no room for) and a size switch — all on the border line, so neither takes a
 /// row of its own.
@@ -58,7 +61,7 @@ impl PanelSize {
 pub struct Panel<'a> {
     theme: &'a Theme,
     title: String,
-    info: Option<Box<dyn FnOnce(&mut Ui) + 'a>>,
+    info: Option<InfoFn<'a>>,
     size_key: Option<Id>,
 }
 
