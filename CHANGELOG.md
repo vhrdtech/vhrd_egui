@@ -7,6 +7,9 @@ versions follow [Semantic Versioning](https://semver.org/). Feature IDs refer to
 
 ### Added
 
+- `ve_dash`: `ActionChip`, a clickable chip with hover, pressed and active states and a tooltip (DASH-15);
+  `Sparkline::every` draws a light time axis and adds the age to the hover (DASH-16); `age_label` (DASH-16).
+- `ve_theme`: `brand_font` (bold Plex Sans) and the `TypeScale::brand` size token for wordmarks (THM-8).
 - `ve_dash`: `SteadyColumn` aligns the first cell of list rows to the widest row seen, capped with an ellipsis and
   the full text on hover, `link` for a clickable name (DASH-14); `steady_of` gives the learned width of a measured
   piece (DASH-14); `info_icon`, a painted ⓘ for row details in a tooltip (DASH-14). The `dash_demo` shows them.

@@ -195,6 +195,7 @@ impl App {
             let rtt_now = node.rtt.last().unwrap_or(0.0);
             ui.add(
                 Sparkline::new(node.rtt.values())
+                    .every(std::time::Duration::from_millis(500))
                     .height(42.0)
                     .color(theme.accent),
             );

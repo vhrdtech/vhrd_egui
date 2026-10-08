@@ -160,6 +160,15 @@ Small helpers every app uses, crate `ve_basics`. UI rules that go with them: AGE
   (to decide what fits); `SteadyColumn::link` is a clickable cell; `info_icon` a painted ⓘ whose tooltip holds the
   details a row has no room for; a growing steady width re-runs the pass so nothing lags a frame. `ve_dash/src/column.rs`,
   `info.rs`, `steady.rs`, kittest in `ve_dash/tests/ui.rs`, shown in `examples/dash_demo.rs`.
+- ✅ **DASH-15 Action chip**: `ActionChip` — a clickable text chip (language switch, mode toggles) with a rounded
+  background that lights up under the pointer and presses in, pointing-hand cursor, tooltip, `min_width` for a
+  learned width and `active` for a switched-on mode; labelled for accessibility. `ve_dash/src/chip.rs`, kittest in
+  `ve_dash/tests/ui.rs`. `SteadyColumn::link` keeps its hover memory per cell (a column-wide one underlined the
+  next row, and the first when the last was hovered; unit-tested in `column.rs`).
+- ✅ **DASH-16 Sparkline time axis**: `Sparkline::every(Duration)` — the time between samples — draws a light time
+  axis (`-1m`, `-30s`, `now`; monospace, muted, a tick each) along charts at least 26 px high and puts the age
+  of the sample into the hover readout; `age_label` formats ages. `ve_dash/src/sparkline.rs`, snapshot
+  `ve_dash/tests/snapshots/sparkline_axis.png`, shown in `dash_demo`.
 - ✅ **BAS-1 Build info**: `BuildInfo`, `build_info!()` (captures the *calling* crate's name, version,
   `GIT_SHA`, `BUILD_TIME` and `cfg!(debug_assertions)`) and `build_info_label` — `version · sha · debug|release`
   with an orange debug marker and a tooltip spelling everything out. The app's `build.rs` sets `GIT_SHA` /
@@ -214,6 +223,9 @@ on every background (unit-tested), status colors always come with a text label.
   `number_text(ctx, text, size)` give live numbers bold tabular digits (every digit one width, so values ticking
   don't shift their neighbours). Falls back to plain monospace until the fonts are installed.
   `ve_theme/src/fonts.rs`, tested in `ve_theme/tests/ui.rs`.
+- ✅ **THM-8 Brand font**: IBM Plex Sans Bold as the `ve-brand` family; `brand_font(ctx, size)` for wordmarks, the size
+  a token (`TypeScale::brand`, 21 pt). Falls back to the proportional face until the fonts are installed.
+  `ve_theme/src/fonts.rs`, `typography.rs`.
 - 💡 **THM-6 Hot reload of tokens**: in debug builds, read the tokens from a RON file and re-apply on change, as
   re_ui's `hot_reload_design_tokens` does, so tuning doesn't need a rebuild. Needs serde on the token types.
 

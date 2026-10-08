@@ -37,7 +37,7 @@ pub use info::info_icon;
 pub use meter::Meter;
 pub use panel::panel;
 pub use segbar::{SegBar, Segments, lit_segments};
-pub use sparkline::Sparkline;
+pub use sparkline::{Sparkline, age_label};
 pub use stat::StatTile;
 pub use status::{Status, StatusLight};
 pub use steady::{steady_of, steady_width};

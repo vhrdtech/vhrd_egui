@@ -13,6 +13,9 @@ use crate::theme::Theme;
 /// ```
 pub fn info_icon(ui: &mut Ui, theme: &Theme, size: f32) -> Response {
     let (rect, response) = ui.allocate_exact_size(vec2(size, size), Sense::hover());
+    response.widget_info(|| {
+        egui::WidgetInfo::labeled(egui::WidgetType::Label, ui.is_enabled(), "info")
+    });
     if ui.is_rect_visible(rect) {
         let color = if response.hovered() {
             theme.text

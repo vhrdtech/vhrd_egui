@@ -2,6 +2,7 @@
 //! crosshair with the value on hover.
 
 use std::ops::RangeInclusive;
+use std::time::Duration;
 
 use egui::{
     Align2, Color32, FontId, Mesh, Pos2, Rect, Response, Sense, Shape, Stroke, Ui, Vec2, Widget,
@@ -23,6 +24,7 @@ pub struct Sparkline<'a> {
     color: Color32,
     fill: bool,
     load_max: Option<f32>,
+    every: Option<Duration>,
 }
 
 impl<'a> Sparkline<'a> {
@@ -35,6 +37,7 @@ impl<'a> Sparkline<'a> {
             color: DARK.accent,
             fill: true,
             load_max: None,
+            every: None,
         }
     }
 
@@ -73,6 +76,19 @@ impl<'a> Sparkline<'a> {
     /// Independent of the range, so an auto-scaled chart keeps its shape.
     pub fn load(mut self, max: f32) -> Self {
         self.load_max = (max.is_finite() && max > 0.0).then_some(max);
+        self
+    }
+
+    /// The time between two samples: draws a light time axis (few ticks, `now` at the right edge, tabular
+    /// digits, muted) along the bottom and puts the age of the sample under the pointer into the hover readout.
+    /// Without it the chart has no time scale, as before. The axis needs room (about 26 px of height); a
+    /// chart lower than that keeps just the hover time.
+    ///
+    /// ```ignore
+    /// Sparkline::new(cpu.values()).every(Duration::from_secs(1)).height(40.0)
+    /// ```
+    pub fn every(mut self, every: Duration) -> Self {
+        self.every = (!every.is_zero()).then_some(every);
         self
     }
 
@@ -159,6 +175,31 @@ impl Widget for Sparkline<'_> {
             painter.add(Shape::line(points.clone(), Stroke::new(1.5, self.color)));
         }
 
+        if let (Some(every), true) = (self.every, rect.height() >= AXIS_MIN_HEIGHT) {
+            let span = every.as_secs_f32() * (n - 1) as f32;
+            let font = FontId::monospace(9.0);
+            let y = rect.bottom() - 1.0;
+            for (frac, align) in [
+                (0.0, Align2::LEFT_BOTTOM),
+                (0.5, Align2::CENTER_BOTTOM),
+                (1.0, Align2::RIGHT_BOTTOM),
+            ] {
+                let x = rect.left() + frac * rect.width();
+                painter.text(
+                    pos2(x, y),
+                    align,
+                    age_label(span * (1.0 - frac)),
+                    font.clone(),
+                    DARK.text_muted,
+                );
+                painter.vline(
+                    x.clamp(rect.left() + 0.5, rect.right() - 0.5),
+                    (rect.bottom() - 3.0)..=rect.bottom(),
+                    Stroke::new(1.0, DARK.border),
+                );
+            }
+        }
+
         if let Some(hover) = response.hover_pos() {
             let i = (remap_clamp(hover.x, rect.left()..=rect.right(), 0.0..=(n - 1) as f32).round()
                 as usize)
@@ -166,7 +207,11 @@ impl Widget for Sparkline<'_> {
             let p = points[i];
             painter.vline(p.x, rect.y_range(), Stroke::new(1.0, DARK.border));
             painter.circle_filled(p, 2.5, self.color_at(self.values[i]));
-            let label = format_value(self.values[i]);
+            let mut label = format_value(self.values[i]);
+            if let Some(every) = self.every {
+                let ago = every.as_secs_f32() * (n - 1 - i) as f32;
+                label = format!("{label} · {}", age_label(ago));
+            }
             let font = FontId::monospace(11.0);
             let above = Rect::from_min_max(rect.min, pos2(rect.max.x, p.y)).height() > 16.0;
             let (anchor_pos, align) = if above {
@@ -192,5 +237,46 @@ fn format_value(v: f32) -> String {
         format!("{v:.1}")
     } else {
         format!("{v:.2}")
+    }
+}
+
+/// Charts at least this high get the time axis.
+const AXIS_MIN_HEIGHT: f32 = 26.0;
+
+/// An age for the time axis and the hover: `now`, `-45s`, `-5m`, `-1h 30m`, `-2h`, `-3d`.
+pub fn age_label(secs: f32) -> String {
+    let s = secs.max(0.0).round() as u64;
+    match s {
+        0 => "now".into(),
+        1..=59 => format!("-{s}s"),
+        60..=3599 => format!("-{}m", (s + 30) / 60),
+        3600..=86_399 => {
+            let m = (s % 3600 + 30) / 60;
+            let h = s / 3600 + m / 60;
+            let m = m % 60;
+            if m == 0 {
+                format!("-{h}h")
+            } else {
+                format!("-{h}h {m}m")
+            }
+        }
+        _ => format!("-{}d", (s + 43_200) / 86_400),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::age_label;
+
+    #[test]
+    fn ages_read_short() {
+        assert_eq!(age_label(0.0), "now");
+        assert_eq!(age_label(45.0), "-45s");
+        assert_eq!(age_label(300.0), "-5m");
+        assert_eq!(age_label(1800.0), "-30m");
+        assert_eq!(age_label(3600.0), "-1h");
+        assert_eq!(age_label(5400.0), "-1h 30m");
+        assert_eq!(age_label(3.0 * 86_400.0), "-3d");
+        assert_eq!(age_label(f32::NAN), "now");
     }
 }

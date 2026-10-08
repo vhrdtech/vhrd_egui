@@ -281,3 +281,27 @@ fn action_chip_clicks_and_has_a_tooltip() {
     }
     assert!(h.query_by_label("Switch the language").is_some());
 }
+
+/// A sparkline given its sample period draws a light time axis; a low one keeps just the hover time.
+#[test]
+fn sparkline_time_axis() {
+    let values: Vec<f32> = (0..61).map(|i| (i as f32 * 0.3).sin().abs()).collect();
+    let tall = values.clone();
+    let mut h = Harness::builder()
+        .with_size(vec2(260.0, 120.0))
+        .build_ui(move |ui| {
+            ui.add(
+                Sparkline::new(&tall)
+                    .every(std::time::Duration::from_secs(1))
+                    .height(40.0),
+            );
+            ui.add(
+                Sparkline::new(&values)
+                    .every(std::time::Duration::from_secs(1))
+                    .height(14.0),
+            );
+        });
+    h.run();
+    // painted text isn't in the accesskit tree: the snapshot is the guard
+    h.snapshot("sparkline_axis");
+}
