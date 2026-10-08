@@ -5,6 +5,8 @@ versions follow [Semantic Versioning](https://semver.org/). Feature IDs refer to
 
 ## [Unreleased]
 
+## [0.8.0] - 2026-10-08
+
 ### Added
 
 - New crate `ve_basics`: build info (BAS-1) — `build_info!()`, `BuildInfo`, `build_info_label` with debug /

@@ -3378,7 +3378,7 @@ dependencies = [
 
 [[package]]
 name = "ve_basics"
-version = "0.7.0"
+version = "0.8.0"
 dependencies = [
  "egui",
  "egui_kittest",
@@ -3386,7 +3386,7 @@ dependencies = [
 
 [[package]]
 name = "ve_dash"
-version = "0.7.0"
+version = "0.8.0"
 dependencies = [
  "eframe",
  "egui",
@@ -3395,7 +3395,7 @@ dependencies = [
 
 [[package]]
 name = "ve_macro"
-version = "0.7.0"
+version = "0.8.0"
 dependencies = [
  "proc-macro2",
  "quote",
@@ -3403,7 +3403,7 @@ dependencies = [
 
 [[package]]
 name = "ve_widget"
-version = "0.7.0"
+version = "0.8.0"
 dependencies = [
  "eframe",
  "egui",
