@@ -47,6 +47,9 @@ Cargo workspace, edition 2024, one shared version (`[workspace.package]`).
 - `ve_macro/` — proc macros for widget implementations (`svt!` destructures `self` into seed / visual /
   transient).
 
+- `ve_dash/` — btop-style dashboard blocks (theme, sparkline, meter, segmented bar, tiles).
+- `ve_basics/` — build info, non-selectable labels, hover cross-reference highlight.
+
 New helpers go into a crate of their own with the `ve_` prefix when they have their own dependencies, otherwise
 into an existing one. When moving code from an app, port the app to use it in the same piece of work (or add a
 task for it) so the copies don't drift.
@@ -62,6 +65,19 @@ cargo test --workspace
 
 Before declaring a change done: build, clippy without warnings, fmt, tests. If you changed UI behavior and can't
 run a GUI, say so and describe the manual check.
+
+## UI guide rules
+
+Every app on vhrd_egui follows these (the helpers are in `ve_basics`):
+
+- **Generous tooltips** on every control, number, badge and abbreviation: what it is, its unit, what clicking it
+  does. If a user could ask "what is this?", hovering answers it. Build info shows version, SHA and build time
+  in full on hover (`build_info_label`, BAS-1 build-info).
+- **Highlight related items on hover**: when an item is hovered, everything that refers to the same thing (the
+  row, its chart, its status light, its name in a legend) lights up (`hover_link`, BAS-3 hover-link).
+- **Labels are not selectable** (`setup_labels(ctx)` at startup, BAS-2 label-select); text worth copying (ids,
+  paths, commands) uses `copyable_label`.
+- Percent bars use 5 or 10 segments (`SegBar`, DASH-13 seg-bar).
 
 ## Code conventions
 

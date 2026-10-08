@@ -33,6 +33,7 @@ in tpm (P2605). Statuses were checked against the code.
 |---|---|
 | `ve_widget` | `Widget` trait, `WidgetInfo` registry, shared `Context`. |
 | `ve_macro` | Proc macros for widget implementations (`svt!`). |
+| `ve_basics` | Small basics every app wants: build info, label selectability, hover cross-reference highlight. |
 | `ve_dash` | btop-style dashboard building blocks: theme, sparkline, meter, status light, stat tile, titled panel. |
 
 ## Platform (`PLT`)
@@ -100,6 +101,25 @@ chart must carry a direct text label (they all do); status colors always ship wi
 - ✅ **DASH-12 Steady widths**: `steady_width` and `StatTile::steady()` keep the widest width a piece of UI has
   had (grow at once, never shrink), so live values changing length don't move what follows.
   `ve_dash/src/steady.rs`, kittest in `ve_dash/tests/ui.rs`.
+
+- ✅ **DASH-13 Segmented bar**: `SegBar` / `Segments` — a small percent bar of exactly 5 or 10 segments, heat
+  gradient or fixed color, tooltip "63 % (6 of 10 segments)"; any non-zero value lights at least one segment.
+  `ve_dash/src/segbar.rs` (unit tests), kittest in `ve_dash/tests/ui.rs`.
+
+## Basics (`BAS`)
+
+Small helpers every app uses, crate `ve_basics`. UI rules that go with them: AGENTS.md "UI guide rules".
+
+- ✅ **BAS-1 Build info**: `BuildInfo`, `build_info!()` (captures the *calling* crate's name, version,
+  `GIT_SHA`, `BUILD_TIME` and `cfg!(debug_assertions)`) and `build_info_label` — `version · sha · debug|release`
+  with an orange debug marker and a tooltip spelling everything out. The app's `build.rs` sets `GIT_SHA` /
+  `BUILD_TIME` (model: tpm_mesh_dash/build.rs, snippet in the macro docs). `ve_basics/src/build_info.rs`,
+  `ve_basics/tests/ui.rs`.
+- ✅ **BAS-2 Label selection**: `setup_labels(ctx)` turns `selectable_labels` off app-wide, `copyable_label`
+  opts a label back in for ids, paths, commands. `ve_basics/src/labels.rs`, tested.
+- ✅ **BAS-3 Hover link**: `hover_link(ui, key, &response)` — hovering one item highlights every item registered
+  under the same key from the next frame; state in ctx memory, no repaint while the pointer rests.
+  `ve_basics/src/hover_link.rs`, tested.
 
 ## Extracted from apps (`EXT`)
 

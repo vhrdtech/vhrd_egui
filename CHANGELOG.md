@@ -5,6 +5,15 @@ versions follow [Semantic Versioning](https://semver.org/). Feature IDs refer to
 
 ## [Unreleased]
 
+### Added
+
+- New crate `ve_basics`: build info (BAS-1) — `build_info!()`, `BuildInfo`, `build_info_label` with debug /
+  release marker and a full tooltip; label selection (BAS-2) — `setup_labels`, `copyable_label`; hover
+  cross-reference highlight (BAS-3) — `hover_link`.
+- `ve_dash`: segmented percent bar `SegBar` with exactly 5 or 10 segments (DASH-13).
+- `justfile` with `test`, `lint`, `install`, `deploy` (the last two say a library has nothing to do).
+- AGENTS.md: UI guide rules — generous tooltips, highlight related items on hover.
+
 ## [0.7.0] - 2026-10-07
 
 ### Added

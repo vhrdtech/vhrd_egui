@@ -11,6 +11,7 @@ members = [
     "ve_macro",
     "ve_widget",
     "ve_dash",
+    "ve_basics",
 ]
 
 [workspace.dependencies]

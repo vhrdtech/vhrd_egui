@@ -3377,6 +3377,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "ve_basics"
+version = "0.7.0"
+dependencies = [
+ "egui",
+ "egui_kittest",
+]
+
+[[package]]
 name = "ve_dash"
 version = "0.7.0"
 dependencies = [

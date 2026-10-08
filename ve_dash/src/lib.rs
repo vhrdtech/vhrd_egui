@@ -4,7 +4,7 @@
 //! CVD-validated colors, a [`History`] ring buffer, a [`Decay`]
 //! VU-style value smoother, and widgets —
 //! [`Sparkline`] (filled line chart with hover readout, optional load colors), [`Meter`]
-//! (segmented block meter with a heat gradient), [`StatusLight`]
+//! (segmented block meter with a heat gradient), [`SegBar`] (exactly 5 or 10 segments), [`StatusLight`]
 //! (glowing dot + label), [`StatTile`] (headline number) and a titled
 //! [`panel`] frame. [`steady_width`] keeps live values from shoving their
 //! neighbours around.
@@ -20,6 +20,7 @@ mod fonts;
 mod history;
 mod meter;
 mod panel;
+mod segbar;
 mod sparkline;
 mod stat;
 mod status;
@@ -32,6 +33,7 @@ pub use fonts::{PLEX_MONO, PLEX_SANS, install_fonts};
 pub use history::History;
 pub use meter::Meter;
 pub use panel::panel;
+pub use segbar::{SegBar, Segments, lit_segments};
 pub use sparkline::Sparkline;
 pub use stat::StatTile;
 pub use status::{Status, StatusLight};

@@ -12,7 +12,8 @@ use std::cell::Cell;
 use std::rc::Rc;
 
 use ve_dash::{
-    Meter, Sparkline, StatTile, Status, StatusLight, Theme, install_fonts, panel, steady_width,
+    Meter, SegBar, Sparkline, StatTile, Status, StatusLight, Theme, install_fonts, panel,
+    steady_width,
 };
 
 /// Deterministic wiggly series for the snapshot charts.
@@ -137,4 +138,19 @@ fn dash_panel_snapshot() {
         });
     h.run();
     h.snapshot("dash_panel");
+}
+
+#[test]
+fn segbar_tooltip_names_percent_and_segments() {
+    let mut h = Harness::builder()
+        .with_size(vec2(220.0, 60.0))
+        .build_ui(|ui| {
+            ui.add(SegBar::ten(0.63).width(100.0));
+        });
+    h.run();
+    h.hover_at(pos2(30.0, 14.0));
+    for _ in 0..8 {
+        h.step();
+    }
+    assert!(h.query_by_label("63 % (6 of 10 segments)").is_some());
 }
