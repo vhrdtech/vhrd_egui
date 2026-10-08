@@ -5,6 +5,8 @@ versions follow [Semantic Versioning](https://semver.org/). Feature IDs refer to
 
 ## [Unreleased]
 
+## [0.11.0] - 2026-10-08
+
 ### Added
 
 - New crate `ve_app`, the application shell ported from eframe_template to egui 0.36 / egui_tiles 0.17:
