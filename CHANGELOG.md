@@ -5,6 +5,12 @@ versions follow [Semantic Versioning](https://semver.org/). Feature IDs refer to
 
 ## [Unreleased]
 
+## [0.9.1] - 2026-10-08
+
+### Fixed
+
+- `ve_dash` asked for `ve_theme` 0.8.0 after the 0.9.0 release, so nothing depending on it built.
+
 ## [0.9.0] - 2026-10-08
 
 ### Added
