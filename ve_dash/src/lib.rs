@@ -18,6 +18,7 @@
 mod column;
 mod decay;
 mod history;
+mod info;
 mod meter;
 mod panel;
 mod segbar;
@@ -30,6 +31,7 @@ mod theme;
 pub use column::SteadyColumn;
 pub use decay::Decay;
 pub use history::History;
+pub use info::info_icon;
 pub use meter::Meter;
 pub use panel::panel;
 pub use segbar::{SegBar, Segments, lit_segments};

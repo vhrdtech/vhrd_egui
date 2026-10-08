@@ -71,8 +71,18 @@ impl SteadyColumn {
 
     /// A text cell: truncated with an ellipsis when wider than `max_width`, the full text on hover then.
     pub fn label(&self, ui: &mut Ui, text: impl Into<RichText>) -> Response {
-        let text: RichText = text.into();
-        let widget: WidgetText = text.into();
+        self.label_hover(ui, text, "")
+    }
+
+    /// [`label`](Self::label) with a tooltip of its own (shown with the full text below it when the text is
+    /// cut). One tooltip per cell: attach none yourself, that would stack a second one.
+    pub fn label_hover(
+        &self,
+        ui: &mut Ui,
+        text: impl Into<RichText>,
+        hover: impl Into<String>,
+    ) -> Response {
+        let widget: WidgetText = text.into().into();
         let full = widget.text().to_owned();
         let natural = widget
             .clone()
@@ -87,10 +97,13 @@ impl SteadyColumn {
         let r = self
             .cell(ui, |ui| ui.add(Label::new(widget).truncate()))
             .inner;
-        if natural > self.max {
-            r.on_hover_text(full)
-        } else {
-            r
+        let hover = hover.into();
+        let cut = natural > self.max;
+        match (hover.is_empty(), cut) {
+            (true, false) => r,
+            (true, true) => r.on_hover_text(full),
+            (false, false) => r.on_hover_text(hover),
+            (false, true) => r.on_hover_text(format!("{hover}\n\n{full}")),
         }
     }
 }

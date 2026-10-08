@@ -196,3 +196,19 @@ fn steady_of_keeps_the_widest() {
     });
     h.run();
 }
+
+#[test]
+fn info_icon_shows_its_tooltip() {
+    let theme = Theme::dark();
+    let mut h = Harness::builder()
+        .with_size(vec2(120.0, 60.0))
+        .build_ui(move |ui| {
+            ve_dash::info_icon(ui, &theme, 14.0).on_hover_text("plan: max 5x");
+        });
+    h.run();
+    h.hover_at(pos2(16.0, 16.0));
+    for _ in 0..8 {
+        h.step();
+    }
+    assert!(h.query_by_label("plan: max 5x").is_some());
+}

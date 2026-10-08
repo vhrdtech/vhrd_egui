@@ -32,10 +32,12 @@ pub(crate) fn remembered(ui: &Ui, id: Id) -> f32 {
     ui.data(|d| d.get_temp::<f32>(id)).unwrap_or(0.0)
 }
 
-/// Store `width` under `id` when it is wider than what is there.
+/// Store `width` under `id` when it is wider than what is there. A growth asks egui for another pass at
+/// once, so the pieces laid out earlier in this frame get the new width too instead of lagging a frame.
 pub(crate) fn remember(ui: &Ui, id: Id, width: f32) {
-    if width > remembered(ui, id) {
+    if width > remembered(ui, id) + 0.25 {
         ui.data_mut(|d| d.insert_temp(id, width));
+        ui.ctx().request_discard("ve_dash steady width grew");
     }
 }
 
