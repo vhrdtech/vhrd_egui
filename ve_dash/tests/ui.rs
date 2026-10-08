@@ -325,3 +325,45 @@ fn reset_steady_forgets_learned_widths() {
     h.run();
     assert_eq!(got.get(), 20.0, "settles on the new text");
 }
+
+/// The panel's header: ⓘ with its tooltip and the size switch, both on the border line; a click cycles.
+#[test]
+fn panel_header_has_info_and_size_switch() {
+    let theme = Theme::dark();
+    let mut h = Harness::builder()
+        .with_size(vec2(400.0, 120.0))
+        .build_ui(move |ui| {
+            ve_dash::Panel::new(&theme, "model usage")
+                .info(|ui| {
+                    ui.label("plan, PCs, sessions");
+                })
+                .size_switch("usage-test")
+                .show(ui, |ui| {
+                    ui.label("body");
+                });
+        });
+    h.run();
+    h.run();
+    assert_eq!(
+        ve_dash::PanelSize::of(&h.ctx, "usage-test"),
+        ve_dash::PanelSize::Auto
+    );
+    // the header controls sit on the border line, above the body
+    let body = h.get_by_label("body").rect();
+    let chip = h.get_by_label("auto").rect();
+    assert!(chip.max.y < body.min.y, "{chip:?} {body:?}");
+    h.get_by_label("auto").click();
+    h.run();
+    h.run();
+    assert_eq!(
+        ve_dash::PanelSize::of(&h.ctx, "usage-test"),
+        ve_dash::PanelSize::Compact
+    );
+    h.get_by_label("compact");
+    let at = h.get_by_label("info").rect().center();
+    h.hover_at(at);
+    for _ in 0..8 {
+        h.step();
+    }
+    assert!(h.query_by_label("plan, PCs, sessions").is_some());
+}

@@ -35,7 +35,7 @@ pub use decay::Decay;
 pub use history::History;
 pub use info::info_icon;
 pub use meter::Meter;
-pub use panel::panel;
+pub use panel::{Panel, PanelSize, panel};
 pub use segbar::{SegBar, Segments, lit_segments};
 pub use sparkline::{Sparkline, age_label};
 pub use stat::StatTile;

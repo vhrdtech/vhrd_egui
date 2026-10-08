@@ -7,6 +7,8 @@ versions follow [Semantic Versioning](https://semver.org/). Feature IDs refer to
 
 ### Added
 
+- `ve_dash`: `Panel`, the titled panel with an ⓘ info button and an auto / compact / wide size switch on its border
+  line (`PanelSize`); `panel()` stays as the plain one (DASH-17).
 - `ve_dash`: `reset_steady(ctx)` forgets the learned widths (DASH-12); `SteadyColumn::lit`, a non-clickable cell
   that lights up under the pointer, and a public `was_hovered` (DASH-15); `Sparkline::clock` shows the absolute
   time in the hover beside the age, the time axis is stronger and larger (DASH-16).

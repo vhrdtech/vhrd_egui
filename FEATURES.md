@@ -172,6 +172,11 @@ Small helpers every app uses, crate `ve_basics`. UI rules that go with them: AGE
   `ve_dash/tests/snapshots/sparkline_axis.png`, shown in `dash_demo`. The axis text is the muted colour pulled 40 % toward
   the text colour (lighter than the data, still readable); `Sparkline::clock(fn(i64) -> String)` adds the sample's
   absolute time to the hover beside its age (`1.2 · -12m · 21:40`).
+- ✅ **DASH-17 Panel header**: `Panel` — the titled panel with its controls on the border line: the title at the
+  left, at the right an ⓘ (`.info(|ui| ..)` fills its tooltip) and the auto / compact / wide size switch
+  (`.size_switch(key)`, read with `PanelSize::of(ctx, key)`; the layout decides what it means: auto leaves it to the
+  layout, compact one narrow column, wide the whole row), so neither takes a row of its own. `panel()` is a `Panel`
+  without controls. `ve_dash/src/panel.rs`, kittest in `ve_dash/tests/ui.rs`.
 - ✅ **BAS-1 Build info**: `BuildInfo`, `build_info!()` (captures the *calling* crate's name, version,
   `GIT_SHA`, `BUILD_TIME` and `cfg!(debug_assertions)`) and `build_info_label` — `version · sha · debug|release`
   with an orange debug marker and a tooltip spelling everything out. The app's `build.rs` sets `GIT_SHA` /
