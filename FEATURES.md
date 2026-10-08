@@ -245,6 +245,10 @@ on every background (unit-tested), status colors always come with a text label.
 - ✅ **THM-8 Brand font**: IBM Plex Sans Bold as the `ve-brand` family; `brand_font(ctx, size)` for wordmarks, the size
   a token (`TypeScale::brand`, 21 pt). Falls back to the proportional face until the fonts are installed.
   `ve_theme/src/fonts.rs`, `typography.rs`.
+- ✅ **THM-9 Identifier colours**: `Palette::slug` (pale mint / deep mint) and `Palette::task` (coral / brick) for
+  identifier text — an agent session's slug and a task name or id — kept apart from every series, status and model
+  color; `ve_dash::Theme::slug` / `task` carry them. A unit test guards legibility and distance; shown in the
+  gallery swatches.
 - 💡 **THM-6 Hot reload of tokens**: in debug builds, read the tokens from a RON file and re-apply on change, as
   re_ui's `hot_reload_design_tokens` does, so tuning doesn't need a rebuild. Needs serde on the token types.
 

@@ -7,6 +7,7 @@ versions follow [Semantic Versioning](https://semver.org/). Feature IDs refer to
 
 ### Added
 
+- `ve_theme`: palette tokens `slug` and `task` for identifier text, and the same on `ve_dash::Theme` (THM-9).
 - `ve_dash`: `Sparkline::color_by` colours the line, fill and hover dot by value, smoothly along the line (DASH-18).
 
 ### Fixed

@@ -42,6 +42,10 @@ pub struct Theme {
     pub off: Color32,
     /// Brand red accent (wordmark, product name). Use sparingly; not a series color.
     pub red: Color32,
+    /// Identifier text: an agent session's slug. Distinct from the series and status colors.
+    pub slug: Color32,
+    /// Identifier text: a task name or id. Distinct from `slug` and the series colors.
+    pub task: Color32,
 }
 
 /// The default dark theme as a constant, used for widget builder defaults.
@@ -65,6 +69,8 @@ impl Theme {
             crit: c.crit,
             off: c.off,
             red: c.red,
+            slug: c.slug,
+            task: c.task,
         }
     }
 

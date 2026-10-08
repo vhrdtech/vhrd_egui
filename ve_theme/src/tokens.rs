@@ -67,6 +67,10 @@ pub struct Palette {
     pub hover: Color32,
     /// Keyboard focus, hovered widget outline, text cursor, links.
     pub focus: Color32,
+    /// Identifier text: an agent session's slug (`sajiv`). Distinct from every series, status and model color.
+    pub slug: Color32,
+    /// Identifier text: a task name or id (`P2605#8oct-1139`). Distinct from `slug` and from every series color.
+    pub task: Color32,
 }
 
 /// Spacing scale, points: 2, 4, 8, 12, 16, 24.
@@ -172,6 +176,8 @@ impl Tokens {
                 selection: rgb(0x0d4a54),      // signal.can, deep
                 hover: rgb(0x2c2c2e),
                 focus: rgb(0x26c6da), // signal-dark.can
+                slug: rgb(0xa6e3c4),  // pale mint
+                task: rgb(0xf08c78),  // coral
             },
             space: SPACE,
             radius: RADIUS,
@@ -207,6 +213,8 @@ impl Tokens {
                 selection: rgb(0xc4e5ea),      // signal.can, pale
                 hover: rgb(0xe6e6e6),          // grey.200
                 focus: rgb(0x00838f),          // signal.can
+                slug: rgb(0x1f7a4d),           // deep mint
+                task: rgb(0xb8442e),           // brick coral
             },
             space: SPACE,
             radius: RADIUS,
@@ -399,6 +407,33 @@ fn storage_id(theme: Theme) -> Id {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// The identifier colors (slug, task) are legible on the backgrounds and differ from each other and from
+    /// the series colors (APP-44: told apart at a glance in a session row).
+    #[test]
+    fn identifier_colors_are_legible_and_distinct() {
+        let dist = |a: Color32, b: Color32| {
+            let d = |x: u8, y: u8| (x as f32 - y as f32).powi(2);
+            (d(a.r(), b.r()) + d(a.g(), b.g()) + d(a.b(), b.b())).sqrt()
+        };
+        for (name, t) in [("dark", Tokens::dark()), ("light", Tokens::light())] {
+            let c = t.colors;
+            for (n, fg) in [("slug", c.slug), ("task", c.task)] {
+                for bg in [c.bg, c.surface] {
+                    let r = contrast(fg, bg);
+                    assert!(r >= 3.0, "{name}: {n} on a background is {r:.2}");
+                }
+                for (o, other) in [
+                    ("accent", c.accent),
+                    ("accent_alt", c.accent_alt),
+                    ("text", c.text),
+                ] {
+                    assert!(dist(fg, other) > 40.0, "{name}: {n} too close to {o}");
+                }
+            }
+            assert!(dist(c.slug, c.task) > 60.0, "{name}: slug vs task");
+        }
+    }
 
     /// THM-2: text and muted text are AA on every background they sit on, in both sets.
     #[test]
