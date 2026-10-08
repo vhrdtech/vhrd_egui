@@ -212,3 +212,41 @@ fn info_icon_shows_its_tooltip() {
     }
     assert!(h.query_by_label("plan: max 5x").is_some());
 }
+
+/// A very long name in a capped column: the cells after it stay on screen, the name is cut with an ellipsis,
+/// the full name is on hover and a click still reaches it.
+#[test]
+fn steady_column_link_truncates_keeps_neighbours_and_clicks() {
+    let clicked = Rc::new(Cell::new(false));
+    let seen = clicked.clone();
+    let name = "an-extremely-long-agent-name-that-would-push-everything-else-off-the-screen";
+    let mut h = Harness::builder()
+        .with_size(vec2(300.0, 60.0))
+        .build_ui(move |ui| {
+            let names = SteadyColumn::new(ui, "names").max_width(ui.available_width() * 0.4);
+            ui.horizontal(|ui| {
+                if names.link(ui, name, "opens the view").clicked() {
+                    seen.set(true);
+                }
+                ui.label("slug");
+                ui.button("close");
+            });
+        });
+    h.run();
+    h.run();
+    let close = h.get_by_label("close").rect();
+    assert!(close.max.x <= 300.0, "close button off screen: {close:?}");
+    h.get_by_label("slug");
+    h.hover_at(pos2(20.0, 18.0));
+    for _ in 0..8 {
+        h.step();
+    }
+    assert!(h.query_by_label_contains("opens the view").is_some());
+    // the open tooltip repeats the full name: click the first match, the cell itself
+    h.get_all_by_label_contains("an-extremely")
+        .next()
+        .expect("the name cell")
+        .click();
+    h.run();
+    assert!(clicked.get());
+}

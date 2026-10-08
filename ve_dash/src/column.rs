@@ -2,7 +2,8 @@
 //! row has needed, so everything right of it lines up, without anyone hard-coding that width.
 
 use egui::{
-    AsIdSalt, Id, InnerResponse, Label, Response, RichText, TextStyle, TextWrapMode, Ui, WidgetText,
+    AsIdSalt, Id, InnerResponse, Label, Response, RichText, Sense, TextStyle, TextWrapMode, Ui,
+    WidgetText,
 };
 
 use crate::steady::{remember, remembered};
@@ -82,7 +83,29 @@ impl SteadyColumn {
         text: impl Into<RichText>,
         hover: impl Into<String>,
     ) -> Response {
-        let widget: WidgetText = text.into().into();
+        self.text_cell(ui, text.into(), hover.into(), false)
+    }
+
+    /// A clickable text cell (a session name that opens its view): like [`label_hover`](Self::label_hover),
+    /// with the pointing-hand cursor and an underline under the pointer. Check `.clicked()` on the response.
+    pub fn link(
+        &self,
+        ui: &mut Ui,
+        text: impl Into<RichText>,
+        hover: impl Into<String>,
+    ) -> Response {
+        self.text_cell(ui, text.into(), hover.into(), true)
+    }
+
+    fn text_cell(&self, ui: &mut Ui, text: RichText, hover: String, clickable: bool) -> Response {
+        let id = self.id.with("hover");
+        let hovered_before = clickable && ui.data(|d| d.get_temp::<bool>(id)).unwrap_or(false);
+        let text = if hovered_before {
+            text.underline()
+        } else {
+            text
+        };
+        let widget: WidgetText = text.into();
         let full = widget.text().to_owned();
         let natural = widget
             .clone()
@@ -94,16 +117,25 @@ impl SteadyColumn {
             )
             .size()
             .x;
-        let r = self
-            .cell(ui, |ui| ui.add(Label::new(widget).truncate()))
-            .inner;
-        let hover = hover.into();
+        let label = Label::new(widget).truncate().selectable(false);
+        let label = if clickable {
+            label.sense(Sense::click())
+        } else {
+            label
+        };
+        let r = self.cell(ui, |ui| ui.add(label)).inner;
+        if clickable {
+            ui.data_mut(|d| d.insert_temp(id, r.hovered()));
+            if r.hovered() {
+                ui.ctx().set_cursor_icon(egui::CursorIcon::PointingHand);
+            }
+        }
         let cut = natural > self.max;
         match (hover.is_empty(), cut) {
             (true, false) => r,
             (true, true) => r.on_hover_text(full),
             (false, false) => r.on_hover_text(hover),
-            (false, true) => r.on_hover_text(format!("{hover}\n\n{full}")),
+            (false, true) => r.on_hover_text(format!("{full}\n\n{hover}")),
         }
     }
 }
