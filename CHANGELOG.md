@@ -5,6 +5,8 @@ versions follow [Semantic Versioning](https://semver.org/). Feature IDs refer to
 
 ## [Unreleased]
 
+## [0.9.0] - 2026-10-08
+
 ### Added
 
 - New crate `ve_theme`, the VHRD design system: `ve_theme::setup(ctx)` installs the brand fonts and a dark and a
