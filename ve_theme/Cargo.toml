@@ -1,6 +1,6 @@
 [package]
-name = "ve_dash"
-description = "btop-style dashboard building blocks: titled panels, sparklines, meters, status dots, stat tiles"
+name = "ve_theme"
+description = "VHRD design system for egui: brand tokens, dark and light styles, typography, UiExt helpers"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
@@ -9,12 +9,11 @@ repository.workspace = true
 
 [features]
 default = ["fonts"]
-# The brand faces now live in ve_theme; this keeps the deprecated `install_fonts` re-export working.
-fonts = ["ve_theme/fonts"]
+# Embed IBM Plex Sans / Plex Mono (the vhrd_brand faces, OFL) and install them in `setup`.
+fonts = []
 
 [dependencies]
 egui.workspace = true
-ve_theme = { path = "../ve_theme", version = "0.8.0", default-features = false }
 
 [dev-dependencies]
 eframe = { workspace = true, features = ["wgpu"] }

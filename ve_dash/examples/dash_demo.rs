@@ -13,9 +13,7 @@
 
 use eframe::egui;
 use egui::{Align2, FontId, RichText, Ui, vec2};
-use ve_dash::{
-    Decay, History, Meter, Sparkline, StatTile, Status, StatusLight, Theme, install_fonts, panel,
-};
+use ve_dash::{Decay, History, Meter, Sparkline, StatTile, Status, StatusLight, Theme, panel};
 
 fn main() -> eframe::Result {
     let options = eframe::NativeOptions {
@@ -106,7 +104,7 @@ impl App {
     fn new(cc: &eframe::CreationContext<'_>) -> Self {
         let theme = Theme::dark();
         theme.apply(&cc.egui_ctx);
-        install_fonts(&cc.egui_ctx);
+        ve_theme::install_fonts(&cc.egui_ctx);
         let mut nodes = vec![
             Node::new("demo-pc", 0x9e37),
             Node::new("node-two", 0x9e38),

@@ -12,6 +12,7 @@ members = [
     "ve_widget",
     "ve_dash",
     "ve_basics",
+    "ve_theme",
 ]
 
 [workspace.dependencies]

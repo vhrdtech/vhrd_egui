@@ -34,6 +34,7 @@ in tpm (P2605). Statuses were checked against the code.
 | `ve_widget` | `Widget` trait, `WidgetInfo` registry, shared `Context`. |
 | `ve_macro` | Proc macros for widget implementations (`svt!`). |
 | `ve_basics` | Small basics every app wants: build info, label selectability, hover cross-reference highlight. |
+| `ve_theme` | The design system: brand tokens, dark and light egui styles, fonts and type scale, `UiExt` helpers, gallery. |
 | `ve_dash` | btop-style dashboard building blocks: theme, sparkline, meter, status light, stat tile, titled panel. |
 
 ## Platform (`PLT`)
@@ -79,7 +80,8 @@ darkened into the chart lightness band. The pair's CVD separation sits in the la
 chart must carry a direct text label (they all do); status colors always ship with a text label.
 
 - ✅ **DASH-1 Theme**: color tokens + `heat` good→warn→crit gradient, `Theme::apply` for egui visuals.
-  `ve_dash/src/theme.rs`, tested.
+  Since THM-1 the colors come from `ve_theme::Tokens` (`Theme::from_tokens`, `Theme::dark` / `Theme::light`),
+  public fields unchanged. `ve_dash/src/theme.rs`, tested.
 - ✅ **DASH-2 History**: fixed-capacity ring buffer feeding the charts. `ve_dash/src/history.rs`, tested.
 - ✅ **DASH-3 Sparkline**: thin line + gradient fill, auto or fixed range, hover crosshair with value readout.
   `ve_dash/src/sparkline.rs`.
@@ -92,9 +94,9 @@ chart must carry a direct text label (they all do); status colors always ship wi
   theming hook into `ve_widget` once WID-3 hosts widgets.
 - ✅ **DASH-10 Decay smoother**: asymmetric exponential attack/release (`Decay`), VU-meter needle feel for
   load bars and other indicators fed with jumpy per-frame values. `ve_dash/src/decay.rs`, tested.
-- ✅ **DASH-9 Brand fonts**: IBM Plex Sans / Plex Mono (the vhrd_brand web faces) embedded behind the `fonts`
-  feature (default on), installed with `install_fonts` as the primary proportional / monospace faces.
-  `ve_dash/src/fonts.rs`, OFL license in `ve_dash/fonts/`; the `dash_panel.png` snapshot renders with them.
+- ✅ **DASH-9 Brand fonts**: IBM Plex Sans / Plex Mono (the vhrd_brand web faces) as the primary proportional /
+  monospace faces. Moved to `ve_theme` with THM-3; `ve_dash::install_fonts` is a deprecated forwarder for one
+  version (feature `fonts` → `ve_theme/fonts`). The `dash_panel.png` snapshot renders with them, unchanged.
 - ✅ **DASH-11 Load colors**: `load_color` — series color up to half load, warn at 3/4, crit at full — and
   `Sparkline::load(max)` coloring each segment by `value / max`, so a chart says how close to capacity it
   runs without losing its series identity. `ve_dash/src/theme.rs` (tested), `ve_dash/src/sparkline.rs`.
@@ -120,6 +122,48 @@ Small helpers every app uses, crate `ve_basics`. UI rules that go with them: AGE
 - ✅ **BAS-3 Hover link**: `hover_link(ui, key, &response)` — hovering one item highlights every item registered
   under the same key from the next frame; state in ctx memory, no repaint while the pointer rests.
   `ve_basics/src/hover_link.rs`, tested.
+
+## Theme (`THM`)
+
+The VHRD design system, crate `ve_theme`, ideas from Rerun's `re_ui` (licence check in the crate docs). Apps opt
+in with one call, `ve_theme::setup(&cc.egui_ctx)`: brand fonts plus a dark and a light `egui::Style`, installed
+with `ctx.set_style_of(Theme::Dark | Theme::Light, ..)` so egui follows the system preference (fallback dark).
+`ve_theme::setup_with(ctx, dark, light)` takes overridden tokens.
+
+Token model: one `Tokens` value per theme holds everything a look needs — `Palette` (named colors: bg, surface,
+surface_raised, line, line_strong, title, text, text_muted, accent, accent_alt, primary, good, warn, crit, off,
+red, selection, hover, focus), `Space` (xs 2, s 4, m 8, l 12, xl 16, xxl 24), `Radius` (s 2, m 3, l 6),
+`Strokes` (thin, medium, thick), `Elevation` (popup and window shadows) and `TypeScale`. `Tokens::apply` turns
+it into the egui style for one theme and stores it in ctx memory; widgets and helpers read it back with
+`Tokens::of_ui(ui)` (by the `Ui`'s dark / light visuals), never from globals. Colors are vhrd_brand
+(`web/palette.json`, `tokens.css`); deviations for a dense tool UI are listed in `ve_theme/src/tokens.rs`.
+Interaction (primary, focus, selection) is the brand CAN teal; red stays for crit / danger. Text is WCAG AA
+on every background (unit-tested), status colors always come with a text label.
+
+- ✅ **THM-1 Theme tokens**: `Tokens` with `Palette`, `Space`, `Radius`, `Strokes`, `Elevation`, `TypeScale`;
+  `apply(ctx, theme)` / `apply_to_style` fill text styles, spacing and every visual — all `WidgetVisuals`
+  states (noninteractive, inactive, hovered, active, open), window and panel frames, popup and window shadows,
+  tooltips (popup frame), selection, hyperlinks, separators, scroll bars, text cursor, warn / error text.
+  `ve_theme/src/tokens.rs`, tested.
+- ✅ **THM-2 Light and dark**: `Tokens::dark()` (the ve_dash dark variant, unchanged) and `Tokens::light()` (the
+  brand light set), both `const`. `contrast` module (WCAG luminance, `ensure_contrast`); tests keep text and
+  muted text AA on bg / surface / raised / hover and derived link, warn, error and selected-item text AA.
+  `ve_theme/src/tokens.rs`, `ve_theme/src/contrast.rs`.
+- ✅ **THM-3 Typography and fonts**: IBM Plex Sans / Mono moved from ve_dash (feature `fonts`, OFL files in
+  `ve_theme/fonts/`); `TypeScale` maps sizes and line heights onto Small 10.5/14, Body 13/18, Button 13/18,
+  Monospace 12.5/18, Heading 20/26 plus `TextStyle::Name("title")` 15/20 and `"caption"` 11/14. egui keeps only
+  the size per text style; line heights apply through `TypeStep::format` and the helpers.
+  `ve_theme/src/typography.rs`, `ve_theme/src/fonts.rs`.
+- ✅ **THM-4 Widget styles**: `UiExt` on `egui::Ui`: `primary_button`, `danger_button`, `section_header`,
+  `panel_title_bar`, `toolbar`, `muted_label`, `badge` (`Tone`: neutral, accent, good, warn, crit, off). Every
+  interactive helper takes its tooltip as an argument. ve_dash's `Theme` is now `Theme::from_tokens`.
+  `ve_theme/src/ui_ext.rs`, kittest in `ve_theme/tests/ui.rs`.
+- ✅ **THM-5 Theme gallery**: `ve_theme::gallery::Gallery` shows every egui widget, every helper and the
+  palette swatches; `cargo run -p ve_theme --example gallery` puts dark and light side by side. Snapshots
+  `ve_theme/tests/snapshots/gallery_dark.png` / `gallery_light.png` (wgpu), AccessKit checks on the helpers
+  (labels, button role, click, tooltips). `ve_theme/src/gallery.rs`, `ve_theme/tests/ui.rs`.
+- 💡 **THM-6 Hot reload of tokens**: in debug builds, read the tokens from a RON file and re-apply on change, as
+  re_ui's `hot_reload_design_tokens` does, so tuning doesn't need a rebuild. Needs serde on the token types.
 
 ## Extracted from apps (`EXT`)
 

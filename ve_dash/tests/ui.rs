@@ -12,8 +12,7 @@ use std::cell::Cell;
 use std::rc::Rc;
 
 use ve_dash::{
-    Meter, SegBar, Sparkline, StatTile, Status, StatusLight, Theme, install_fonts, panel,
-    steady_width,
+    Meter, SegBar, Sparkline, StatTile, Status, StatusLight, Theme, panel, steady_width,
 };
 
 /// Deterministic wiggly series for the snapshot charts.
@@ -109,7 +108,7 @@ fn dash_panel_snapshot() {
         .with_size(vec2(460.0, 330.0))
         .build_ui(move |ui| {
             theme.apply(ui.ctx());
-            install_fonts(ui.ctx());
+            ve_theme::install_fonts(ui.ctx());
             // Cover the whole backbuffer, not just the content area, so the
             // snapshot shows the dashboard on its real window background.
             ui.painter()

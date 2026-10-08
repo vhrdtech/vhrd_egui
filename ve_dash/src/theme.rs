@@ -1,17 +1,19 @@
-//! Color tokens for the dashboard widgets, dark-first.
+//! Color tokens for the dashboard widgets, taken from `ve_theme`'s design tokens.
 //!
-//! The dark theme is the VHRD brand dark variant (vhrd_brand `web/palette.json`):
-//! background, surface, line, text and status colors come straight from it; the two
-//! series accents are the brand CAN-teal and analog-purple signal hues, darkened into
-//! the dark-mode chart lightness band. The pair's CVD separation (OKLab ΔE 7.7 deutan)
+//! [`Theme::from_tokens`] maps a `ve_theme::Tokens` set onto the fields the widgets
+//! draw from; [`Theme::dark`] and [`Theme::light`] are the VHRD brand sets. In dark,
+//! the two series accents are the brand CAN-teal and analog-purple signal hues,
+//! darkened into the dark-mode chart lightness band. The pair's CVD separation (OKLab ΔE 7.7 deutan)
 //! sits in the labels-required band, which ve_dash satisfies: every chart carries a
 //! direct text label, and the two series never share one plot unlabeled.
 //! Status colors are reserved for state and must always be paired with a text label
 //! or icon, never used as the only carrier of meaning.
 
 use egui::Color32;
+use ve_theme::Tokens;
 
-/// Color tokens the widgets draw from. Start from [`Theme::dark`] and override fields.
+/// Color tokens the widgets draw from. Start from [`Theme::dark`] / [`Theme::light`]
+/// (or [`Theme::from_tokens`] with your own tokens) and override fields.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Theme {
     /// Window background behind the panels.
@@ -46,29 +48,45 @@ pub struct Theme {
 pub const DARK: Theme = Theme::dark();
 
 impl Theme {
-    /// Dark theme (the default): the VHRD brand dark variant.
-    pub const fn dark() -> Self {
+    /// The widget colors of a `ve_theme` token set.
+    pub const fn from_tokens(tokens: &Tokens) -> Self {
+        let c = &tokens.colors;
         Self {
-            bg: Color32::from_rgb(0x0f, 0x0f, 0x10),         // dark.bg
-            panel_bg: Color32::from_rgb(0x16, 0x16, 0x17),   // dark.surface
-            border: Color32::from_rgb(0x2a, 0x2a, 0x2b),     // dark.line
-            title: Color32::from_rgb(0xa8, 0xa8, 0xa8),      // grey.400
-            text: Color32::from_rgb(0xec, 0xec, 0xec),       // dark.text
-            text_muted: Color32::from_rgb(0x9a, 0x9a, 0x9a), // dark.muted
-            accent: Color32::from_rgb(0x11, 0x8e, 0xa1),     // signal.can, chart-darkened
-            accent_alt: Color32::from_rgb(0xaa, 0x74, 0xd4), // signal.analog, chart-darkened
-            good: Color32::from_rgb(0x5c, 0xb8, 0x60),       // signal-dark.bus
-            warn: Color32::from_rgb(0xff, 0x9a, 0x3c),       // signal-dark.power
-            crit: Color32::from_rgb(0xf2, 0x4c, 0x44),       // dark.red
-            off: Color32::from_rgb(0x6e, 0x6e, 0x6e),        // brand.grey
-            red: Color32::from_rgb(0xf2, 0x4c, 0x44),        // dark.red
+            bg: c.bg,
+            panel_bg: c.surface,
+            border: c.line,
+            title: c.title,
+            text: c.text,
+            text_muted: c.text_muted,
+            accent: c.accent,
+            accent_alt: c.accent_alt,
+            good: c.good,
+            warn: c.warn,
+            crit: c.crit,
+            off: c.off,
+            red: c.red,
         }
     }
 
+    /// Dark theme (the default): the VHRD brand dark variant, `ve_theme::Tokens::dark`.
+    pub const fn dark() -> Self {
+        Self::from_tokens(&Tokens::dark())
+    }
+
+    /// Light theme: the VHRD brand light set, `ve_theme::Tokens::light`.
+    pub const fn light() -> Self {
+        Self::from_tokens(&Tokens::light())
+    }
+
     /// Apply the theme to egui's visuals: panel/window fills, text color, widget strokes.
-    /// Call once at startup (or when switching themes).
+    /// A minimal setup for dashboard-only apps; `ve_theme::setup` styles every egui widget
+    /// in dark and light and is the better choice for apps.
     pub fn apply(&self, ctx: &egui::Context) {
-        let mut visuals = egui::Visuals::dark();
+        let mut visuals = if ve_theme::contrast::luminance(self.bg) < 0.5 {
+            egui::Visuals::dark()
+        } else {
+            egui::Visuals::light()
+        };
         visuals.panel_fill = self.bg;
         visuals.window_fill = self.panel_bg;
         visuals.override_text_color = Some(self.text);
@@ -119,6 +137,19 @@ pub fn load_color(theme: &Theme, base: Color32, t: f32) -> Color32 {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// The token mapping keeps the colors ve_dash has always used (the snapshot depends on it).
+    #[test]
+    fn dark_from_tokens_is_unchanged() {
+        let th = Theme::dark();
+        assert_eq!(th.bg, Color32::from_rgb(0x0f, 0x0f, 0x10));
+        assert_eq!(th.panel_bg, Color32::from_rgb(0x16, 0x16, 0x17));
+        assert_eq!(th.border, Color32::from_rgb(0x2a, 0x2a, 0x2b));
+        assert_eq!(th.title, Color32::from_rgb(0xa8, 0xa8, 0xa8));
+        assert_eq!(th.text_muted, Color32::from_rgb(0x9a, 0x9a, 0x9a));
+        assert_eq!(th.accent, Color32::from_rgb(0x11, 0x8e, 0xa1));
+        assert_ne!(Theme::light(), th);
+    }
 
     #[test]
     fn heat_endpoints_and_garbage() {

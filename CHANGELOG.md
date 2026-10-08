@@ -5,6 +5,30 @@ versions follow [Semantic Versioning](https://semver.org/). Feature IDs refer to
 
 ## [Unreleased]
 
+### Added
+
+- New crate `ve_theme`, the VHRD design system: `ve_theme::setup(ctx)` installs the brand fonts and a dark and a
+  light egui style that follow the system theme; `setup_with(ctx, dark, light)` takes custom tokens.
+  - `Tokens` (THM-1): named color `Palette`, spacing scale, radii, stroke widths, shadows, type scale;
+    `Tokens::apply(ctx, theme)` fills every widget state, windows, popups, tooltips, selection, links,
+    separators and scroll bars.
+  - `Tokens::dark()` / `Tokens::light()` from vhrd_brand (THM-2), text WCAG AA on every background; `contrast`
+    helpers.
+  - Type scale on egui's text styles plus named `title` and `caption` styles; IBM Plex fonts (THM-3).
+  - `UiExt` helpers with built-in tooltips: `primary_button`, `danger_button`, `section_header`,
+    `panel_title_bar`, `toolbar`, `muted_label`, `badge` with `Tone` (THM-4).
+  - `gallery::Gallery` and the `gallery` example, dark and light side by side; image snapshots
+    `gallery_dark.png` / `gallery_light.png` (THM-5).
+- `ve_dash`: `Theme::from_tokens(&Tokens)` and `Theme::light()` (THM-4).
+
+### Changed
+
+- **Breaking:** `ve_dash`: the brand fonts moved to `ve_theme` (THM-3). `ve_dash::install_fonts`, `PLEX_SANS` and
+  `PLEX_MONO` are deprecated forwarders for one version; use `ve_theme::setup` or `ve_theme::install_fonts`. The
+  font files moved from `ve_dash/fonts/` to `ve_theme/fonts/`; ve_dash now depends on ve_theme.
+- `ve_dash`: `Theme::dark()` is built from `ve_theme::Tokens::dark()` (same colors, `dash_panel.png` unchanged);
+  `Theme::apply` picks light egui visuals for a light theme.
+
 ## [0.8.0] - 2026-10-08
 
 ### Added

@@ -46,7 +46,11 @@ Cargo workspace, edition 2024, one shared version (`[workspace.package]`).
   `WidgetInfo`), `Context` (shared user state behind a tokio `RwLock`).
 - `ve_macro/` — proc macros for widget implementations (`svt!` destructures `self` into seed / visual /
   transient).
-- `ve_dash/` — btop-style dashboard blocks (theme, sparkline, meter, segmented bar, tiles).
+- `ve_theme/` — the design system: brand `Tokens` (colors, spacing, radii, strokes, shadows, type scale) applied
+  as egui dark and light styles, IBM Plex fonts, `UiExt` helpers (primary / danger button, section header,
+  panel title bar, toolbar, muted label, badge), the gallery example.
+- `ve_dash/` — btop-style dashboard blocks (theme from `ve_theme` tokens, sparkline, meter, segmented bar,
+  tiles).
 - `ve_basics/` — build info, non-selectable labels, hover cross-reference highlight.
 
 New helpers go into a crate of their own with the `ve_` prefix when they have their own dependencies, otherwise
@@ -67,8 +71,12 @@ run a GUI, say so and describe the manual check.
 
 ## UI guide rules
 
-Every app on vhrd_egui follows these (the helpers are in `ve_basics`):
+Every app on vhrd_egui follows these (the helpers are in `ve_basics` and `ve_theme`):
 
+- **Apps opt in to the theme with `ve_theme::setup(&cc.egui_ctx)`** at startup (fonts, dark and light styles
+  following the system). Colors, spacing and radii come from `Tokens` (`ui.tokens()` via `ve_theme::UiExt`),
+  not hex literals in app code; what `Style` can't express goes into a `UiExt` helper. Tune the look in the
+  gallery (`cargo run -p ve_theme --example gallery`) and update its snapshots.
 - **Generous tooltips** on every control, number, badge and abbreviation: what it is, its unit, what clicking it
   does. If a user could ask "what is this?", hovering answers it. Build info shows version, SHA and build time
   in full on hover (`build_info_label`, BAS-1 build-info).

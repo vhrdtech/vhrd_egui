@@ -9,14 +9,13 @@
 //! [`panel`] frame. [`steady_width`] keeps live values from shoving their
 //! neighbours around.
 //!
-//! The `fonts` feature (on by default) embeds the brand faces IBM Plex Sans and
-//! IBM Plex Mono; call [`install_fonts`] once at startup.
+//! Colors come from `ve_theme`'s design tokens ([`Theme::from_tokens`]); apps turn the whole
+//! look on with `ve_theme::setup(ctx)`, which also installs the brand fonts. ve_dash's own
+//! `install_fonts` is deprecated and forwards to `ve_theme::install_fonts`.
 //!
 //! Run the demo: `cargo run -p ve_dash --example dash_demo`.
 
 mod decay;
-#[cfg(feature = "fonts")]
-mod fonts;
 mod history;
 mod meter;
 mod panel;
@@ -28,8 +27,6 @@ mod steady;
 mod theme;
 
 pub use decay::Decay;
-#[cfg(feature = "fonts")]
-pub use fonts::{PLEX_MONO, PLEX_SANS, install_fonts};
 pub use history::History;
 pub use meter::Meter;
 pub use panel::panel;
@@ -39,3 +36,24 @@ pub use stat::StatTile;
 pub use status::{Status, StatusLight};
 pub use steady::steady_width;
 pub use theme::{DARK, Theme, heat, load_color};
+
+/// IBM Plex Sans Regular, TTF bytes.
+#[cfg(feature = "fonts")]
+#[deprecated(since = "0.9.0", note = "moved to ve_theme::PLEX_SANS")]
+pub const PLEX_SANS: &[u8] = ve_theme::PLEX_SANS;
+
+/// IBM Plex Mono Regular, TTF bytes.
+#[cfg(feature = "fonts")]
+#[deprecated(since = "0.9.0", note = "moved to ve_theme::PLEX_MONO")]
+pub const PLEX_MONO: &[u8] = ve_theme::PLEX_MONO;
+
+/// Install the brand fonts. Moved to `ve_theme`; prefer `ve_theme::setup`, which installs them together
+/// with the dark and light styles.
+#[cfg(feature = "fonts")]
+#[deprecated(
+    since = "0.9.0",
+    note = "use ve_theme::setup (fonts + styles) or ve_theme::install_fonts"
+)]
+pub fn install_fonts(ctx: &egui::Context) {
+    ve_theme::install_fonts(ctx);
+}
