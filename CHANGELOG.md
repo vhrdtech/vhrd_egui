@@ -7,6 +7,9 @@ versions follow [Semantic Versioning](https://semver.org/). Feature IDs refer to
 
 ### Added
 
+- `ve_dash`: `reset_steady(ctx)` forgets the learned widths (DASH-12); `SteadyColumn::lit`, a non-clickable cell
+  that lights up under the pointer, and a public `was_hovered` (DASH-15); `Sparkline::clock` shows the absolute
+  time in the hover beside the age, the time axis is stronger and larger (DASH-16).
 - `ve_dash`: `ActionChip`, a clickable chip with hover, pressed and active states and a tooltip (DASH-15);
   `Sparkline::every` draws a light time axis and adds the age to the hover (DASH-16); `age_label` (DASH-16).
 - `ve_theme`: `brand_font` (bold Plex Sans) and the `TypeScale::brand` size token for wordmarks (THM-8).

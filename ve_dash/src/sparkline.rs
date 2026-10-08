@@ -25,6 +25,7 @@ pub struct Sparkline<'a> {
     fill: bool,
     load_max: Option<f32>,
     every: Option<Duration>,
+    clock: Option<fn(i64) -> String>,
 }
 
 impl<'a> Sparkline<'a> {
@@ -38,6 +39,7 @@ impl<'a> Sparkline<'a> {
             fill: true,
             load_max: None,
             every: None,
+            clock: None,
         }
     }
 
@@ -89,6 +91,14 @@ impl<'a> Sparkline<'a> {
     /// ```
     pub fn every(mut self, every: Duration) -> Self {
         self.every = (!every.is_zero()).then_some(every);
+        self
+    }
+
+    /// How to write a unix time as a wall-clock time (`21:40`; the app knows the time zone): with
+    /// [`every`](Self::every), the hover readout then shows the sample's absolute time beside its age
+    /// (`1.2 · -12m · 21:40`). The newest sample counts as taken now.
+    pub fn clock(mut self, clock: fn(i64) -> String) -> Self {
+        self.clock = Some(clock);
         self
     }
 
@@ -177,7 +187,9 @@ impl Widget for Sparkline<'_> {
 
         if let (Some(every), true) = (self.every, rect.height() >= AXIS_MIN_HEIGHT) {
             let span = every.as_secs_f32() * (n - 1) as f32;
-            let font = FontId::monospace(9.0);
+            let font = FontId::monospace(10.0);
+            // Stronger than the muted text but still lighter than the data.
+            let color = DARK.text_muted.lerp_to_gamma(DARK.text, 0.4);
             let y = rect.bottom() - 1.0;
             for (frac, align) in [
                 (0.0, Align2::LEFT_BOTTOM),
@@ -190,12 +202,12 @@ impl Widget for Sparkline<'_> {
                     align,
                     age_label(span * (1.0 - frac)),
                     font.clone(),
-                    DARK.text_muted,
+                    color,
                 );
                 painter.vline(
                     x.clamp(rect.left() + 0.5, rect.right() - 0.5),
-                    (rect.bottom() - 3.0)..=rect.bottom(),
-                    Stroke::new(1.0, DARK.border),
+                    (rect.bottom() - 4.0)..=rect.bottom(),
+                    Stroke::new(1.0, color),
                 );
             }
         }
@@ -211,6 +223,12 @@ impl Widget for Sparkline<'_> {
             if let Some(every) = self.every {
                 let ago = every.as_secs_f32() * (n - 1 - i) as f32;
                 label = format!("{label} · {}", age_label(ago));
+                if let Some(clock) = self.clock {
+                    let now = std::time::SystemTime::now()
+                        .duration_since(std::time::UNIX_EPOCH)
+                        .map_or(0, |d| d.as_secs() as i64);
+                    label = format!("{label} · {}", clock(now - ago.round() as i64));
+                }
             }
             let font = FontId::monospace(11.0);
             let above = Rect::from_min_max(rect.min, pos2(rect.max.x, p.y)).height() > 16.0;

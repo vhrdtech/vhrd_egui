@@ -40,7 +40,7 @@ pub use segbar::{SegBar, Segments, lit_segments};
 pub use sparkline::{Sparkline, age_label};
 pub use stat::StatTile;
 pub use status::{Status, StatusLight};
-pub use steady::{steady_of, steady_width};
+pub use steady::{reset_steady, steady_of, steady_width};
 pub use theme::{DARK, Theme, heat, load_color};
 
 /// IBM Plex Sans Regular, TTF bytes.

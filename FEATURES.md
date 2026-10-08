@@ -163,12 +163,15 @@ Small helpers every app uses, crate `ve_basics`. UI rules that go with them: AGE
 - ✅ **DASH-15 Action chip**: `ActionChip` — a clickable text chip (language switch, mode toggles) with a rounded
   background that lights up under the pointer and presses in, pointing-hand cursor, tooltip, `min_width` for a
   learned width and `active` for a switched-on mode; labelled for accessibility. `ve_dash/src/chip.rs`, kittest in
-  `ve_dash/tests/ui.rs`. `SteadyColumn::link` keeps its hover memory per cell (a column-wide one underlined the
+  `ve_dash/tests/ui.rs`. `SteadyColumn::lit` is a non-clickable cell that lights up the same way; `was_hovered` is public.
+  `reset_steady(ctx)` forgets every learned width (call it when the language switches). `SteadyColumn::link` keeps its hover memory per cell (a column-wide one underlined the
   next row, and the first when the last was hovered; unit-tested in `column.rs`).
 - ✅ **DASH-16 Sparkline time axis**: `Sparkline::every(Duration)` — the time between samples — draws a light time
   axis (`-1m`, `-30s`, `now`; monospace, muted, a tick each) along charts at least 26 px high and puts the age
   of the sample into the hover readout; `age_label` formats ages. `ve_dash/src/sparkline.rs`, snapshot
-  `ve_dash/tests/snapshots/sparkline_axis.png`, shown in `dash_demo`.
+  `ve_dash/tests/snapshots/sparkline_axis.png`, shown in `dash_demo`. The axis text is the muted colour pulled 40 % toward
+  the text colour (lighter than the data, still readable); `Sparkline::clock(fn(i64) -> String)` adds the sample's
+  absolute time to the hover beside its age (`1.2 · -12m · 21:40`).
 - ✅ **BAS-1 Build info**: `BuildInfo`, `build_info!()` (captures the *calling* crate's name, version,
   `GIT_SHA`, `BUILD_TIME` and `cfg!(debug_assertions)`) and `build_info_label` — `version · sha · debug|release`
   with an orange debug marker and a tooltip spelling everything out. The app's `build.rs` sets `GIT_SHA` /

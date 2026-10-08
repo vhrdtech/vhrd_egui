@@ -97,14 +97,50 @@ impl SteadyColumn {
         self.text_cell(ui, text.into(), hover.into(), true)
     }
 
-    /// Whether the link cell showing `text` was under the pointer in the last frame.
-    #[cfg(test)]
-    fn was_hovered(&self, ui: &Ui, text: &str) -> bool {
+    /// Whether the link or lit cell showing `text` was under the pointer in the last frame.
+    pub fn was_hovered(&self, ui: &Ui, text: &str) -> bool {
         let id = self.id.with("hover").with(text);
         ui.data(|d| d.get_temp::<bool>(id)).unwrap_or(false)
     }
 
+    /// A text cell that is not clickable but still lights up under the pointer (the text turns to the strong
+    /// colour), so every row of a list answers a hover alike, whatever it can do.
+    pub fn lit(
+        &self,
+        ui: &mut Ui,
+        text: impl Into<RichText>,
+        hover: impl Into<String>,
+    ) -> Response {
+        let text: RichText = text.into();
+        let id = self.id.with("hover").with(text.text());
+        let lit = ui.data(|d| d.get_temp::<bool>(id)).unwrap_or(false);
+        let text = if lit {
+            text.color(ui.visuals().strong_text_color())
+        } else {
+            text
+        };
+        let r = self.text_cell_with(ui, text, hover.into(), false, Sense::hover());
+        ui.data_mut(|d| d.insert_temp(id, r.hovered()));
+        r
+    }
+
     fn text_cell(&self, ui: &mut Ui, text: RichText, hover: String, clickable: bool) -> Response {
+        let sense = if clickable {
+            Sense::click()
+        } else {
+            Sense::hover()
+        };
+        self.text_cell_with(ui, text, hover, clickable, sense)
+    }
+
+    fn text_cell_with(
+        &self,
+        ui: &mut Ui,
+        text: RichText,
+        hover: String,
+        clickable: bool,
+        sense: Sense,
+    ) -> Response {
         // One hover memory per cell (keyed by its text), not per column: a column-wide one underlined the next
         // row of the column, and the first row when the last was hovered.
         let id = self.id.with("hover").with(text.text());
@@ -127,11 +163,7 @@ impl SteadyColumn {
             .size()
             .x;
         let label = Label::new(widget).truncate().selectable(false);
-        let label = if clickable {
-            label.sense(Sense::click())
-        } else {
-            label
-        };
+        let label = label.sense(sense);
         let r = self.cell(ui, |ui| ui.add(label)).inner;
         if clickable {
             ui.data_mut(|d| d.insert_temp(id, r.hovered()));
@@ -170,18 +202,26 @@ mod tests {
                 for n in names {
                     col.link(ui, n, "");
                 }
-                *out.borrow_mut() = names.iter().map(|n| col.was_hovered(ui, n)).collect();
+                for n in ["plain", "other"] {
+                    col.lit(ui, n, "");
+                }
+                *out.borrow_mut() = names
+                    .iter()
+                    .chain(["plain", "other"].iter())
+                    .map(|n| col.was_hovered(ui, n))
+                    .collect();
             });
         h.run();
         for (name, want) in [
-            ("one", [true, false, false]),
-            ("three", [false, false, true]),
+            ("one", [true, false, false, false, false]),
+            ("three", [false, false, true, false, false]),
+            ("other", [false, false, false, false, true]),
         ] {
             let at = h.get_by_label_contains(name).rect().center();
             h.hover_at(at);
             h.step();
             h.step();
-            assert_eq!(seen.borrow()[..3], want, "hovering {name}");
+            assert_eq!(seen.borrow()[..5], want, "hovering {name}");
         }
     }
 }

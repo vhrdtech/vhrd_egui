@@ -305,3 +305,23 @@ fn sparkline_time_axis() {
     // painted text isn't in the accesskit tree: the snapshot is the guard
     h.snapshot("sparkline_axis");
 }
+
+/// `reset_steady` makes the learned widths settle again on what is drawn next.
+#[test]
+fn reset_steady_forgets_learned_widths() {
+    let long = Rc::new(Cell::new(true));
+    let flag = long.clone();
+    let got = Rc::new(Cell::new(0.0));
+    let out = got.clone();
+    let mut h = Harness::new_ui(move |ui| {
+        let w = if flag.get() { 100.0 } else { 20.0 };
+        out.set(ve_dash::steady_of(ui, "w", w));
+    });
+    h.run();
+    long.set(false);
+    h.run();
+    assert_eq!(got.get(), 100.0, "keeps the widest");
+    ve_dash::reset_steady(&h.ctx);
+    h.run();
+    assert_eq!(got.get(), 20.0, "settles on the new text");
+}
