@@ -4,9 +4,10 @@
 use std::ops::RangeInclusive;
 use std::time::Duration;
 
+use egui::epaint::{PathShape, PathStroke};
 use egui::{
-    Align2, Color32, FontId, Mesh, Pos2, Rect, Response, Sense, Shape, Stroke, Ui, Vec2, Widget,
-    pos2, remap_clamp, vec2,
+    Align2, Color32, FontId, Id, LayerId, Mesh, Order, Pos2, Rect, Response, Sense, Shape, Stroke,
+    Ui, Vec2, Widget, pos2, remap_clamp, vec2,
 };
 
 use crate::theme::{DARK, load_color};
@@ -24,6 +25,7 @@ pub struct Sparkline<'a> {
     color: Color32,
     fill: bool,
     load_max: Option<f32>,
+    color_by: Option<ColorBy<'a>>,
     every: Option<Duration>,
     clock: Option<fn(i64) -> String>,
 }
@@ -38,6 +40,7 @@ impl<'a> Sparkline<'a> {
             color: DARK.accent,
             fill: true,
             load_max: None,
+            color_by: None,
             every: None,
             clock: None,
         }
@@ -81,6 +84,17 @@ impl<'a> Sparkline<'a> {
         self
     }
 
+    /// Color the line (and its fill and hover dot) by value: `f(value)` is the color at that value, and the line
+    /// changes color smoothly along its length as the value moves. Wins over [`load`](Self::load).
+    ///
+    /// ```ignore
+    /// Sparkline::new(cpu.values()).range(0.0..=100.0).color_by(|v| heat(&theme, v / 100.0))
+    /// ```
+    pub fn color_by(mut self, f: impl Fn(f32) -> Color32 + 'a) -> Self {
+        self.color_by = Some(Box::new(f));
+        self
+    }
+
     /// The time between two samples: draws a light time axis (few ticks, `now` at the right edge, tabular
     /// digits, muted) along the bottom and puts the age of the sample under the pointer into the hover readout.
     /// Without it the chart has no time scale, as before. The axis needs room (about 26 px of height); a
@@ -104,6 +118,9 @@ impl<'a> Sparkline<'a> {
 
     /// Color of a point with value `v`.
     fn color_at(&self, v: f32) -> Color32 {
+        if let Some(f) = &self.color_by {
+            return f(v);
+        }
         match self.load_max {
             Some(max) => load_color(&DARK, self.color, v / max),
             None => self.color,
@@ -175,7 +192,25 @@ impl Widget for Sparkline<'_> {
             }
             painter.add(Shape::mesh(mesh));
         }
-        if self.load_max.is_some() {
+        if self.color_by.is_some() {
+            // One path whose color follows the height, i.e. the value: a smooth gradient along the line.
+            let table: Vec<Color32> = (0..=GRADIENT_STEPS)
+                .map(|k| {
+                    let t = k as f32 / GRADIENT_STEPS as f32;
+                    self.color_at(range.start() + t * (range.end() - range.start()))
+                })
+                .collect();
+            let (top, bottom) = (rect.top(), rect.bottom());
+            painter.add(Shape::Path(PathShape {
+                points: points.clone(),
+                closed: false,
+                fill: Color32::TRANSPARENT,
+                stroke: PathStroke::new_uv(1.5, move |_, pos| {
+                    let t = remap_clamp(pos.y, bottom..=top, 0.0..=1.0);
+                    table[(t * GRADIENT_STEPS as f32).round() as usize]
+                }),
+            }));
+        } else if self.load_max.is_some() {
             // One stroke per segment, in the color of its higher end.
             for (i, w) in points.windows(2).enumerate() {
                 let v = self.values[i].max(self.values[i + 1]);
@@ -231,21 +266,42 @@ impl Widget for Sparkline<'_> {
                 }
             }
             let font = FontId::monospace(11.0);
-            let above = Rect::from_min_max(rect.min, pos2(rect.max.x, p.y)).height() > 16.0;
-            let (anchor_pos, align) = if above {
-                (pos2(p.x, p.y - 4.0), Align2::CENTER_BOTTOM)
-            } else {
-                (pos2(p.x, p.y + 4.0), Align2::CENTER_TOP)
-            };
             let text_size = painter
                 .layout_no_wrap(label.clone(), font.clone(), DARK.text)
                 .size();
-            let text_rect = align.anchor_size(anchor_pos, text_size);
-            painter.rect_filled(text_rect.expand(3.0), 3.0, DARK.bg.gamma_multiply(0.9));
-            painter.text(anchor_pos, align, label, font, DARK.text);
+            // Drawn on the tooltip layer, not clipped to the chart: it goes where it fits on screen.
+            let layer = ui.ctx().layer_painter(LayerId::new(
+                Order::Tooltip,
+                Id::new("ve_dash::sparkline_readout"),
+            ));
+            let text_rect = place_readout(p, text_size, ui.ctx().content_rect());
+            layer.rect_filled(text_rect.expand(3.0), 3.0, DARK.bg.gamma_multiply(0.9));
+            layer.text(text_rect.min, Align2::LEFT_TOP, label, font, DARK.text);
         }
         response
     }
+}
+
+/// Where the hover readout of size `size` goes for the data point `p`: above it when that fits inside `bounds`
+/// (the window), else flipped below, always shifted back inside `bounds` sideways and vertically.
+pub fn place_readout(p: Pos2, size: Vec2, bounds: Rect) -> Rect {
+    const GAP: f32 = 7.0; // clear of the dot, and room for the readout's 3 px padding
+    let x = p.x - size.x / 2.0;
+    let above = p.y - GAP - size.y;
+    let y = if above >= bounds.top() + 3.0 {
+        above
+    } else {
+        p.y + GAP
+    };
+    let max_x = (bounds.right() - size.x - 3.0).max(bounds.left() + 3.0);
+    let max_y = (bounds.bottom() - size.y - 3.0).max(bounds.top() + 3.0);
+    Rect::from_min_size(
+        pos2(
+            x.clamp(bounds.left() + 3.0, max_x),
+            y.clamp(bounds.top() + 3.0, max_y),
+        ),
+        size,
+    )
 }
 
 fn format_value(v: f32) -> String {
@@ -257,6 +313,12 @@ fn format_value(v: f32) -> String {
         format!("{v:.2}")
     }
 }
+
+/// A value → color function, see [`Sparkline::color_by`].
+type ColorBy<'a> = Box<dyn Fn(f32) -> Color32 + 'a>;
+
+/// Resolution of the color table behind [`Sparkline::color_by`].
+const GRADIENT_STEPS: usize = 64;
 
 /// Charts at least this high get the time axis.
 const AXIS_MIN_HEIGHT: f32 = 26.0;
@@ -284,7 +346,25 @@ pub fn age_label(secs: f32) -> String {
 
 #[cfg(test)]
 mod tests {
-    use super::age_label;
+    use super::{age_label, place_readout};
+    use egui::{Rect, pos2, vec2};
+
+    #[test]
+    fn readout_goes_above_flips_below_and_stays_on_screen() {
+        let win = Rect::from_min_size(pos2(0.0, 0.0), vec2(400.0, 300.0));
+        let size = vec2(80.0, 14.0);
+        // Room above: sits above the point.
+        let r = place_readout(pos2(200.0, 100.0), size, win);
+        assert!(r.bottom() < 100.0);
+        // Point at the top edge: flips below.
+        let r = place_readout(pos2(200.0, 5.0), size, win);
+        assert!(r.top() > 5.0);
+        // Near the right and bottom edges: shifted back inside.
+        let r = place_readout(pos2(398.0, 299.0), size, win);
+        assert!(win.contains_rect(r));
+        let r = place_readout(pos2(1.0, 150.0), size, win);
+        assert!(r.left() >= 0.0);
+    }
 
     #[test]
     fn ages_read_short() {

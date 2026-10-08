@@ -212,6 +212,19 @@ impl App {
             );
             ui.add_space(6.0);
 
+            // Colour along the line by value (`color_by`): green low, red high.
+            ui.label(
+                RichText::new("rtt by value")
+                    .color(theme.text_muted)
+                    .size(11.0),
+            );
+            ui.add(
+                Sparkline::new(node.rtt.values())
+                    .height(28.0)
+                    .color_by(|v| ve_dash::heat(&theme, v / 100.0)),
+            );
+            ui.add_space(6.0);
+
             ui.label(RichText::new("events").color(theme.text_muted).size(11.0));
             ui.add(
                 Sparkline::new(node.traffic.values())

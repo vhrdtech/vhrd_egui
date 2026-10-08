@@ -5,6 +5,20 @@ versions follow [Semantic Versioning](https://semver.org/). Feature IDs refer to
 
 ## [Unreleased]
 
+### Added
+
+- `ve_dash`: `Sparkline::color_by` colours the line, fill and hover dot by value, smoothly along the line (DASH-18).
+
+### Fixed
+
+- `ve_dash`: the `Sparkline` hover readout is no longer clipped to the chart or cut at the window edge: above the
+  point when it fits, else below, always inside the window (DASH-19).
+
+### Changed
+
+- `ve_dash`: steady widths (`steady_width`, `SteadyColumn`, `StatTile::steady`) compact: after 3 minutes without
+  growth they glide down to what the content needed since, never while it is still changing (DASH-20).
+
 ## [0.12.0] - 2026-10-08
 
 ### Added

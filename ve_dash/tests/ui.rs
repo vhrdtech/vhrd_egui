@@ -306,6 +306,56 @@ fn sparkline_time_axis() {
     h.snapshot("sparkline_axis");
 }
 
+/// `color_by` changes the line's color along its length with the value; the hover readout of a point at the top
+/// of a window flips below it and stays inside.
+#[test]
+fn sparkline_color_by_value_and_readout_flips() {
+    let values: Vec<f32> = (0..60)
+        .map(|i| 50.0 + 50.0 * (i as f32 * 0.12).sin())
+        .collect();
+    let theme = Theme::dark();
+    let mut h = Harness::builder()
+        .with_size(vec2(260.0, 80.0))
+        .build_ui(move |ui| {
+            ui.add(
+                Sparkline::new(&values)
+                    .range(0.0..=100.0)
+                    .height(60.0)
+                    .color_by(|v| ve_dash::heat(&theme, v / 100.0)),
+            );
+        });
+    h.run();
+    // Near the top of the harness window the readout would not fit above the point.
+    h.hover_at(pos2(60.0, 20.0));
+    h.step();
+    h.snapshot("sparkline_gradient");
+}
+
+/// Compaction never runs in a few frames: a shorter value keeps its room (the glide itself is unit-tested).
+#[test]
+fn steady_width_keeps_room_over_a_few_frames() {
+    let long = Rc::new(Cell::new(true));
+    let x = Rc::new(Cell::new(0.0));
+    let mut h = Harness::new_ui({
+        let (long, x) = (long.clone(), x.clone());
+        move |ui| {
+            ui.horizontal(|ui| {
+                steady_width(ui, "r", |ui| {
+                    ui.label(if long.get() { "1023M/s" } else { "5K/s" })
+                });
+                x.set(ui.label("|").rect.left());
+            });
+        }
+    });
+    h.run();
+    let wide = x.get();
+    long.set(false);
+    for _ in 0..20 {
+        h.step();
+    }
+    assert_eq!(x.get(), wide);
+}
+
 /// `reset_steady` makes the learned widths settle again on what is drawn next.
 #[test]
 fn reset_steady_forgets_learned_widths() {

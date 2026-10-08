@@ -59,15 +59,18 @@ impl SteadyColumn {
     ) -> InnerResponse<R> {
         let min = self.width(ui);
         let max = self.max;
+        let mut need = 0.0;
         let inner = ui.scope(|ui| {
             ui.set_min_width(min);
             if max.is_finite() {
                 ui.set_max_width(max.max(min));
             }
-            add_contents(ui)
+            let content = ui.scope(add_contents);
+            need = content.response.rect.width();
+            content.inner
         });
-        remember(ui, self.id, inner.response.rect.width().min(self.max));
-        inner
+        remember(ui, self.id, need.min(self.max));
+        InnerResponse::new(inner.inner, inner.response)
     }
 
     /// A text cell: truncated with an ellipsis when wider than `max_width`, the full text on hover then.

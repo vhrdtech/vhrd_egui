@@ -143,7 +143,7 @@ chart must carry a direct text label (they all do); status colors always ship wi
   `Sparkline::load(max)` coloring each segment by `value / max`, so a chart says how close to capacity it
   runs without losing its series identity. `ve_dash/src/theme.rs` (tested), `ve_dash/src/sparkline.rs`.
 - ✅ **DASH-12 Steady widths**: `steady_width` and `StatTile::steady()` keep the widest width a piece of UI has
-  had (grow at once, never shrink), so live values changing length don't move what follows.
+  had (grow at once; shrink only by compaction, DASH-20), so live values changing length don't move what follows.
   `ve_dash/src/steady.rs`, kittest in `ve_dash/tests/ui.rs`.
 
 - ✅ **DASH-13 Segmented bar**: `SegBar` / `Segments` — a small percent bar of exactly 5 or 10 segments, heat
@@ -177,6 +177,17 @@ Small helpers every app uses, crate `ve_basics`. UI rules that go with them: AGE
   (`.size_switch(key)`, read with `PanelSize::of(ctx, key)`; the layout decides what it means: auto leaves it to the
   layout, compact one narrow column, wide the whole row), so neither takes a row of its own. `panel()` is a `Panel`
   without controls. `ve_dash/src/panel.rs`, kittest in `ve_dash/tests/ui.rs`.
+- ✅ **DASH-18 Sparkline colour by value**: `Sparkline::color_by(|v| colour)` — the line, its fill and the hover dot
+  change colour smoothly along the line with the value (a colour table sampled over the range, a path stroke
+  coloured by height), so any chart can show green→red or any ramp. `ve_dash/src/sparkline.rs`, snapshot
+  `sparkline_gradient`, shown in `examples/dash_demo.rs`.
+- ✅ **DASH-19 Sparkline readout placement**: the hover readout is drawn on the tooltip layer, not clipped to the
+  chart: above the point when that fits in the window, else flipped below, always shifted inside the window
+  (`place_readout`, unit-tested; snapshot `sparkline_gradient` hovers near the top edge).
+- ✅ **DASH-20 Steady widths compact**: `steady_width`, `SteadyColumn` and `StatTile::steady()` no longer keep the
+  widest forever: after `COMPACT_AFTER` (3 min) without growth the width glides (`animate_value`) down to the
+  widest the content needed since, never while the content's width is still changing (5 s), and growth stays
+  immediate; `reset_steady` still forgets everything. `ve_dash/src/steady.rs`, unit tests for the policy.
 - ✅ **BAS-1 Build info**: `BuildInfo`, `build_info!()` (captures the *calling* crate's name, version,
   `GIT_SHA`, `BUILD_TIME` and `cfg!(debug_assertions)`) and `build_info_label` — `version · sha · debug|release`
   with an orange debug marker and a tooltip spelling everything out. The app's `build.rs` sets `GIT_SHA` /
