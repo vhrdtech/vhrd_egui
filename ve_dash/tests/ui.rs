@@ -229,7 +229,7 @@ fn steady_column_link_truncates_keeps_neighbours_and_clicks() {
                     seen.set(true);
                 }
                 ui.label("slug");
-                ui.button("close");
+                let _ = ui.button("close");
             });
         });
     h.run();

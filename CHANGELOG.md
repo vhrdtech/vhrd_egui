@@ -8,9 +8,15 @@ versions follow [Semantic Versioning](https://semver.org/). Feature IDs refer to
 ### Added
 
 - `ve_dash`: `SteadyColumn` aligns the first cell of list rows to the widest row seen, capped with an ellipsis and
-  the full text on hover (DASH-14); `steady_of` gives the learned width of a measured piece (DASH-14).
+  the full text on hover, `link` for a clickable name (DASH-14); `steady_of` gives the learned width of a measured
+  piece (DASH-14); `info_icon`, a painted ⓘ for row details in a tooltip (DASH-14). The `dash_demo` shows them.
 - `ve_theme`: `number_font` / `number_text` and the bundled IBM Plex Mono Bold: bold numbers with tabular digits
   (THM-7).
+
+### Changed
+
+- `ve_dash`: a steady width that grows asks egui for another pass at once (`request_discard`), so pieces laid
+  out earlier in the frame take the new width in the same frame instead of lagging one frame (DASH-12, DASH-14).
 
 ## [0.11.0] - 2026-10-08
 

@@ -157,7 +157,9 @@ Small helpers every app uses, crate `ve_basics`. UI rules that go with them: AGE
 - ✅ **DASH-14 Steady column**: `SteadyColumn` — the first cell of list rows (login names, session names) as wide as
   the widest row has needed, capped at `max_width` with an ellipsis and the full text on hover, so the cells after
   it line up with no hard-coded width; `steady_of` returns the learned width of a measured piece before drawing
-  (to decide what fits). `ve_dash/src/column.rs`, `steady.rs`, kittest in `ve_dash/tests/ui.rs`.
+  (to decide what fits); `SteadyColumn::link` is a clickable cell; `info_icon` a painted ⓘ whose tooltip holds the
+  details a row has no room for; a growing steady width re-runs the pass so nothing lags a frame. `ve_dash/src/column.rs`,
+  `info.rs`, `steady.rs`, kittest in `ve_dash/tests/ui.rs`, shown in `examples/dash_demo.rs`.
 - ✅ **BAS-1 Build info**: `BuildInfo`, `build_info!()` (captures the *calling* crate's name, version,
   `GIT_SHA`, `BUILD_TIME` and `cfg!(debug_assertions)`) and `build_info_label` — `version · sha · debug|release`
   with an orange debug marker and a tooltip spelling everything out. The app's `build.rs` sets `GIT_SHA` /

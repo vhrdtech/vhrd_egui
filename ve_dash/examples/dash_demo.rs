@@ -13,7 +13,9 @@
 
 use eframe::egui;
 use egui::{Align2, FontId, RichText, Ui, vec2};
-use ve_dash::{Decay, History, Meter, Sparkline, StatTile, Status, StatusLight, Theme, panel};
+use ve_dash::{
+    Decay, History, Meter, Sparkline, StatTile, Status, StatusLight, SteadyColumn, Theme, panel,
+};
 
 fn main() -> eframe::Result {
     let options = eframe::NativeOptions {
@@ -174,6 +176,19 @@ impl App {
                 (false, false) => (Status::Off, "offline"),
             };
             ui.add(StatusLight::new(status, label));
+            // Steady column + info icon: the fields of every node panel line up whatever
+            // the name's length; the full name is on hover when it is cut.
+            let fields = SteadyColumn::new(ui, "fields").max_width(ui.available_width() * 0.5);
+            ui.horizontal(|ui| {
+                fields.label(
+                    ui,
+                    RichText::new(format!("{} · demo node", node.name))
+                        .size(11.0)
+                        .color(theme.text_muted),
+                );
+                ve_dash::info_icon(ui, &theme, 12.0)
+                    .on_hover_text("synthetic data: nothing here is measured");
+            });
             ui.add_space(6.0);
 
             ui.label(RichText::new("rtt").color(theme.text_muted).size(11.0));
