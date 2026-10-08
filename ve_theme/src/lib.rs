@@ -42,7 +42,8 @@ mod ui_ext;
 
 #[cfg(feature = "fonts")]
 pub use fonts::{
-    NUMBER_FAMILY, PLEX_MONO, PLEX_MONO_BOLD, PLEX_SANS, install_fonts, number_font, number_text,
+    BRAND_FAMILY, NUMBER_FAMILY, PLEX_MONO, PLEX_MONO_BOLD, PLEX_SANS, PLEX_SANS_BOLD, brand_font,
+    install_fonts, number_font, number_text,
 };
 pub use tokens::{Elevation, Palette, Radius, Space, Strokes, Tokens};
 pub use ui_ext::{Tone, UiExt};

@@ -15,6 +15,7 @@
 //!
 //! Run the demo: `cargo run -p ve_dash --example dash_demo`.
 
+mod chip;
 mod column;
 mod decay;
 mod history;
@@ -28,6 +29,7 @@ mod status;
 mod steady;
 mod theme;
 
+pub use chip::ActionChip;
 pub use column::SteadyColumn;
 pub use decay::Decay;
 pub use history::History;

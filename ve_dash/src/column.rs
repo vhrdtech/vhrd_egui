@@ -97,8 +97,17 @@ impl SteadyColumn {
         self.text_cell(ui, text.into(), hover.into(), true)
     }
 
+    /// Whether the link cell showing `text` was under the pointer in the last frame.
+    #[cfg(test)]
+    fn was_hovered(&self, ui: &Ui, text: &str) -> bool {
+        let id = self.id.with("hover").with(text);
+        ui.data(|d| d.get_temp::<bool>(id)).unwrap_or(false)
+    }
+
     fn text_cell(&self, ui: &mut Ui, text: RichText, hover: String, clickable: bool) -> Response {
-        let id = self.id.with("hover");
+        // One hover memory per cell (keyed by its text), not per column: a column-wide one underlined the next
+        // row of the column, and the first row when the last was hovered.
+        let id = self.id.with("hover").with(text.text());
         let hovered_before = clickable && ui.data(|d| d.get_temp::<bool>(id)).unwrap_or(false);
         let text = if hovered_before {
             text.underline()
@@ -136,6 +145,43 @@ impl SteadyColumn {
             (true, true) => r.on_hover_text(full),
             (false, false) => r.on_hover_text(hover),
             (false, true) => r.on_hover_text(format!("{full}\n\n{hover}")),
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use egui_kittest::Harness;
+    use egui_kittest::kittest::Queryable;
+    use std::{cell::RefCell, rc::Rc};
+
+    /// Hovering a link marks that link only: not the one drawn after it, and not the first when the last is
+    /// hovered (the hover memory was once shared by the whole column).
+    #[test]
+    fn link_hover_marks_only_its_own_cell() {
+        let seen = Rc::new(RefCell::new(Vec::new()));
+        let out = seen.clone();
+        let mut h = Harness::builder()
+            .with_size(egui::vec2(300.0, 120.0))
+            .build_ui(move |ui| {
+                let col = SteadyColumn::new(ui, "c");
+                let names = ["one", "two", "three"];
+                for n in names {
+                    col.link(ui, n, "");
+                }
+                *out.borrow_mut() = names.iter().map(|n| col.was_hovered(ui, n)).collect();
+            });
+        h.run();
+        for (name, want) in [
+            ("one", [true, false, false]),
+            ("three", [false, false, true]),
+        ] {
+            let at = h.get_by_label_contains(name).rect().center();
+            h.hover_at(at);
+            h.step();
+            h.step();
+            assert_eq!(seen.borrow()[..3], want, "hovering {name}");
         }
     }
 }

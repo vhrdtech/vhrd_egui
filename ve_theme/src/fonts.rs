@@ -18,6 +18,28 @@ pub const PLEX_MONO: &[u8] = include_bytes!("../fonts/IBMPlexMono-Regular.ttf");
 /// IBM Plex Mono Bold, TTF bytes: the face of [`number_font`].
 pub const PLEX_MONO_BOLD: &[u8] = include_bytes!("../fonts/IBMPlexMono-Bold.ttf");
 
+/// IBM Plex Sans Bold, TTF bytes: the face of [`brand_font`].
+pub const PLEX_SANS_BOLD: &[u8] = include_bytes!("../fonts/IBMPlexSans-Bold.ttf");
+
+/// Name of the bold sans family [`install_fonts`] registers for wordmarks and titles.
+pub const BRAND_FAMILY: &str = "ve-brand";
+
+/// The wordmark font: IBM Plex Sans Bold at `size` (take the size from `Tokens::type_scale.brand`). Falls back
+/// to the proportional face until [`install_fonts`] has taken effect (egui applies it at the start of the next
+/// frame).
+pub fn brand_font(ctx: &egui::Context, size: f32) -> FontId {
+    let family = FontFamily::Name(BRAND_FAMILY.into());
+    let bound = ctx.fonts(|f| f.definitions().families.contains_key(&family));
+    FontId::new(
+        size,
+        if bound {
+            family
+        } else {
+            FontFamily::Proportional
+        },
+    )
+}
+
 /// Name of the bold monospace family [`install_fonts`] registers for numbers.
 pub const NUMBER_FAMILY: &str = "ve-number";
 
@@ -59,6 +81,22 @@ pub fn install_fonts(ctx: &egui::Context) {
         vec![InsertFontFamily {
             family: FontFamily::Monospace,
             priority: FontPriority::Highest,
+        }],
+    ));
+    ctx.add_font(FontInsert::new(
+        "IBM Plex Sans Bold",
+        FontData::from_static(PLEX_SANS_BOLD),
+        vec![InsertFontFamily {
+            family: FontFamily::Name(BRAND_FAMILY.into()),
+            priority: FontPriority::Highest,
+        }],
+    ));
+    ctx.add_font(FontInsert::new(
+        "IBM Plex Sans",
+        FontData::from_static(PLEX_SANS),
+        vec![InsertFontFamily {
+            family: FontFamily::Name(BRAND_FAMILY.into()),
+            priority: FontPriority::Lowest,
         }],
     ));
     // The number family: Plex Mono Bold first, then the regular monospace stack for glyphs Bold lacks.

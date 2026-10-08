@@ -106,6 +106,9 @@ pub struct TypeScale {
     pub title: TypeStep,
     /// `TextStyle::Name("caption")`: captions, units, hints.
     pub caption: TypeStep,
+    /// The wordmark of an app's bar (`brand_font`, bold Plex Sans): its size is the token; the face is not a
+    /// text style because it needs the bold family.
+    pub brand: TypeStep,
 }
 
 impl TypeScale {
@@ -119,6 +122,7 @@ impl TypeScale {
             heading: TypeStep::sans(20.0, 26.0),
             title: TypeStep::sans(15.0, 20.0),
             caption: TypeStep::sans(11.0, 14.0),
+            brand: TypeStep::sans(21.0, 26.0),
         }
     }
 

@@ -250,3 +250,34 @@ fn steady_column_link_truncates_keeps_neighbours_and_clicks() {
     h.run();
     assert!(clicked.get());
 }
+
+/// The chip clicks, shows its tooltip, and is as wide as asked.
+#[test]
+fn action_chip_clicks_and_has_a_tooltip() {
+    let theme = Theme::dark();
+    let clicks = Rc::new(Cell::new(0));
+    let seen = clicks.clone();
+    let mut h = Harness::builder()
+        .with_size(vec2(200.0, 60.0))
+        .build_ui(move |ui| {
+            if ve_dash::ActionChip::new("русский", &theme)
+                .hover("Switch the language")
+                .min_width(90.0)
+                .show(ui)
+                .clicked()
+            {
+                seen.set(seen.get() + 1);
+            }
+        });
+    h.run();
+    assert!(h.get_by_label("русский").rect().width() >= 80.0);
+    h.get_by_label("русский").click();
+    h.run();
+    assert_eq!(clicks.get(), 1);
+    let at = h.get_by_label("русский").rect().center();
+    h.hover_at(at);
+    for _ in 0..8 {
+        h.step();
+    }
+    assert!(h.query_by_label("Switch the language").is_some());
+}
