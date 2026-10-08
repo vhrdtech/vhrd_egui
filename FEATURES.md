@@ -49,8 +49,9 @@ in tpm (P2605). Statuses were checked against the code.
   ve_basics (build info, labels, hover link, startup guard), ve_theme, app id + icon + `.desktop` + `just install`,
   `build.rs` and `--version`, egui_kittest tests with a wgpu snapshot, justfile, AGENTS/FEATURES/CHANGELOG
   skeletons, and `ve_app.json` (template version + commit + answers + upgrades + rejected + nuances) for upgrades
-  and adoption. `ve_template/src/`, unit tests there. Missing: the `shell` layout (refused until WID-3 lands),
-  verified Windows console output (PLT-6 untested on Windows). Supersedes eframe_template (P2542).
+  and adoption. `ve_template/src/`, unit tests there. Verified 8 Oct 2026: a generated app with the theme on
+  builds, passes clippy -D warnings, fmt and its three kittest tests (wgpu snapshot). Missing: the `shell` layout (refused until WID-3 lands), verified Windows console
+  output (PLT-6 untested on Windows). Supersedes eframe_template (P2542).
 - 🚧 **PLT-3 Tests and CI**: `ve_dash` has unit tests (history, heat gradient) and egui_kittest UI tests
   (`ve_dash/tests/ui.rs`): AccessKit queries for labels and tooltips plus a wgpu-rendered image snapshot
   (`tests/snapshots/dash_panel.png`, update with `UPDATE_SNAPSHOTS=1`). Still missing: ve_widget registry tests, CI.

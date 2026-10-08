@@ -40,8 +40,7 @@ Run it from a vhrd_egui checkout (`~/git/vhrd_egui`, or `cargo install --path ve
      central panel; `shell` is the `ve_app` widget host (menu bar, egui_tiles panes of `ve_widget::Widget`s, about /
      settings windows) — refused until ve_app (vhrd_egui WID-3) has landed
    - renderer `--renderer wgpu|glow` [wgpu]
-   - theme [on]: `ve_theme::setup` at startup; `--no-theme` until ve_theme (THM-1) has landed or when the app must
-     keep egui's default look
+   - theme [on]: `ve_theme::setup` at startup; `--no-theme` only when the app must keep egui's default look
    - where vhrd_egui comes from `--vhrd-egui git|<path>` [git]: the GitHub repo over ssh, or a local checkout
      (path dependencies, for working on both at once)
 2. Run `new`. Show the file list.

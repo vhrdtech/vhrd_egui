@@ -67,7 +67,7 @@ enum Cmd {
         /// eframe renderer feature
         #[arg(long, value_enum, default_value_t = Renderer::Wgpu)]
         renderer: Renderer,
-        /// Leave ve_theme out (the app keeps egui's default look); until ve_theme (THM-1) lands this is needed
+        /// Leave ve_theme out: the app keeps egui's default look (rare; the theme is the stack's look)
         #[arg(long)]
         no_theme: bool,
         /// Where the vhrd_egui crates come from: `git` (the GitHub repo) or a path to a checkout
