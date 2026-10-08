@@ -3564,7 +3564,7 @@ dependencies = [
 
 [[package]]
 name = "ve_basics"
-version = "0.9.1"
+version = "0.10.0"
 dependencies = [
  "egui",
  "egui_kittest",
@@ -3572,7 +3572,7 @@ dependencies = [
 
 [[package]]
 name = "ve_dash"
-version = "0.9.1"
+version = "0.10.0"
 dependencies = [
  "eframe",
  "egui",
@@ -3582,7 +3582,7 @@ dependencies = [
 
 [[package]]
 name = "ve_macro"
-version = "0.9.1"
+version = "0.10.0"
 dependencies = [
  "proc-macro2",
  "quote",
@@ -3590,7 +3590,7 @@ dependencies = [
 
 [[package]]
 name = "ve_template"
-version = "0.9.1"
+version = "0.10.0"
 dependencies = [
  "clap",
  "include_dir",
@@ -3603,7 +3603,7 @@ dependencies = [
 
 [[package]]
 name = "ve_theme"
-version = "0.9.1"
+version = "0.10.0"
 dependencies = [
  "eframe",
  "egui",
@@ -3612,7 +3612,7 @@ dependencies = [
 
 [[package]]
 name = "ve_widget"
-version = "0.9.1"
+version = "0.10.0"
 dependencies = [
  "eframe",
  "egui",

@@ -5,6 +5,8 @@ versions follow [Semantic Versioning](https://semver.org/). Feature IDs refer to
 
 ## [Unreleased]
 
+## [0.10.0] - 2026-10-08
+
 ### Added
 
 - `ve_basics`: startup crash guard `StartupGuard` (PLT-4) — a start that died before its first frame moves the
