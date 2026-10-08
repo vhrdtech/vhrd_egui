@@ -7,7 +7,7 @@
 //! (segmented block meter with a heat gradient), [`SegBar`] (exactly 5 or 10 segments), [`StatusLight`]
 //! (glowing dot + label), [`StatTile`] (headline number) and a titled
 //! [`panel`] frame. [`steady_width`] keeps live values from shoving their
-//! neighbours around.
+//! neighbours around, and [`SteadyColumn`] aligns the first cell of list rows without a hard-coded width.
 //!
 //! Colors come from `ve_theme`'s design tokens ([`Theme::from_tokens`]); apps turn the whole
 //! look on with `ve_theme::setup(ctx)`, which also installs the brand fonts. ve_dash's own
@@ -15,6 +15,7 @@
 //!
 //! Run the demo: `cargo run -p ve_dash --example dash_demo`.
 
+mod column;
 mod decay;
 mod history;
 mod meter;
@@ -26,6 +27,7 @@ mod status;
 mod steady;
 mod theme;
 
+pub use column::SteadyColumn;
 pub use decay::Decay;
 pub use history::History;
 pub use meter::Meter;
@@ -34,7 +36,7 @@ pub use segbar::{SegBar, Segments, lit_segments};
 pub use sparkline::Sparkline;
 pub use stat::StatTile;
 pub use status::{Status, StatusLight};
-pub use steady::steady_width;
+pub use steady::{steady_of, steady_width};
 pub use theme::{DARK, Theme, heat, load_color};
 
 /// IBM Plex Sans Regular, TTF bytes.

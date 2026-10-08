@@ -154,6 +154,10 @@ chart must carry a direct text label (they all do); status colors always ship wi
 
 Small helpers every app uses, crate `ve_basics`. UI rules that go with them: AGENTS.md "UI guide rules".
 
+- ✅ **DASH-14 Steady column**: `SteadyColumn` — the first cell of list rows (login names, session names) as wide as
+  the widest row has needed, capped at `max_width` with an ellipsis and the full text on hover, so the cells after
+  it line up with no hard-coded width; `steady_of` returns the learned width of a measured piece before drawing
+  (to decide what fits). `ve_dash/src/column.rs`, `steady.rs`, kittest in `ve_dash/tests/ui.rs`.
 - ✅ **BAS-1 Build info**: `BuildInfo`, `build_info!()` (captures the *calling* crate's name, version,
   `GIT_SHA`, `BUILD_TIME` and `cfg!(debug_assertions)`) and `build_info_label` — `version · sha · debug|release`
   with an orange debug marker and a tooltip spelling everything out. The app's `build.rs` sets `GIT_SHA` /
@@ -204,6 +208,10 @@ on every background (unit-tested), status colors always come with a text label.
   palette swatches; `cargo run -p ve_theme --example gallery` puts dark and light side by side. Snapshots
   `ve_theme/tests/snapshots/gallery_dark.png` / `gallery_light.png` (wgpu), AccessKit checks on the helpers
   (labels, button role, click, tooltips). `ve_theme/src/gallery.rs`, `ve_theme/tests/ui.rs`.
+- ✅ **THM-7 Number font**: IBM Plex Mono Bold as the `ve-number` family; `number_font(ctx, size)` /
+  `number_text(ctx, text, size)` give live numbers bold tabular digits (every digit one width, so values ticking
+  don't shift their neighbours). Falls back to plain monospace until the fonts are installed.
+  `ve_theme/src/fonts.rs`, tested in `ve_theme/tests/ui.rs`.
 - 💡 **THM-6 Hot reload of tokens**: in debug builds, read the tokens from a RON file and re-apply on change, as
   re_ui's `hot_reload_design_tokens` does, so tuning doesn't need a rebuild. Needs serde on the token types.
 

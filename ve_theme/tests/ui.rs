@@ -122,3 +122,32 @@ fn panel_title_bar_returns_right_side_and_title() {
     h.get_by_label("Nodes");
     h.get_by_label("Add");
 }
+
+/// The number font has tabular digits: every digit is as wide as every other.
+#[test]
+fn number_font_digits_are_tabular() {
+    let widths = std::rc::Rc::new(std::cell::RefCell::new(Vec::new()));
+    let out = widths.clone();
+    let mut h = Harness::new_ui(move |ui| {
+        let mut w = out.borrow_mut();
+        w.clear();
+        for text in ["1111", "8080", "0123"] {
+            let font = ve_theme::number_font(ui.ctx(), 13.0);
+            w.push(
+                ui.painter()
+                    .layout_no_wrap(text.into(), font, egui::Color32::WHITE)
+                    .size()
+                    .x,
+            );
+        }
+    });
+    ve_theme::setup(&h.ctx);
+    h.run();
+    h.run();
+    let w = widths.borrow();
+    assert!(w[0] > 0.0);
+    assert!(
+        (w[0] - w[1]).abs() < 0.01 && (w[0] - w[2]).abs() < 0.01,
+        "{w:?}"
+    );
+}

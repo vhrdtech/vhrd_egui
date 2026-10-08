@@ -38,3 +38,15 @@ pub(crate) fn remember(ui: &Ui, id: Id, width: f32) {
         ui.data_mut(|d| d.insert_temp(id, width));
     }
 }
+
+/// Measured-width variant of [`steady_width`] for layouts that need the width *before* drawing (to decide
+/// what fits): records `measured` under `id_salt` and returns the widest ever recorded under it.
+///
+/// ```ignore
+/// let w = steady_of(ui, "rx", ui.painter().layout_no_wrap(text, font, color).size().x);
+/// ```
+pub fn steady_of(ui: &Ui, id_salt: impl AsIdSalt, measured: f32) -> f32 {
+    let id = ui.id().with("ve_dash::steady_of").with(id_salt);
+    remember(ui, id, measured);
+    remembered(ui, id)
+}

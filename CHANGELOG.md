@@ -5,6 +5,13 @@ versions follow [Semantic Versioning](https://semver.org/). Feature IDs refer to
 
 ## [Unreleased]
 
+### Added
+
+- `ve_dash`: `SteadyColumn` aligns the first cell of list rows to the widest row seen, capped with an ellipsis and
+  the full text on hover (DASH-14); `steady_of` gives the learned width of a measured piece (DASH-14).
+- `ve_theme`: `number_font` / `number_text` and the bundled IBM Plex Mono Bold: bold numbers with tabular digits
+  (THM-7).
+
 ## [0.11.0] - 2026-10-08
 
 ### Added

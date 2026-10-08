@@ -12,7 +12,8 @@ use std::cell::Cell;
 use std::rc::Rc;
 
 use ve_dash::{
-    Meter, SegBar, Sparkline, StatTile, Status, StatusLight, Theme, panel, steady_width,
+    Meter, SegBar, Sparkline, StatTile, Status, StatusLight, SteadyColumn, Theme, panel,
+    steady_width,
 };
 
 /// Deterministic wiggly series for the snapshot charts.
@@ -152,4 +153,46 @@ fn segbar_tooltip_names_percent_and_segments() {
         h.step();
     }
     assert!(h.query_by_label("63 % (6 of 10 segments)").is_some());
+}
+
+/// Rows with names of different lengths: the cell after the name starts at the same x in every row.
+#[test]
+fn steady_column_aligns_rows_and_truncates() {
+    let mut h = Harness::builder()
+        .with_size(vec2(400.0, 120.0))
+        .build_ui(|ui| {
+            let names = SteadyColumn::new(ui, "names").max_width(120.0);
+            for (name, tag) in [
+                ("al", "tag-a"),
+                ("a rather long login name indeed", "tag-b"),
+                ("bob", "tag-c"),
+            ] {
+                ui.horizontal(|ui| {
+                    names.label(ui, name);
+                    ui.label(tag);
+                });
+            }
+        });
+    h.run();
+    h.run(); // the second frame uses what the first one learned
+    let xs: Vec<f32> = ["tag-a", "tag-b", "tag-c"]
+        .iter()
+        .map(|t| h.get_by_label(t).rect().min.x)
+        .collect();
+    assert!(
+        (xs[0] - xs[1]).abs() < 0.5 && (xs[1] - xs[2]).abs() < 0.5,
+        "{xs:?}"
+    );
+    // the cap holds: name column no wider than max_width plus spacing
+    assert!(xs[0] < 120.0 + 20.0, "{xs:?}");
+}
+
+#[test]
+fn steady_of_keeps_the_widest() {
+    let mut h = Harness::new_ui(|ui| {
+        ve_dash::steady_of(ui, "w", 10.0);
+        assert_eq!(ve_dash::steady_of(ui, "w", 30.0), 30.0);
+        assert_eq!(ve_dash::steady_of(ui, "w", 5.0), 30.0);
+    });
+    h.run();
 }
