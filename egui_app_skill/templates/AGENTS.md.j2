@@ -1,0 +1,99 @@
+# Working on {{ display_name }}
+
+Guidance for AI agents and contributors. Read this before changing code.
+
+{{ display_name }} is an egui desktop app on the vhrd_egui stack (`ve_basics`{% if theme %}, `ve_theme`{% endif %}), generated from the
+vhrd_egui app template (`egui_app_skill`). `ve_app.json` records the template version and the answers it was
+generated with; keep it committed and keep it true (see *Template upgrades*).
+
+## FEATURES.md is the source of truth
+
+[FEATURES.md](FEATURES.md) lists every feature with its status, every known bug and what is planned, with stable
+IDs per area (`APP-1`, ...).
+
+- Read the relevant area before starting.
+- Name IDs with a short slug when talking to the user (`APP-3 settings-window`, never a bare `APP-3`). Commit
+  messages, CHANGELOG and code `TODO`s keep the bare ID.
+- Update it in the same commit as the code: mark items ✅/🚧/🐛 with a pointer to the code, add bugs you find but
+  don't fix (next free ID of the area, `tpm work claim APP` in a session), move obsolete items to *Dropped and
+  superseded*. Never renumber or reuse IDs.
+- Don't track status anywhere else. Code `TODO`s that matter reference an ID: `// TODO(APP-3): ...`.
+
+## CHANGELOG.md records every change
+
+Every change a user would notice gets an entry under `## [Unreleased]` in the same commit: `### Added`,
+`### Changed`, `### Fixed`, `### Removed`, short, with the feature ID in parentheses. Record egui / vhrd_egui
+bumps. Pure refactors and typo fixes don't need an entry. Landing a session branch turns `[Unreleased]` into the
+next version's section (`tpm land`); work commits never bump the version.
+
+## Commands
+
+```sh
+just test       # cargo test: unit tests and the headless UI tests in tests/ui.rs
+just lint       # clippy -D warnings, fmt --check
+just run
+just snapshots  # refresh the kittest image snapshots after an intended visual change, then commit the PNGs
+just install    # ~/.cargo/bin/{{ name }} and the launcher (icon + .desktop)
+just deploy     # pull main, install, check `--version` against HEAD
+```
+
+Before declaring a change done: build, clippy without warnings, fmt, tests. If you changed what the window shows,
+refresh the snapshot and look at the PNG; if you cannot run a GUI, say so and describe the manual check.
+
+## UI guide rules
+
+The rules every app on vhrd_egui follows (helpers in `ve_basics`, the full text in vhrd_egui
+`egui_app_skill/references/ui-guide.md`):
+
+- **Generous tooltips** on every control, number, badge and abbreviation: what it is, its unit, what clicking it
+  does. If a user could ask "what is this?", hovering answers it. Build info shows version, SHA and build time in
+  full on hover (`build_info_label`).
+- **Highlight related items on hover**: when an item is hovered, everything that refers to the same thing (the
+  row, its chart, its status light, its name in a legend) lights up (`hover_link`).
+- **Labels are not selectable** (`setup_labels` at startup); text worth copying (ids, paths, commands) uses
+  `copyable_label`.
+- **Percent bars use 5 or 10 segments** (`ve_dash::SegBar`) when the app shows load or progress.
+{% if theme -%}
+- **The theme is `ve_theme`**: colours, spacing and type come from its tokens (`ve_theme::setup` at startup);
+  no hard-coded colours in widgets, use the tokens, status colours always with a text label.
+{% endif %}
+## Code conventions
+
+- egui / eframe versions follow vhrd_egui's `[workspace.dependencies]` (one version for the whole stack); never
+  bump them here alone.
+- State comes in three kinds: *settings* (what the user configured, serialized), *visual* (layout and view state,
+  serialized) and *transient* (connections, caches, rebuilt at start). Never serialize transient state.
+- Keep the UI thread free: no blocking I/O inside `ui()`; long work runs elsewhere and is polled per frame
+  (`ctx.request_repaint()` from the worker when something arrived).
+- No `unwrap` / `expect` on data from disk, the network or the user.
+- A start that fails before the first frame moves the saved state aside (`ve_basics::StartupGuard` in `main.rs`):
+  keep that call when you restructure `main`.
+
+## Tests
+
+Pure logic: unit tests. UI behaviour: headless egui_kittest tests in `tests/ui.rs`. egui_kittest runs the real
+`App`, finds widgets by their accessible label (`get_by_label`, `get_by_role`), clicks (`.click()`), types
+(`type_text`), hovers, steps frames and compares wgpu image snapshots; never open a real window to test. A bug fix
+starts with a failing test when the bug can be reproduced in one.
+
+## Commits
+
+Conventional Commits: `feat: ...`, `fix: ...`, `build: ...`, `docs: ...`. Short imperative summary, blank line,
+body with what and why; reference feature IDs (`feat: settings window (APP-3)`). Work happens on a session branch
+(`tpm work new SLUG`), each finished step is one commit with FEATURES.md and CHANGELOG.md updated in it; landing is
+the user's call. Deploys that reach other people wait for the user's OK.
+
+## Versions
+
+Landing bumps the version (`tpm land`), not each work commit. `--version` prints version, git SHA and build time
+(`build.rs` sets `GIT_SHA` / `BUILD_TIME`; `-dirty` with local changes), the same data the build-info label shows.
+
+## Template upgrades
+
+This app was generated with vhrd_egui template {{ template_version }} (commit {{ template_commit }}); `ve_app.json` holds
+`template` (name, version, commit), `answers`, `upgrades`, `rejected` and `nuances`. To upgrade, follow
+`egui_app_skill/references/upgrade.md` in vhrd_egui: read the vhrd_egui CHANGELOG entries newer than the recorded
+version, run `ve_template check-answers ve_app.json`, regenerate with `ve_template new --answers ve_app.json --out
+<tmp>` (and the recorded commit into another folder as the 3-way base), `ve_template compare --current . --new
+<tmp>/{{ name }} --base <tmp-old>/{{ name }} --diff`, apply by meaning after the user's approval, build and test, then update
+`ve_app.json` (new template version and commit, an `upgrades` entry, `rejected` and `nuances`).

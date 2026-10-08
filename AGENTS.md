@@ -51,7 +51,11 @@ Cargo workspace, edition 2024, one shared version (`[workspace.package]`).
   panel title bar, toolbar, muted label, badge), the gallery example.
 - `ve_dash/` — btop-style dashboard blocks (theme from `ve_theme` tokens, sparkline, meter, segmented bar,
   tiles).
-- `ve_basics/` — build info, non-selectable labels, hover cross-reference highlight.
+- `ve_basics/` — build info, non-selectable labels, hover cross-reference highlight, startup crash guard.
+- `ve_template/` — the app template as a command (`new`, `check-answers`, `compare`); the files it renders and the
+  agent skill around it live in `egui_app_skill/` (`SKILL.md`, `templates/`, `references/`). A change to what gets
+  generated gets a CHANGELOG entry marked `(PLT-2)` with upgrade notes; `cargo test -p ve_template` renders every
+  template, and a generated app must pass `just lint && just test` (SKILL.md "Maintaining the template").
 
 New helpers go into a crate of their own with the `ve_` prefix when they have their own dependencies, otherwise
 into an existing one. When moving code from an app, port the app to use it in the same piece of work (or add a
@@ -71,7 +75,8 @@ run a GUI, say so and describe the manual check.
 
 ## UI guide rules
 
-Every app on vhrd_egui follows these (the helpers are in `ve_basics` and `ve_theme`):
+Every app on vhrd_egui follows these (the helpers are in `ve_basics` and `ve_theme`; the full guide an agent
+reads before writing UI is `egui_app_skill/references/ui-guide.md`, kept in step with this list):
 
 - **Apps opt in to the theme with `ve_theme::setup(&cc.egui_ctx)`** at startup (fonts, dark and light styles
   following the system). Colors, spacing and radii come from `Tokens` (`ui.tokens()` via `ve_theme::UiExt`),

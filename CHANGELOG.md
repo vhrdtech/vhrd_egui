@@ -5,6 +5,18 @@ versions follow [Semantic Versioning](https://semver.org/). Feature IDs refer to
 
 ## [Unreleased]
 
+### Added
+
+- `ve_basics`: startup crash guard `StartupGuard` (PLT-4) — a start that died before its first frame moves the
+  persisted `app.ron` aside and reports where.
+- New crate `ve_template` and the `egui_app_skill/` agent skill (PLT-2, PLT-5): `ve_template new NAME` generates an
+  app with ve_basics, ve_theme, app id + icon + `.desktop` + `just install`, `build.rs` + `--version` (Windows:
+  console attached, PLT-6), the startup guard, egui_kittest tests with a wgpu snapshot, justfile and
+  AGENTS / FEATURES / CHANGELOG skeletons; `ve_app.json` records the template version, commit and answers;
+  `check-answers` and `compare` (3-way) drive upgrades and adoption. `SKILL.md` plus `references/` (UI guide,
+  kittest, stack versions, upgrade flow). Supersedes the eframe_template repo (P2542). Template 0.8.0 is the
+  first version: no upgrade notes yet.
+
 ## [0.9.1] - 2026-10-08
 
 ### Fixed

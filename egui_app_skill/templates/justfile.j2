@@ -1,0 +1,41 @@
+# just cheatsheet https://cheatography.com/linux-china/cheat-sheets/justfile/
+
+test:
+    cargo test
+
+lint:
+    cargo clippy --all-targets -- -D warnings
+    cargo fmt --check
+
+run:
+    cargo run
+
+# Refresh the kittest image snapshots after an intended visual change (then commit tests/snapshots/*.png)
+snapshots:
+    UPDATE_SNAPSHOTS=1 cargo test
+
+# Re-render assets/icon_256.png from assets/icon.svg (ImageMagick or librsvg)
+icon:
+    magick -background none assets/icon.svg -resize 256x256 -depth 8 PNG32:assets/icon_256.png || rsvg-convert -w 256 -h 256 assets/icon.svg -o assets/icon_256.png
+
+# Build and install for local use, with the launcher (icon + .desktop, first time only)
+install:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    cargo install --path . --locked
+    echo "✅ {{ name }} installed to ~/.cargo/bin"
+    desktop_file=~/.local/share/applications/{{ name }}.desktop
+    if [ ! -f "$desktop_file" ]; then
+        install -Dm644 assets/icon.svg ~/.local/share/icons/hicolor/scalable/apps/{{ app_id }}.svg
+        install -Dm644 deploy/{{ name }}.desktop "$desktop_file"
+        update-desktop-database ~/.local/share/applications 2>/dev/null || true
+        gtk-update-icon-cache ~/.local/share/icons/hicolor 2>/dev/null || true
+        echo "✅ Desktop launcher installed"
+    fi
+
+# Bring this PC up to main: pull, install, check the version against HEAD
+deploy:
+    git diff --quiet HEAD || { echo "local changes, commit or stash them first:"; git status --short; exit 1; }
+    git pull --ff-only
+    just install
+    {{ name }} --version | grep -q "$(git rev-parse --short HEAD)" && echo "✅ running $(git rev-parse --short HEAD)"

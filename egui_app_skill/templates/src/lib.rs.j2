@@ -1,0 +1,16 @@
+//! {{ display_name }}.
+//!
+//! Generated from the vhrd_egui app template (`egui_app_skill`, template {{ template_version }}); `ve_app.json`
+//! records the template version and answers, so an agent can upgrade the app to newer template versions.
+//! The window is [`App`]; `main.rs` only parses `--version`, sets up logging and opens it.
+
+pub mod app;
+
+pub use app::App;
+
+/// Window class and storage id. Matches `StartupWMClass` in `deploy/{{ name }}.desktop`, so the taskbar
+/// shows the right icon, and names the folder eframe keeps `app.ron` in.
+pub const APP_ID: &str = "{{ app_id }}";
+
+/// Name shown in the title bar and the launcher.
+pub const DISPLAY_NAME: &str = "{{ display_name }}";

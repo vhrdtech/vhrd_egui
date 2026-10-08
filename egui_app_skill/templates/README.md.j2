@@ -1,0 +1,15 @@
+# {{ display_name }}
+
+egui desktop app on the vhrd_egui stack. What works and what is planned: [FEATURES.md](FEATURES.md); changes:
+[CHANGELOG.md](CHANGELOG.md); how to work on it: [AGENTS.md](AGENTS.md).
+
+```sh
+just run        # start it
+just test       # unit + headless UI tests (egui_kittest)
+just lint       # clippy -D warnings, fmt --check
+just install    # ~/.cargo/bin/{{ name }} + launcher icon and .desktop entry
+{{ name }} --version   # version, git SHA, build time
+```
+
+Generated from the vhrd_egui app template (`egui_app_skill`, version {{ template_version }}); `ve_app.json` keeps the
+template version and answers so the app can be upgraded when the template moves.

@@ -1,0 +1,36 @@
+[package]
+name = "{{ name }}"
+version = "0.1.0"
+authors = ["{{ author }}"]
+edition = "2024"
+description = "{{ display_name }}"
+# build.rs sets GIT_SHA and BUILD_TIME for --version and the build-info label
+
+[dependencies]
+eframe = { version = "0.36", default-features = false, features = [
+    "{{ renderer_feature }}",   # rendering backend; the other one is "{% if renderer_feature == 'wgpu' %}glow{% else %}wgpu{% endif %}"
+    "default_fonts",   # egui's built-in faces stay as the fallback behind the brand fonts
+    "persistence",     # Settings survive restarts (eframe storage, app.ron)
+    "wayland",
+    "x11",
+] }
+egui = "0.36"
+serde = { version = "1", features = ["derive"] }
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+# vhrd_egui: one egui version for the whole stack (vhrd_egui FEATURES.md PLT-1); bump egui here and there together
+ve_basics = { {{ dep("ve_basics") }} }
+{% if theme -%}
+ve_theme = { {{ dep("ve_theme") }} }
+{% endif %}
+[target.'cfg(windows)'.dependencies]
+# AttachConsole, so --version reaches the terminal although the release build hides the console window
+windows-sys = { version = "0.61", features = ["Win32_System_Console"] }
+
+[dev-dependencies]
+# Headless UI tests: clicks, typing, AccessKit queries and wgpu image snapshots (tests/ui.rs)
+egui_kittest = { version = "0.36", features = ["eframe", "snapshot", "wgpu"] }
+
+# Optimize dependencies even in debug builds: egui and wgpu are slow unoptimized
+[profile.dev.package."*"]
+opt-level = 2

@@ -1,0 +1,26 @@
+# {{ display_name }} features and roadmap
+
+This file is the single source of truth for what {{ display_name }} does, what is broken and what is planned, for humans
+and AI agents alike. [CHANGELOG.md](CHANGELOG.md) records what changed and when; this file records the current
+state.
+
+## How to use this file
+
+- **Status** of each item: ✅ done · 🚧 in progress or partial (the note says what is missing) · 🐛 implemented
+  with known bugs · ⬜ stub · 📋 planned · 💡 idea · ⛔ blocked · 🔍 needs a check before closing.
+- **IDs** (`APP-1`, ...) are stable: never renumber or reuse one. New items take the next free number of their
+  area. Use the ID in commit messages, CHANGELOG entries and code `TODO`s (`// TODO(APP-3): ...`).
+- Items are grouped by area, what works first, then open items by priority. When finishing work, update the item
+  in the same commit: mark it ✅ with a pointer (module, test) and move it up. Obsolete items go to *Dropped and
+  superseded* with a one-line reason.
+
+## App (`APP`)
+
+- ✅ **APP-1 App shell**: window with a top bar (name, build info with version · sha · profile and a full tooltip),
+  persisted settings, startup crash guard, `--version`, launcher icon and `.desktop` entry, headless UI tests.
+  Generated from the vhrd_egui app template {{ template_version }}. `src/app.rs`, `src/main.rs`, `tests/ui.rs`.
+- 📋 **APP-2 First real feature**: replace the click counter in `src/app.rs` with the app's purpose.
+
+## Dropped and superseded
+
+(none yet)

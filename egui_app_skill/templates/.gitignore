@@ -1,0 +1,5 @@
+/target
+# kittest writes these next to the snapshots when an image differs; the .png itself is committed
+tests/snapshots/*.diff.png
+tests/snapshots/*.new.png
+tests/snapshots/*.old.png

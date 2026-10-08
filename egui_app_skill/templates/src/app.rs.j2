@@ -1,0 +1,99 @@
+//! The window: a top bar with the app name and build info, the content below.
+//!
+//! State comes in three kinds (vhrd_egui AGENTS.md): *settings* the user configured (persisted),
+//! *visual* layout state (persisted), *transient* caches and connections (rebuilt at start, never saved).
+
+use eframe::egui;
+use ve_basics::{BuildInfo, StartupGuard, build_info_label, copyable_label, hover_link};
+
+use crate::DISPLAY_NAME;
+
+/// What the user configured; persisted between runs through eframe storage (`app.ron`).
+#[derive(Default, serde::Serialize, serde::Deserialize)]
+#[serde(default)]
+pub struct Settings {
+    /// Example setting: how often the button was pressed.
+    pub clicks: u32,
+}
+
+/// The eframe app.
+pub struct App {
+    settings: Settings,
+    build: BuildInfo,
+    guard: Option<StartupGuard>,
+    /// Where the previous, broken state went when the last start failed (shown once in the top bar).
+    recovered: Option<std::path::PathBuf>,
+}
+
+impl App {
+    /// Build the app from eframe's creation context; `guard` is the startup crash guard from `main`
+    /// (`None` in tests).
+    pub fn new(cc: &eframe::CreationContext<'_>, guard: Option<StartupGuard>) -> Self {
+        let settings = cc
+            .storage
+            .and_then(|s| eframe::get_value(s, eframe::APP_KEY))
+            .unwrap_or_default();
+        let recovered = guard.as_ref().and_then(|g| g.recovered.clone());
+        Self {
+            settings,
+            build: ve_basics::build_info!(),
+            guard,
+            recovered,
+        }
+    }
+
+    fn top_bar(&mut self, ui: &mut egui::Ui) {
+        ui.horizontal(|ui| {
+            ui.heading(DISPLAY_NAME)
+                .on_hover_text(format!("{DISPLAY_NAME}: {}", self.build.short()));
+            if let Some(moved) = &self.recovered {
+                ui.label(egui::RichText::new("⚠ settings reset").color(ui.visuals().warn_fg_color))
+                    .on_hover_text(
+                        "The last start failed before the window appeared, so the saved state was moved aside \
+                         and the app started with defaults. The old state is kept next to it:",
+                    );
+                copyable_label(ui, moved.display().to_string());
+            }
+            ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                // version · sha · debug|release, everything spelled out in its tooltip
+                build_info_label(ui, &self.build);
+            });
+        });
+    }
+
+    fn content(&mut self, ui: &mut egui::Ui) {
+        ui.add_space(8.0);
+        // Every control gets a tooltip: what it is and what clicking does.
+        if ui
+            .button("Click me")
+            .on_hover_text("Counts one click; the count is saved between runs")
+            .clicked()
+        {
+            self.settings.clicks += 1;
+        }
+        let n = self.settings.clicks;
+        let r = ui
+            .label(format!("{n} click{}", if n == 1 { "" } else { "s" }))
+            .on_hover_text("How often the button above was pressed, kept in the saved settings");
+        // Hovering one item highlights everything registered under the same key (here: the row below).
+        hover_link(ui, "clicks", &r);
+        let r2 = ui
+            .label("same thing, elsewhere")
+            .on_hover_text("Linked to the count above: hover either and both light up");
+        hover_link(ui, "clicks", &r2);
+    }
+}
+
+impl eframe::App for App {
+    fn ui(&mut self, ui: &mut egui::Ui, _frame: &mut eframe::Frame) {
+        if let Some(guard) = self.guard.take() {
+            guard.first_frame_done(); // this start reached its first frame: a good start
+        }
+        egui::Panel::top("top_bar").show(ui, |ui| self.top_bar(ui));
+        egui::CentralPanel::default().show(ui, |ui| self.content(ui));
+    }
+
+    fn save(&mut self, storage: &mut dyn eframe::Storage) {
+        eframe::set_value(storage, eframe::APP_KEY, &self.settings);
+    }
+}

@@ -1,0 +1,72 @@
+//! Entry point: `--version`, logging, the eframe window.
+
+// Hide the console window on Windows in release; `--version` attaches to the parent console instead.
+#![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
+
+use {{ name }}::{APP_ID, App, DISPLAY_NAME};
+
+fn main() -> eframe::Result {
+    if std::env::args().any(|a| a == "--version" || a == "-V") {
+        attach_console();
+        let info = ve_basics::build_info!();
+        println!(
+            "{} {} ({}, built {})",
+            info.name, info.version, info.git_sha, info.build_time
+        );
+        return Ok(());
+    }
+    // RUST_LOG=debug for more; defaults to info
+    tracing_subscriber::fmt()
+        .with_env_filter(
+            tracing_subscriber::EnvFilter::try_from_default_env()
+                .unwrap_or_else(|_| tracing_subscriber::EnvFilter::new("info")),
+        )
+        .init();
+
+    // A start that died before its first frame moves the saved state aside (ve_basics StartupGuard).
+    let guard = ve_basics::StartupGuard::begin(eframe::storage_dir(APP_ID));
+    if let Some(moved) = &guard.recovered {
+        tracing::warn!(
+            "last start failed before the first frame; saved state moved to {}",
+            moved.display()
+        );
+    }
+
+    let options = eframe::NativeOptions {
+        viewport: egui::ViewportBuilder::default()
+            .with_inner_size([900.0, 600.0])
+            .with_min_inner_size([400.0, 300.0])
+            .with_title(DISPLAY_NAME)
+            .with_app_id(APP_ID)
+            .with_icon(
+                eframe::icon_data::from_png_bytes(include_bytes!("../assets/icon_256.png"))
+                    .unwrap_or_default(),
+            ),
+        renderer: eframe::Renderer::{% if renderer_feature == 'wgpu' %}Wgpu{% else %}Glow{% endif %},
+        ..Default::default()
+    };
+    eframe::run_native(
+        APP_ID,
+        options,
+        Box::new(move |cc| {
+            {% if theme -%}
+            ve_theme::setup(&cc.egui_ctx); // brand fonts, dark and light styles (vhrd_egui THM-1)
+            {% endif -%}
+            ve_basics::setup_labels(&cc.egui_ctx); // labels are not selectable; copyable_label opts in
+            Ok(Box::new(App::new(cc, Some(guard))))
+        }),
+    )
+}
+
+/// Windows: the release build has no console, so attach to the terminal that started us before printing.
+#[cfg(windows)]
+fn attach_console() {
+    use windows_sys::Win32::System::Console::{ATTACH_PARENT_PROCESS, AttachConsole};
+    // SAFETY: plain Win32 call with a constant argument; a failure (no parent console) is harmless.
+    unsafe {
+        AttachConsole(ATTACH_PARENT_PROCESS);
+    }
+}
+
+#[cfg(not(windows))]
+fn attach_console() {}

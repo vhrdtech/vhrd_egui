@@ -1,0 +1,52 @@
+//! Headless UI tests through egui_kittest: it runs the real `App`, finds widgets through AccessKit,
+//! clicks and types, and compares wgpu-rendered image snapshots.
+//!
+//! After an intended visual change: `UPDATE_SNAPSHOTS=1 cargo test` and commit the PNG under
+//! `tests/snapshots/`. More patterns: egui_app_skill/references/kittest.md in vhrd_egui.
+
+use egui::vec2;
+use egui_kittest::{Harness, kittest::Queryable};
+
+use {{ name }}::{App, DISPLAY_NAME};
+
+/// The app at a fixed window size, with the same setup `main` does.
+fn harness() -> Harness<'static, App> {
+    Harness::builder()
+        .with_size(vec2(900.0, 600.0))
+        .build_eframe(|cc| {
+            {% if theme -%}
+            ve_theme::setup(&cc.egui_ctx);
+            {% endif -%}
+            ve_basics::setup_labels(&cc.egui_ctx);
+            App::new(cc, None)
+        })
+}
+
+#[test]
+fn shows_name_and_build_info() {
+    let mut h = harness();
+    h.run();
+    h.get_by_label(DISPLAY_NAME);
+    // the build-info label carries version · sha · profile
+    h.get_by_label_contains(env!("CARGO_PKG_VERSION"));
+}
+
+#[test]
+fn button_counts_clicks() {
+    let mut h = harness();
+    h.run();
+    h.get_by_label("0 clicks");
+    h.get_by_label("Click me").click();
+    h.run();
+    h.get_by_label("1 click");
+    h.get_by_label("Click me").click();
+    h.run();
+    h.get_by_label("2 clicks");
+}
+
+#[test]
+fn main_window_snapshot() {
+    let mut h = harness();
+    h.run();
+    h.snapshot("main_window");
+}

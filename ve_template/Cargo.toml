@@ -1,0 +1,21 @@
+[package]
+name = "ve_template"
+description = "Generates vhrd egui apps from the app template (egui_app_skill) and compares template versions for upgrades"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+repository.workspace = true
+
+[[bin]]
+name = "ve_template"
+path = "src/main.rs"
+
+[dependencies]
+clap = { version = "4", features = ["derive"] }
+include_dir = "0.7"
+minijinja = "2"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+similar = "2"
+walkdir = "2"

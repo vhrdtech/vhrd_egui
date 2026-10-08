@@ -36,20 +36,36 @@ in tpm (P2605). Statuses were checked against the code.
 | `ve_basics` | Small basics every app wants: build info, label selectability, hover cross-reference highlight. |
 | `ve_theme` | The design system: brand tokens, dark and light egui styles, fonts and type scale, `UiExt` helpers, gallery. |
 | `ve_dash` | btop-style dashboard building blocks: theme, sparkline, meter, status light, stat tile, titled panel. |
+| `ve_template` | The app template as a command: `new`, `check-answers`, `compare`, `version` (`egui_app_skill/`). |
 
 ## Platform (`PLT`)
 
-- 🚧 **PLT-1 One egui version across the stack**: vhrd_egui moved to 0.36 (6 Oct 2026), matching mx3 and
-  egui_tabular. RockFace and IOWeaver are still on 0.33 and need porting when they adopt vhrd_egui.
-- 📋 **PLT-2 App template as a skill**: migrate eframe_template into this repo as the app template and turn it into
-  a skill, like embedded_bedrock's `firmware_template_skill`: generate a new app, record the template version in
-  the app, upgrade existing apps. Includes Windows terminal output and tracking which app is on which template
-  version.
+- 🚧 **PLT-1 One egui version across the stack**: `[workspace.dependencies]` here is the pin (egui / eframe /
+  egui_kittest 0.36, the latest release on 8 Oct 2026); vhrd_egui, egui_tabular 0.2, mx3 and tpm_mesh_dash are on
+  it. eventfull, IOWeaver and RockFace are on 0.33 and are being ported (P2605#8oct-1139, 8 Oct 2026). Policy and
+  porting notes for apps: `egui_app_skill/references/stack.md`.
+- ✅ **PLT-2 App template as a skill**: `egui_app_skill/` (SKILL.md, `templates/`, `references/`) and the
+  `ve_template` command (`new`, `new --answers`, `check-answers`, `compare`, `version`): generates an app with
+  ve_basics (build info, labels, hover link, startup guard), ve_theme, app id + icon + `.desktop` + `just install`,
+  `build.rs` and `--version`, egui_kittest tests with a wgpu snapshot, justfile, AGENTS/FEATURES/CHANGELOG
+  skeletons, and `ve_app.json` (template version + commit + answers + upgrades + rejected + nuances) for upgrades
+  and adoption. `ve_template/src/`, unit tests there. Missing: the `shell` layout (refused until WID-3 lands),
+  verified Windows console output (PLT-6 untested on Windows). Supersedes eframe_template (P2542).
 - 🚧 **PLT-3 Tests and CI**: `ve_dash` has unit tests (history, heat gradient) and egui_kittest UI tests
   (`ve_dash/tests/ui.rs`): AccessKit queries for labels and tooltips plus a wgpu-rendered image snapshot
   (`tests/snapshots/dash_panel.png`, update with `UPDATE_SNAPSHOTS=1`). Still missing: ve_widget registry tests, CI.
-- 💡 **PLT-4 Crash recovery**: clear saved settings after a startup failure (a huge recorded window size makes
-  wgpu surface creation fail).
+- ✅ **PLT-4 Crash recovery**: `ve_basics::StartupGuard` — a marker file in the app's storage dir, written before
+  the window opens and removed after the first frame; found at startup it means the last start died, so `app.ron`
+  is moved to `app.ron.broken-<secs>` and `recovered` names it (the template's top bar says so once).
+  `ve_basics/src/startup_guard.rs`, tested; wired in the template's `main.rs`.
+- ✅ **PLT-5 egui skill**: `egui_app_skill/SKILL.md` carries the UI guide rules (`references/ui-guide.md`: tooltips
+  everywhere, hover highlight, labels, segments, theme tokens), the egui_kittest testing rules
+  (`references/kittest.md`: it clicks, types and snapshots headless), the version policy (`references/stack.md`),
+  the launcher icon / app id pattern and the upgrade flow (`references/upgrade.md`). Symlink it into
+  `~/.claude*/skills/` like `firmware_template_skill`.
+- 🚧 **PLT-6 Windows console output**: the template's `--version` calls `AttachConsole(ATTACH_PARENT_PROCESS)`
+  (windows-sys) before printing, so the text reaches the terminal although release builds hide the console window.
+  Written, not yet run on Windows.
 
 ## Widgets (`WID`)
 
