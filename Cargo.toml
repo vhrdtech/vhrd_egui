@@ -14,12 +14,16 @@ members = [
     "ve_basics",
     "ve_theme",
     "ve_template",
+    "ve_app",
 ]
 
 [workspace.dependencies]
 egui = "0.36"
 eframe = "0.36"
 egui_kittest = "0.36"
+egui_tiles = "0.17"
+log = "0.4"
+serde = { version = "1", features = ["derive"] }
 erased-serde = "0.4"
 typetag = "0.2"
 inventory = "0.3"

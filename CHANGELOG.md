@@ -5,6 +5,21 @@ versions follow [Semantic Versioning](https://semver.org/). Feature IDs refer to
 
 ## [Unreleased]
 
+### Added
+
+- New crate `ve_app`, the application shell ported from eframe_template to egui 0.36 / egui_tiles 0.17:
+  `Shell::new(cc, cx, ShellOptions::new(name, build_info!()))` is a complete `eframe::App` with the VHRD theme
+  and non-selectable labels on (WID-8).
+  - Widgets in egui_tiles tabs and splits; *View → Open widget* and the ➕ of each tab bar list the registered
+    `WidgetInfo`s by group path; layout saved and restored through eframe storage with a `layout_version`
+    guard (WID-3).
+  - Menus File / View / Windows / Help, status bar with build info, optional side panel; About, Settings and
+    Debug windows; `ShellOptions` hooks for the side panel, app settings, default widgets and a widget filter
+    (WID-8).
+  - Quit asks first and names the widgets whose `is_closeable()` is false (WID-9).
+  - `Repainter` to wake the UI from background work, `ve_app::prelude` for widget code, `shell_demo` example.
+- `svt!` is kept as the way to write seed / visual / transient widgets (WID-5).
+
 ## [0.10.0] - 2026-10-08
 
 ### Added

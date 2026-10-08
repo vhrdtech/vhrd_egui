@@ -4,7 +4,8 @@ Guidance for AI agents and contributors. Read this before changing code.
 
 vhrd_egui is the common egui platform for the in-house GUI apps (IOWeaver, RockFace, mx3 and future ones): the
 widget trait apps are built on, shared helpers, and a set of small helper crates. Pieces that grow big graduate into
-crates of their own (egui_tabular, eventfull). It is early: two crates, about 100 lines, no app uses it yet.
+crates of their own (egui_tabular, eventfull). It is early: no app uses it yet; `ve_app` is the shell new apps
+start from.
 
 ## FEATURES.md is the source of truth
 
@@ -51,6 +52,9 @@ Cargo workspace, edition 2024, one shared version (`[workspace.package]`).
   panel title bar, toolbar, muted label, badge), the gallery example.
 - `ve_dash/` — btop-style dashboard blocks (theme from `ve_theme` tokens, sparkline, meter, segmented bar,
   tiles).
+- `ve_app/` — the application shell apps are built on: `Shell` (an `eframe::App`) with menu bar, egui_tiles of
+  widgets opened from the `WidgetInfo` registry, About / Settings / Debug windows, status bar, persisted
+  layout, quit dialog for busy widgets; `ve_app::prelude` for widget code, the `shell_demo` example.
 - `ve_basics/` — build info, non-selectable labels, hover cross-reference highlight, startup crash guard.
 - `ve_template/` — the app template as a command (`new`, `check-answers`, `compare`); the files it renders and the
   agent skill around it live in `egui_app_skill/` (`SKILL.md`, `templates/`, `references/`). A change to what gets

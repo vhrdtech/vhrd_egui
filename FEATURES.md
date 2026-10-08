@@ -35,6 +35,7 @@ in tpm (P2605). Statuses were checked against the code.
 | `ve_macro` | Proc macros for widget implementations (`svt!`). |
 | `ve_basics` | Small basics every app wants: build info, label selectability, hover cross-reference highlight. |
 | `ve_theme` | The design system: brand tokens, dark and light egui styles, fonts and type scale, `UiExt` helpers, gallery. |
+| `ve_app` | The application shell: menu bar, tiles of widgets, About / Settings / Debug windows, persisted layout, quit dialog. |
 | `ve_dash` | btop-style dashboard building blocks: theme, sparkline, meter, status light, stat tile, titled panel. |
 | `ve_template` | The app template as a command: `new`, `check-answers`, `compare`, `version` (`egui_app_skill/`). |
 
@@ -50,11 +51,13 @@ in tpm (P2605). Statuses were checked against the code.
   `build.rs` and `--version`, egui_kittest tests with a wgpu snapshot, justfile, AGENTS/FEATURES/CHANGELOG
   skeletons, and `ve_app.json` (template version + commit + answers + upgrades + rejected + nuances) for upgrades
   and adoption. `ve_template/src/`, unit tests there. Verified 8 Oct 2026: a generated app with the theme on
-  builds, passes clippy -D warnings, fmt and its three kittest tests (wgpu snapshot). Missing: the `shell` layout (refused until WID-3 lands), verified Windows console
-  output (PLT-6 untested on Windows). Supersedes eframe_template (P2542).
+  builds, passes clippy -D warnings, fmt and its three kittest tests (wgpu snapshot). Missing: the `shell`
+  layout (unblocked: the shell is now `ve_app`, WID-8), verified Windows console output (PLT-6 untested on
+  Windows). Supersedes eframe_template (P2542).
 - 🚧 **PLT-3 Tests and CI**: `ve_dash` has unit tests (history, heat gradient) and egui_kittest UI tests
   (`ve_dash/tests/ui.rs`): AccessKit queries for labels and tooltips plus a wgpu-rendered image snapshot
-  (`tests/snapshots/dash_panel.png`, update with `UPDATE_SNAPSHOTS=1`). Still missing: ve_widget registry tests, CI.
+  (`tests/snapshots/dash_panel.png`, update with `UPDATE_SNAPSHOTS=1`). `ve_app/tests/ui.rs` covers the shell
+  (menus, open-widget menu from the registry, quit dialog, persistence, `shell.png`). Still missing: CI.
 - ✅ **PLT-4 Crash recovery**: `ve_basics::StartupGuard` — a marker file in the app's storage dir, written before
   the window opens and removed after the first frame; found at startup it means the last start died, so `app.ron`
   is moved to `app.ron.broken-<secs>` and `recovered` names it (the template's top bar says so once).
@@ -75,16 +78,38 @@ in tpm (P2605). Statuses were checked against the code.
   `typetag` (`#[typetag::serde(tag = "type")]`). `ve_widget/src/lib.rs`.
 - ✅ **WID-2 Widget registry**: `WidgetInfo` (title, group path for menus, tags, `spawn_fn`) collected with
   `inventory`. `ve_widget/src/lib.rs`.
-- 🚧 **WID-3 Hosting widgets in tiles and windows**: nothing yet builds the open-widget menu from `WidgetInfo`
-  group paths, filters by tags or saves and restores a layout of widgets. The registry exists, the host doesn't.
+- ✅ **WID-3 Hosting widgets in tiles**: `ve_app::Shell` shows widgets as egui_tiles panes (tabs, splits,
+  drag and drop), builds the open-widget menu (*View → Open widget* and the ➕ of each tab bar) from the
+  `WidgetInfo` registry with one submenu per `group_path` segment, filters it with `ShellOptions::widget_filter`
+  (e.g. by tags), calls `logic` on every widget each frame and saves / restores the layout through eframe
+  storage (JSON), dropping saves that no longer deserialize or carry another `layout_version`. Ported from
+  eframe_template (`src/main_window`, `src/tabs`). `ve_app/src/tiles.rs`, `ve_app/src/widget_menu.rs`,
+  `ve_app/src/state.rs`, kittest in `ve_app/tests/ui.rs`. Widgets in floating windows: WID-10.
 - ✅ **WID-4 Shared context**: `Context` holds app state as `Arc<RwLock<Box<dyn Any>>>`. `ve_widget/src/context.rs`.
-- 🔍 **WID-5 `svt!` macro**: destructures `self` into `seed: s`, `visual: v`, `transient` and returns early when
-  `transient` is `None`. Hard-codes field names; no repo uses it (checked io_weaver, rockface, mx3 on 3 Oct
-  2026). Keep it if WID-3 adopts the seed / visual / transient split, otherwise drop it.
+- ✅ **WID-5 `svt!` macro**: destructures `self` into `seed: s`, `visual: v`, `transient` and returns early when
+  `transient` is `None`. Kept (decided 8 Oct 2026): the shell persists exactly the seed / visual split and
+  rebuilds transient state in `init`, and the demo `Note` widget uses it; re-exported from `ve_app::prelude`.
+  Still hard-codes the field names.
 - ⬜ **WID-6 `util` module**: `ve_widget/src/util.rs` is empty.
 - 💡 **WID-7 Widget grid / canvas and indicator / gauge widgets**: from IOWeaver (Widget Canvas, Indicators and
   gauges) and RockFace (Widget grid). Basic indicators now exist in `ve_dash` (DASH area); this item keeps the
   grid / canvas part and richer gauges.
+- ✅ **WID-8 App shell and its windows**: crate `ve_app`. `Shell::new(cc, cx, ShellOptions)` turns on
+  `ve_theme::setup` and `ve_basics::setup_labels`, implements `eframe::App` (`Shell::ui` for apps that wrap
+  it). Menus File (Settings, Quit) / View (Open widget, side panel, Reset layout) / Windows (Debug, Center on
+  screen) / Help (About, Reset UI memory), theme switch, status bar with app name and `build_info_label`
+  (`hover_link`ed to the one in About), optional collapsible side panel (`ShellOptions::side_panel`). Windows:
+  About (name, description, build info), Settings (theme plus `ShellOptions::settings`), Debug (tab bar
+  settings, tile tree, egui inspection); which are open is persisted. `Repainter` wakes the UI from background
+  work (replaces the template's tokio-channel `UiRepainter`), `ve_app::prelude` for widget code. Every control
+  has a tooltip. Demo: `cargo run -p ve_app --example shell_demo`; snapshot `ve_app/tests/snapshots/shell.png`.
+  `ve_app/src/lib.rs`, `ve_app/src/windows.rs`.
+- ✅ **WID-9 Quit asks when a widget is busy**: File → Quit and the window's close button close at once unless an
+  open widget's `is_closeable()` is false; then a modal names the busy widgets with *Cancel* / *Quit anyway*
+  (Esc cancels). Busy widgets' tabs have no close button. `ve_app/src/close_dialog.rs`, kittest in
+  `ve_app/tests/ui.rs`.
+- 💡 **WID-10 Widgets in floating windows**: open a registered widget in an egui `Window` instead of a tile
+  (and move it between the two), persisted with the layout. eframe_template didn't have it either.
 
 ## Dashboard building blocks (`DASH`)
 
