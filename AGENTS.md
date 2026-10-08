@@ -97,6 +97,9 @@ reads before writing UI is `egui_app_skill/references/ui-guide.md`, kept in step
 - **Learned widths, never hard-coded ones**: a piece whose content changes length (live numbers, names,
   columns across rows) keeps the widest it has been (`ve_dash::steady_width`, `StatTile::steady()`), so nothing
   jumps; no fixed pixel widths in app code (user, 8 Oct 2026). Numbers use tabular digits.
+- **Disabled or unavailable things stay visible and say why**: never hide a control, row or action because it
+  can't be used now; show it disabled with a tooltip giving the reason ("not clickable: interactive session, no
+  transcript served"), and when the cause is on screen, highlight it on hover (`hover_link`) (user, 8 Oct 2026).
 - **Reusable UI lands here, not in the app**: a widget, layout helper or fix that another app could use goes into
   vhrd_egui (ve_dash, ve_basics, ve_theme) with a doc example, and the app just calls it.
 

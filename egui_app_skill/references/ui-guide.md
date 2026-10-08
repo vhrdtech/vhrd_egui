@@ -19,6 +19,12 @@ ui.label(format!("{rtt:.1} ms"))
 Build info: `ve_basics::build_info_label(ui, &build_info!())` shows `version · sha · debug|release`, with the
 full version, SHA, build time and profile in its tooltip; the same data `--version` prints.
 
+## Disabled things say why
+
+Never hide a control, row or action because it can't be used right now. Show it disabled, and its tooltip
+says why and what would enable it. When the cause is visible on screen (a full login, a stopped node, a missing
+setting), hovering the disabled item highlights that cause (`hover_link`).
+
 ## Highlight related items on hover
 
 When something refers to something else (a session to its PC, a lane count to its sessions, a graph line to its
