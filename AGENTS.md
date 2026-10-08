@@ -46,7 +46,6 @@ Cargo workspace, edition 2024, one shared version (`[workspace.package]`).
   `WidgetInfo`), `Context` (shared user state behind a tokio `RwLock`).
 - `ve_macro/` — proc macros for widget implementations (`svt!` destructures `self` into seed / visual /
   transient).
-
 - `ve_dash/` — btop-style dashboard blocks (theme, sparkline, meter, segmented bar, tiles).
 - `ve_basics/` — build info, non-selectable labels, hover cross-reference highlight.
 
