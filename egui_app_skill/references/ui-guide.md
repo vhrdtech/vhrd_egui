@@ -45,6 +45,10 @@ lights at least one segment; the tooltip says the percentage and the segments. L
 use `ve_dash::steady_width` / `StatTile::steady()` so what follows does not jump. Jumpy per-frame values go
 through `ve_dash::Decay` before they drive a bar.
 
+Widths are learned, never hard-coded: anything whose content changes length (numbers, names, a column shared by
+rows) keeps the widest it has been, via `steady_width` or a learned-width helper in ve_dash; no fixed pixel widths
+in app code. Numbers use tabular digits so they don't shift.
+
 ## Colours and theme
 
 Colours, spacing, radii and type come from `ve_theme` tokens (`ve_theme::setup(ctx)` at startup installs the dark
@@ -63,3 +67,4 @@ accents need direct labels on charts (their colour-vision separation sits in the
   `eframe::App::ui` (egui 0.34+; the old `TopBottomPanel` / `SidePanel` on a `Context` are gone, and 0.36
   deprecated `show_inside` in favour of `show` on a `Ui`).
 - No `unwrap` / `expect` on data from disk, the network or the user.
+- A widget or layout helper another app could use goes into vhrd_egui (ve_dash, ve_basics, ve_theme), not the app.

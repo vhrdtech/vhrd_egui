@@ -94,6 +94,11 @@ reads before writing UI is `egui_app_skill/references/ui-guide.md`, kept in step
 - **Labels are not selectable** (`setup_labels(ctx)` at startup, BAS-2 label-select); text worth copying (ids,
   paths, commands) uses `copyable_label`.
 - Percent bars use 5 or 10 segments (`SegBar`, DASH-13 seg-bar).
+- **Learned widths, never hard-coded ones**: a piece whose content changes length (live numbers, names,
+  columns across rows) keeps the widest it has been (`ve_dash::steady_width`, `StatTile::steady()`), so nothing
+  jumps; no fixed pixel widths in app code (user, 8 Oct 2026). Numbers use tabular digits.
+- **Reusable UI lands here, not in the app**: a widget, layout helper or fix that another app could use goes into
+  vhrd_egui (ve_dash, ve_basics, ve_theme) with a doc example, and the app just calls it.
 
 ## Code conventions
 
