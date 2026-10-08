@@ -5,6 +5,8 @@ versions follow [Semantic Versioning](https://semver.org/). Feature IDs refer to
 
 ## [Unreleased]
 
+## [0.12.0] - 2026-10-08
+
 ### Added
 
 - `ve_dash`: `Panel`, the titled panel with an ⓘ info button and an auto / compact / wide size switch on its border
