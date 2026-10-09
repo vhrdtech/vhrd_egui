@@ -177,7 +177,7 @@ impl Tokens {
                 hover: rgb(0x2c2c2e),
                 focus: rgb(0x26c6da), // signal-dark.can
                 slug: rgb(0xa6e3c4),  // pale mint
-                task: rgb(0xf08c78),  // coral
+                task: rgb(0xe8c44e),  // gold
             },
             space: SPACE,
             radius: RADIUS,
@@ -213,8 +213,8 @@ impl Tokens {
                 selection: rgb(0xc4e5ea),      // signal.can, pale
                 hover: rgb(0xe6e6e6),          // grey.200
                 focus: rgb(0x00838f),          // signal.can
-                slug: rgb(0x1f7a4d),           // deep mint
-                task: rgb(0xb8442e),           // brick coral
+                slug: rgb(0x1f8a54),           // deep mint
+                task: rgb(0xa48200),           // deep gold
             },
             space: SPACE,
             radius: RADIUS,
@@ -432,6 +432,22 @@ mod tests {
                 }
             }
             assert!(dist(c.slug, c.task) > 60.0, "{name}: slug vs task");
+            // Red and orange are reserved for error and warning (THM-10).
+            for (n, fg) in [
+                ("slug", c.slug),
+                ("task", c.task),
+                ("accent", c.accent),
+                ("accent_alt", c.accent_alt),
+            ] {
+                assert!(
+                    !crate::hue::is_alert_hue(fg),
+                    "{name}: {n} is in the error / warning hue range"
+                );
+            }
+            assert!(
+                crate::hue::delta_e(c.slug, c.task) > 0.1,
+                "{name}: slug vs task (OKLab)"
+            );
         }
     }
 

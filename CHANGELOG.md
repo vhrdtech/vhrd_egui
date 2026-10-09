@@ -5,6 +5,16 @@ versions follow [Semantic Versioning](https://semver.org/). Feature IDs refer to
 
 ## [Unreleased]
 
+### Added
+
+- `ve_theme`: `hue` module (OKLab `delta_e`, `hue_deg`, `hue_gap`, `ALERT_HUES`, `is_alert_hue`) to test that
+  categorical colours stay out of the red / orange range reserved for error and warning and are apart from each
+  other (THM-10). AGENTS.md UI guide rule added.
+
+### Changed
+
+- `ve_theme`: the `task` identifier colour is gold (was coral / brick, which read as a warning) (THM-9).
+
 ## [0.13.0] - 2026-10-09
 
 ### Added

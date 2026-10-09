@@ -100,6 +100,10 @@ reads before writing UI is `egui_app_skill/references/ui-guide.md`, kept in step
 - **Disabled or unavailable things stay visible and say why**: never hide a control, row or action because it
   can't be used now; show it disabled with a tooltip giving the reason ("not clickable: interactive session, no
   transcript served"), and when the cause is on screen, highlight it on hover (`hover_link`) (user, 8 Oct 2026).
+- **Categorical colours avoid red and orange**: labels, chips, tags, series, hosts and models never use red,
+  orange or red-ish brown hues (OKLCH 5°-85°, `ve_theme::hue::ALERT_HUES`); those are reserved for error and
+  warning (`crit`, `warn`, `red`). Colours that share a view must be clearly distinct (OKLab ΔE, hue gap), and a
+  unit test says so (`hue::is_alert_hue`, `hue::delta_e`, `hue::hue_gap`) in both themes (user, 9 Oct 2026).
 - **Reusable UI lands here, not in the app**: a widget, layout helper or fix that another app could use goes into
   vhrd_egui (ve_dash, ve_basics, ve_theme) with a doc example, and the app just calls it.
 

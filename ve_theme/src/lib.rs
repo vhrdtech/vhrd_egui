@@ -15,6 +15,8 @@
 //! - [`typography`]: the type scale on egui's text styles plus `title` and `caption` (THM-3).
 //! - [`UiExt`]: what `Style` cannot express — primary / danger buttons, section header, panel title bar,
 //!   toolbar, muted label, badge — each with its tooltip (THM-4).
+//! - [`hue`]: OKLab distance and the red / orange hue range reserved for error and warning, to test that
+//!   categorical colours (labels, chips, series, hosts, models) stay out of it and apart from each other (THM-10).
 //! - [`gallery`]: every egui widget and helper in one view, the tuning tool (THM-5);
 //!   `cargo run -p ve_theme --example gallery`.
 //!
@@ -36,6 +38,7 @@ pub mod contrast;
 #[cfg(feature = "fonts")]
 mod fonts;
 pub mod gallery;
+pub mod hue;
 mod tokens;
 pub mod typography;
 mod ui_ext;

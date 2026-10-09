@@ -62,6 +62,11 @@ and light styles; egui follows the system preference). No hard-coded `Color32` i
 warn / crit / off) always come with a text label or icon, never as the only carrier of meaning; the two series
 accents need direct labels on charts (their colour-vision separation sits in the labels-required band).
 
+Categorical colours (labels, chips, tags, series, hosts, models) never use red, orange or red-ish brown hues
+(OKLCH 5°-85°, `ve_theme::hue::ALERT_HUES`): those are reserved for error and warning. Colours that share a view
+must be clearly distinct, and a unit test checks both in dark and light (`hue::is_alert_hue`, `hue::delta_e`,
+`hue::hue_gap`).
+
 ## Layout and state
 
 - Keep the UI thread free: no blocking I/O or long computation inside `ui()`; workers send results through a
