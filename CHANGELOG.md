@@ -5,6 +5,11 @@ versions follow [Semantic Versioning](https://semver.org/). Feature IDs refer to
 
 ## [Unreleased]
 
+### Changed
+
+- `justfile` gets a `default` recipe (`@just --list`), so a bare `just` only lists the recipes instead of
+  running `test`.
+
 ## [0.14.0] - 2026-10-09
 
 ### Added

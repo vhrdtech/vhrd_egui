@@ -1,5 +1,9 @@
 # Library crates (apps depend on them from git) plus the app template command ve_template.
 
+# Bare `just` only lists the recipes
+default:
+    @just --list
+
 test:
     cargo test --workspace
 
