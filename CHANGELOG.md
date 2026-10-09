@@ -5,6 +5,8 @@ versions follow [Semantic Versioning](https://semver.org/). Feature IDs refer to
 
 ## [Unreleased]
 
+## [0.13.0] - 2026-10-09
+
 ### Added
 
 - `ve_theme`: palette tokens `slug` and `task` for identifier text, and the same on `ve_dash::Theme` (THM-9).
