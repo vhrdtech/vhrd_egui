@@ -5,6 +5,8 @@ versions follow [Semantic Versioning](https://semver.org/). Feature IDs refer to
 
 ## [Unreleased]
 
+## [0.14.0] - 2026-10-09
+
 ### Added
 
 - `ve_theme`: `hue` module (OKLab `delta_e`, `hue_deg`, `hue_gap`, `ALERT_HUES`, `is_alert_hue`) to test that

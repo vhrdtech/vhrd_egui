@@ -16,9 +16,9 @@ log.workspace = true
 serde.workspace = true
 serde_json = "1"
 typetag.workspace = true
-ve_basics = { path = "../ve_basics", version = "0.13" }
-ve_theme = { path = "../ve_theme", version = "0.13" }
-ve_widget = { path = "../ve_widget", version = "0.13" }
+ve_basics = { path = "../ve_basics", version = "0.14" }
+ve_theme = { path = "../ve_theme", version = "0.14" }
+ve_widget = { path = "../ve_widget", version = "0.14" }
 
 [dev-dependencies]
 eframe = { workspace = true, features = ["persistence", "wgpu"] }
