@@ -8,7 +8,7 @@ mod app;
 
 use std::collections::HashMap;
 
-use app::Sandbox;
+use app::{Sandbox, Scene};
 use egui::{Pos2, pos2, vec2};
 use egui_kittest::Harness;
 use egui_kittest::kittest::Queryable;
@@ -71,28 +71,43 @@ impl Watch {
 
     /// Frames until the world rests; panics if that takes too long.
     fn rest(&mut self, h: &mut App) -> usize {
+        self.rest_within(h, SETTLE_FRAMES)
+    }
+
+    /// Frames until the world rests; panics after `limit`.
+    fn rest_within(&mut self, h: &mut App, limit: usize) -> usize {
         // The frame after an input applies it; only then is "at rest" news.
         self.frame(h);
         self.frame(h);
-        for n in 2..SETTLE_FRAMES {
+        for n in 2..limit {
             if h.state().world.is_at_rest() {
                 return n;
             }
             self.frame(h);
         }
-        panic!("not at rest {SETTLE_FRAMES} frames after the last change");
+        panic!("not at rest {limit} frames after the last change");
     }
 }
 
-/// The sandbox in a window, its first widgets settled.
+/// The sandbox's few-widgets scene in a window, its widgets settled.
 fn sandbox() -> (App, Watch) {
+    sandbox_with(Scene::Few)
+}
+
+fn sandbox_with(scene: Scene) -> (App, Watch) {
     let mut h = Harness::builder()
         .with_size(vec2(1600.0, 1000.0))
         .with_step_dt(1.0 / FPS)
-        .build_eframe(|cc| Sandbox::new(cc));
+        .build_eframe(move |cc| Sandbox::with_scene(cc, scene));
     h.step();
     let mut watch = Watch::new(&h);
-    watch.rest(&mut h);
+    // The full scene drops 30 widgets at once, packed tighter than they
+    // fit; a dense field rests in about 6 s (SETL-11).
+    let limit = match scene {
+        Scene::Few => SETTLE_FRAMES,
+        Scene::Full => SETTLE_FRAMES * 2,
+    };
+    watch.rest_within(&mut h, limit);
     (h, watch)
 }
 
@@ -483,4 +498,87 @@ fn a_row_overfilled_by_the_window_sends_one_widget_to_the_next_row() {
     h.get_by_label("Collision shapes").click();
     watch.frame(&mut h);
     assert!(!h.state().overlay.shapes);
+}
+
+#[test]
+fn the_default_scene_fills_the_width_and_runs_past_the_bottom() {
+    let h: App = Harness::builder().build_eframe(|cc| Sandbox::new(cc));
+    assert_eq!(
+        h.state().scene,
+        Scene::Full,
+        "the full scene is the default"
+    );
+    drop(h);
+
+    let (mut h, mut watch) = sandbox_with(Scene::Full);
+    let arena = h.state().arena;
+    let world = &h.state().world;
+    assert!(
+        world.bodies().len() >= 15,
+        "{} widgets",
+        world.bodies().len()
+    );
+    assert!(world.bodies().iter().all(|b| !b.lifted));
+    assert!(!world.params().walls.bottom, "the bottom is open");
+    // Past the bottom of the window, and across the whole width.
+    let lowest = world
+        .bodies()
+        .iter()
+        .map(|b| b.rect.max.y)
+        .fold(0.0, f32::max);
+    assert!(
+        lowest > arena.max.y + 100.0,
+        "lowest {lowest}, window {arena:?}"
+    );
+    let right = world
+        .bodies()
+        .iter()
+        .map(|b| b.rect.max.x)
+        .fold(0.0, f32::max);
+    assert!(
+        right > arena.max.x - 120.0,
+        "rightmost {right}, window {arena:?}"
+    );
+    for b in world.bodies() {
+        assert!(
+            b.rect.min.x >= arena.min.x - 0.5
+                && b.rect.max.x <= arena.max.x + 0.5
+                && b.rect.min.y >= arena.min.y - 0.5,
+            "inside the side and top walls: {:?}",
+            b.rect
+        );
+    }
+
+    // Scrolling down shows the bottom; the world does not move.
+    let frozen = h.state().world.bodies().to_vec();
+    h.hover_at(arena.center());
+    h.event(egui::Event::MouseWheel {
+        unit: egui::MouseWheelUnit::Point,
+        delta: vec2(0.0, -4000.0),
+        modifiers: egui::Modifiers::NONE,
+        phase: egui::TouchPhase::Move,
+    });
+    for _ in 0..30 {
+        watch.frame(&mut h);
+    }
+    let state = h.state();
+    assert!(state.scroll > 100.0, "scrolled {}", state.scroll);
+    assert!(
+        (state.scroll - state.max_scroll()).abs() < 1.0,
+        "to the end"
+    );
+    assert_eq!(state.world.bodies(), &frozen[..], "scrolling moves nothing");
+
+    // A widget down there can be grabbed where it is drawn.
+    let low = state
+        .world
+        .bodies()
+        .iter()
+        .max_by(|a, b| a.rect.max.y.total_cmp(&b.rect.max.y))
+        .expect("bodies")
+        .id;
+    let at = state.screen_pos(state.world.body(low).unwrap().rect.center());
+    assert!(arena.contains(at), "on screen after scrolling: {at:?}");
+    click_at(&mut h, &mut watch, at);
+    assert_eq!(h.state().selected, Some(low));
 }

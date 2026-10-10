@@ -166,6 +166,34 @@ impl Item {
     }
 }
 
+/// The widgets the sandbox starts with.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Scene {
+    /// Enough widgets to fill the width and run past the bottom of the
+    /// window (the bottom wall is open, the arena scrolls): the layout
+    /// under real pressure, as a full dash.
+    Full,
+    /// Five widgets floating in a closed box.
+    Few,
+}
+
+impl Scene {
+    /// The parameters the scene starts with.
+    pub fn params(self) -> Params {
+        let mut p = Params::default();
+        if self == Scene::Full {
+            p.walls.bottom = false;
+        }
+        p
+    }
+}
+
+/// How much of the arena's area the full scene fills with widgets: more
+/// than one window, so it runs past the bottom.
+const FULL_FILL: f32 = 1.8;
+/// The area of an average sandbox widget, points², for the full scene's count.
+const AVERAGE_AREA: f32 = 330.0 * 230.0;
+
 /// Which layers of the debug overlay are drawn.
 pub struct Overlay {
     /// Wireframes: each body's rectangle, minimum size and id.
@@ -201,8 +229,15 @@ pub struct Sandbox {
     pub auto: bool,
     /// A widget dropped after a drag makes that place its home.
     pub rehome_on_drop: bool,
-    /// The area the bodies live in, in screen points.
+    /// The area the bodies live in, in screen points: the visible part.
+    /// The world's coordinates are screen points with the arena scrolled
+    /// to the top.
     pub arena: egui::Rect,
+    /// The widgets it starts with; Reset seeds them again.
+    pub scene: Scene,
+    /// How far the arena is scrolled down, points (the full scene runs
+    /// past the bottom of the window).
+    pub scroll: f32,
     seeded: bool,
     seq: u32,
     rng: u32,
@@ -222,11 +257,16 @@ impl Sandbox {
     /// The app as eframe starts it: theme installed, a few widgets seeded
     /// on the first frame.
     pub fn new(cc: &eframe::CreationContext<'_>) -> Self {
+        Self::with_scene(cc, Scene::Full)
+    }
+
+    /// The app starting with `scene`.
+    pub fn with_scene(cc: &eframe::CreationContext<'_>, scene: Scene) -> Self {
         ve_theme::setup(&cc.egui_ctx);
         cc.egui_ctx
             .all_styles_mut(|style| style.interaction.selectable_labels = false);
         Self {
-            world: World::new(Rect::default(), Params::default()),
+            world: World::new(Rect::default(), scene.params()),
             items: Vec::new(),
             paused: false,
             selected: None,
@@ -242,6 +282,8 @@ impl Sandbox {
             auto: false,
             rehome_on_drop: true,
             arena: egui::Rect::NOTHING,
+            scene,
+            scroll: 0.0,
             seeded: false,
             seq: 0,
             rng: 0x2545_f491,
@@ -249,6 +291,38 @@ impl Sandbox {
             grab_offset: egui::Vec2::ZERO,
             resize_from: None,
         }
+    }
+
+    /// Where a world point is on the screen.
+    pub fn screen_pos(&self, v: Vec2) -> Pos2 {
+        to_pos(v) - vec2(0.0, self.scroll)
+    }
+
+    /// Where a world rectangle is on the screen.
+    pub fn screen_rect(&self, r: Rect) -> egui::Rect {
+        to_rect(r).translate(vec2(0.0, -self.scroll))
+    }
+
+    /// The world point under a screen point.
+    pub fn world_pos(&self, p: Pos2) -> Vec2 {
+        from_pos(p + vec2(0.0, self.scroll))
+    }
+
+    /// How tall the arena's content is: the window, or down to the lowest
+    /// widget when they run past it.
+    pub fn content_height(&self) -> f32 {
+        let lowest = self
+            .world
+            .bodies()
+            .iter()
+            .map(|b| b.rect.max.y)
+            .fold(self.arena.max.y, f32::max);
+        lowest + self.world.params().gap - self.arena.min.y
+    }
+
+    /// The farthest the arena can be scrolled down.
+    pub fn max_scroll(&self) -> f32 {
+        (self.content_height() - self.arena.height()).max(0.0)
     }
 
     /// A small deterministic generator: the sandbox replays the same way
@@ -260,14 +334,14 @@ impl Sandbox {
         self.rng
     }
 
-    /// Add a widget of the next kind with its middle at `at` (or at a
-    /// spot picked inside the arena).
+    /// Add a widget of the next kind with its middle at the world point
+    /// `at` (or at a spot picked inside the walls).
     pub fn add_widget(&mut self, at: Option<Pos2>) -> BodyId {
         let kind = Kind::ALL[self.seq as usize % Kind::ALL.len()];
         self.seq += 1;
         let at = at.unwrap_or_else(|| {
             let (rx, ry) = (self.random() % 1000, self.random() % 1000);
-            let inner = self.arena.shrink(60.0);
+            let inner = to_rect(self.world.bounds()).shrink(60.0);
             pos2(
                 inner.min.x + inner.width().max(0.0) * rx as f32 / 1000.0,
                 inner.min.y + inner.height().max(0.0) * ry as f32 / 1000.0,
@@ -304,16 +378,21 @@ impl Sandbox {
     }
 
     fn reset(&mut self) {
-        self.world = World::new(from_rect(self.arena), Params::default());
+        self.world = World::new(from_rect(self.arena), self.scene.params());
+        self.scroll = 0.0;
         self.items.clear();
         self.selected = None;
         self.seq = 0;
         self.seeded = false;
     }
 
-    /// The first widgets, spread over the arena.
+    /// The first widgets of the scene.
     fn seed(&mut self) {
         self.seeded = true;
+        if self.scene == Scene::Full {
+            self.seed_full();
+            return;
+        }
         let spots = [
             (0.2, 0.25),
             (0.5, 0.2),
@@ -324,6 +403,26 @@ impl Sandbox {
         for (fx, fy) in spots {
             let at = self.arena.min + vec2(self.arena.width() * fx, self.arena.height() * fy);
             self.add_widget(Some(at));
+        }
+        self.selected = None;
+    }
+
+    /// Enough widgets to fill [`FULL_FILL`] windows, seeded on a grid a
+    /// little tighter than they fit (a little offset per row so they are
+    /// not lined up from the start): they land lifted and push each other
+    /// apart until the arena is packed.
+    fn seed_full(&mut self) {
+        let a = self.arena;
+        let count = ((a.width() * a.height() * FULL_FILL) / AVERAGE_AREA)
+            .ceil()
+            .clamp(8.0, 80.0) as usize;
+        let cols = (a.width() / 290.0).ceil().max(1.0) as usize;
+        let (dx, dy) = (a.width() / cols as f32, 190.0);
+        for i in 0..count {
+            let (row, col) = (i / cols, i % cols);
+            let shift = if row % 2 == 1 { dx * 0.2 } else { 0.0 };
+            let at = a.min + vec2(dx * (col as f32 + 0.5) + shift, dy * (row as f32 + 0.5));
+            self.add_widget(Some(pos2(at.x.min(a.max.x - 60.0), at.y)));
         }
         self.selected = None;
     }
@@ -425,10 +524,22 @@ impl Sandbox {
             if ui
                 .danger_button(
                     "Reset",
-                    "Remove every widget, put the parameters back to their defaults and seed the first widgets again.",
+                    "Remove every widget, put the parameters back to the scene's defaults and seed the scene's widgets again.",
                 )
                 .clicked()
             {
+                self.reset();
+            }
+        });
+        ui.horizontal(|ui| {
+            ui.label("Scene").on_hover_text("The widgets the sandbox starts with; picking one resets it.");
+            let mut scene = self.scene;
+            ui.selectable_value(&mut scene, Scene::Full, "full")
+                .on_hover_text("Enough widgets to fill the width and run past the bottom of the window: the bottom wall is open and the arena scrolls. The layout under real pressure.");
+            ui.selectable_value(&mut scene, Scene::Few, "few")
+                .on_hover_text("Five widgets floating in a closed box.");
+            if scene != self.scene {
+                self.scene = scene;
                 self.reset();
             }
         });
@@ -702,11 +813,17 @@ impl Sandbox {
         self.arena = arena;
         let background = ui
             .allocate_rect(arena, Sense::click())
-            .on_hover_text("The arena. Drag a widget to move it, drag its lower right corner to resize it, double-click empty space to add one.");
+            .on_hover_text("The arena. Drag a widget to move it, drag its lower right corner to resize it, double-click empty space to add one. Scroll when the widgets run past the bottom.");
         if background.double_clicked() {
-            self.add_widget(background.interact_pointer_pos());
+            let at = background
+                .interact_pointer_pos()
+                .map(|p| to_pos(self.world_pos(p)));
+            self.add_widget(at);
         } else if background.clicked() {
             self.selected = None;
+        }
+        if ui.rect_contains_pointer(arena) {
+            self.scroll -= ui.input(|i| i.smooth_scroll_delta.y);
         }
         self.world.set_bounds(from_rect(arena));
         if !self.seeded {
@@ -726,15 +843,39 @@ impl Sandbox {
             let b = &self.world.bodies()[i];
             (b.dragged, b.lifted)
         });
+        self.scroll = self.scroll.clamp(0.0, self.max_scroll());
         for i in order {
             self.body_ui(ui, i, &tokens);
         }
         self.paint_overlay(ui, &tokens);
+        self.paint_scrollbar(ui, &tokens);
+    }
+
+    /// A thin bar on the right edge: which part of the content is shown.
+    fn paint_scrollbar(&self, ui: &Ui, tokens: &Tokens) {
+        let (a, total) = (self.arena, self.content_height());
+        if total <= a.height() + 0.5 {
+            return;
+        }
+        let track = egui::Rect::from_min_max(pos2(a.max.x - 6.0, a.min.y), a.max);
+        let top = a.min.y + a.height() * self.scroll / total;
+        let thumb = egui::Rect::from_min_size(
+            pos2(track.min.x, top),
+            vec2(track.width(), a.height() * a.height() / total),
+        );
+        ui.painter()
+            .rect_filled(thumb, 3.0, tokens.colors.line_strong);
+        ui.interact(track, Id::new("settle_scrollbar"), Sense::hover())
+            .on_hover_text(format!(
+                "Scrolled {:.0} of {:.0} points: the widgets run past the bottom of the window. Scroll over the arena to see them.",
+                self.scroll,
+                total - a.height()
+            ));
     }
 
     fn body_ui(&mut self, ui: &mut Ui, index: usize, tokens: &Tokens) {
         let body = &self.world.bodies()[index];
-        let (id, rect, lifted) = (body.id, to_rect(body.rect), body.lifted);
+        let (id, rect, lifted) = (body.id, self.screen_rect(body.rect), body.lifted);
         let (min_size, home) = (to_vec(body.min_size), body.home);
         let Some(item_index) = self.items.iter().position(|item| item.id == id) else {
             return;
@@ -791,7 +932,8 @@ impl Sandbox {
         if response.dragged()
             && let Some(pointer) = response.interact_pointer_pos()
         {
-            self.world.drag_to(id, from_pos(pointer + self.grab_offset));
+            self.world
+                .drag_to(id, self.world_pos(pointer + self.grab_offset));
         }
         if response.drag_stopped() {
             self.world.release(id, self.rehome_on_drop);
@@ -851,7 +993,7 @@ impl Sandbox {
         let (gravity_color, home_color, vel_color) = (c.cat[0], c.cat[1], c.cat[2]);
         let (slide_color, grid_color) = (c.cat[4], c.cat[3]);
         for body in self.world.bodies() {
-            let rect = to_rect(body.rect);
+            let rect = self.screen_rect(body.rect);
             let center = rect.center();
             if self.overlay.tension && body.tension() > 0.002 {
                 let alpha = (body.tension() * 255.0).clamp(24.0, 140.0) as u8;
@@ -896,7 +1038,7 @@ impl Sandbox {
             if self.overlay.homes
                 && let Some(home) = body.home
             {
-                let home = to_pos(home);
+                let home = self.screen_pos(home);
                 painter.line_segment([center, home], Stroke::new(tokens.stroke.thin, home_color));
                 for d in [vec2(4.0, 4.0), vec2(4.0, -4.0)] {
                     painter.line_segment(
@@ -926,8 +1068,8 @@ impl Sandbox {
                     continue;
                 };
                 let at = match contact.b.and_then(|b| self.world.body(b)) {
-                    Some(b) => to_pos((a.rect.center() + b.rect.center()) * 0.5),
-                    None => wall_point(a.rect, self.world.bounds(), contact.axis),
+                    Some(b) => self.screen_pos((a.rect.center() + b.rect.center()) * 0.5),
+                    None => self.screen_pos(wall_point(a.rect, self.world.bounds(), contact.axis)),
                 };
                 painter.circle_filled(at, contact.depth.clamp(2.0, 6.0), c.accent_alt);
             }
@@ -941,7 +1083,7 @@ impl Sandbox {
         if self.overlay.snaps {
             let color = c.cat[3];
             for snap in self.world.snaps() {
-                let (from, to) = (to_pos(snap.from), to_pos(snap.to));
+                let (from, to) = (self.screen_pos(snap.from), self.screen_pos(snap.to));
                 painter.line_segment([from, to], Stroke::new(tokens.stroke.medium, color));
                 painter.circle_stroke(from, 5.0, Stroke::new(tokens.stroke.thin, color));
                 painter.circle_filled(from, 5.0 * snap.grip.clamp(0.0, 1.0), color);
@@ -958,7 +1100,12 @@ impl Sandbox {
             if body.bulge.max_abs() < 0.05 {
                 continue;
             }
-            let points: Vec<Pos2> = body.shape().points().iter().map(|&p| to_pos(p)).collect();
+            let points: Vec<Pos2> = body
+                .shape()
+                .points()
+                .iter()
+                .map(|&p| self.screen_pos(p))
+                .collect();
             let width = if body.yielding {
                 tokens.stroke.thick
             } else {
@@ -971,7 +1118,7 @@ impl Sandbox {
                 format!("bulge {:.0}", body.bulge.max_abs())
             };
             painter.text(
-                to_pos(body.rect.center()),
+                self.screen_pos(body.rect.center()),
                 Align2::CENTER_CENTER,
                 label,
                 font.clone(),
@@ -998,16 +1145,16 @@ impl Sandbox {
             }
         };
         for body in self.world.bodies() {
-            let r = to_rect(body.rect);
+            let r = self.screen_rect(body.rect);
             let (w, h) = (r.width(), r.height());
             ticks(r.left_top(), vec2(1.0, 0.0), w, vec2(0.0, 1.0));
             ticks(r.left_bottom(), vec2(1.0, 0.0), w, vec2(0.0, -1.0));
             ticks(r.left_top(), vec2(0.0, 1.0), h, vec2(1.0, 0.0));
             ticks(r.right_top(), vec2(0.0, 1.0), h, vec2(-1.0, 0.0));
         }
-        let inner = to_rect(self.world.bounds()).shrink(p.gap);
+        let inner = self.screen_rect(self.world.bounds()).shrink(p.gap);
         let (w, h) = (inner.width(), inner.height());
-        let outer = to_rect(self.world.bounds());
+        let outer = self.screen_rect(self.world.bounds());
         ticks(
             pos2(inner.min.x, outer.min.y),
             vec2(1.0, 0.0),
@@ -1024,11 +1171,11 @@ impl Sandbox {
 }
 
 /// Where a body touches the nearer wall on `axis`.
-fn wall_point(body: Rect, bounds: Rect, axis: Axis) -> Pos2 {
+fn wall_point(body: Rect, bounds: Rect, axis: Axis) -> Vec2 {
     let mut at = body.center();
     let low = (body.min[axis] - bounds.min[axis]).abs() < (bounds.max[axis] - body.max[axis]).abs();
     at[axis] = if low { body.min[axis] } else { body.max[axis] };
-    to_pos(at)
+    at
 }
 
 /// A slider for one parameter, with what it does on hover.

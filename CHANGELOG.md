@@ -17,6 +17,8 @@ versions follow [Semantic Versioning](https://semver.org/). Feature IDs refer to
   in as they slow down; `Body::grid_pull` (SETL-10).
 - ve_settle sandbox: "Pillow" and "Grid" slider sections, "Collision shapes" and "Grid pitch" overlay layers, the
   slide push and the grid pull as force arrows (SETL-9, SETL-10).
+- ve_settle sandbox: scenes: *full*, the new default, fills the width and runs past the bottom of the window (bottom
+  wall open, the arena scrolls); *few* is the old five widgets (`Scene`, `Sandbox::with_scene`) (SETL-2).
 
 ### Changed
 

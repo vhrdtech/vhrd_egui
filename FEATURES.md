@@ -288,6 +288,10 @@ up and Packery's "others flow around the dragged one". No app uses it yet.
   slider with a tooltip on every parameter, overlay layers (bodies with minimum size and id, force and velocity
   arrows with contact dots, tension tint and percent, home spots, corner snaps, collision shapes, grid pitch), drag to move, corner handle to resize,
   add (button or double-click), remove, grow / shrink content by hand or by itself, pause and single-step.
+  Scenes (user, 10 Oct 2026): *full*, the default, drops enough widgets to fill 1.8 windows, seeded a little
+  tighter than they fit, with the bottom wall open, so the layout is tried under real pressure and runs past the
+  bottom of the window; the arena scrolls (wheel over it, a thin bar on the right shows where you are). *Few* is
+  the old five floating widgets in a closed box; the kittests mostly use it.
   `ve_settle/examples/sandbox/`.
 - ✅ **SETL-3 Sandbox UI tests**: egui_kittest drives the sandbox like a person (add widgets, drag one through
   the others, resize the window, grow and shrink content, corner resize, remove, pause and step, content changing
@@ -347,6 +351,12 @@ up and Packery's "others flow around the dragged one". No app uses it yet.
   (released off the grid, both axes, off when 0). Sandbox: a "Grid" slider section (pitch, stiffness), a "Grid
   pitch" overlay layer (ticks every pitch along each panel's edges from its top left corner, and along the walls),
   the grid pull as a force arrow.
+- 🐛 **SETL-11 A packed field stays squeezed** (found with the full sandbox scene, 10 Oct 2026): when every row is
+  overfilled (30 widgets, rows of five where 4.5 fit), the pillow sends one widget out, but moving it down only
+  overfills the full row below, so the field rests with widgets squeezed 18 % (23 % with the pillow off) after
+  about 6 s (2 s with it off). Handing the yielder role on when it stalls made it worse (24 %, 24 s) and was
+  reverted. Needs the field below to make room as a whole (rows shifting down together, or a packing pass that
+  re-picks homes when pressure stays high); maybe one yielder per row instead of per world.
 - ✅ **SETL-6 Pile sticks out though there is room beside it**: contacts parted two bodies along the axis of least
   overlap only, so rigid bodies piled on one spot (8 of them added on a diagonal) parted into a column longer than
   the world and stuck out past the walls. Fixed by the pillow (SETL-9): the jammed bodies bulge and spill sideways;
