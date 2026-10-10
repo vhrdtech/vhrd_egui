@@ -5,6 +5,8 @@ versions follow [Semantic Versioning](https://semver.org/). Feature IDs refer to
 
 ## [Unreleased]
 
+## [0.17.0] - 2026-10-10
+
 ### Added
 
 - ve_settle: one polygon solver: contacts go through convex polygons (`Poly`, `sat`, `Hit`); a body's shape is the
@@ -31,7 +33,6 @@ versions follow [Semantic Versioning](https://semver.org/). Feature IDs refer to
   wall across from gravity open nothing is squeezed along gravity (`Params::free_axis`) (SETL-11).
 - ve_settle sandbox: the full scene starts full: it is seeded once the window has a real size and topped up when
   the window grows (SETL-2).
-
 - ve_settle: rigid bodies piled on one spot no longer part into a column that sticks out past the walls; they spill
   sideways (SETL-6).
 
