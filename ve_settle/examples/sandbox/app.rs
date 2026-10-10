@@ -18,6 +18,8 @@ const PAD: f32 = 8.0;
 const HANDLE: f32 = 14.0;
 /// Seconds between two content changes when the content lives by itself.
 const AUTO_EVERY: f32 = 0.35;
+/// The smallest size a dash panel comes in.
+const SMALLEST_PANEL: egui::Vec2 = vec2(250.0, 120.0);
 /// How much content a widget can hold.
 const MAX_AMOUNT: u32 = 24;
 
@@ -45,13 +47,15 @@ fn from_rect(r: egui::Rect) -> Rect {
 }
 
 /// What a sandbox widget shows; each kind grows in its own direction.
+/// They are the size of real dash panels: 250 to 450 points wide, 120 to
+/// 400 tall.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Kind {
-    /// Lines of text: grows down.
+    /// A sessions panel, lines of text: grows down.
     Log,
-    /// A row of bars: grows to the right.
+    /// A usage panel, a row of bars: grows to the right.
     Bars,
-    /// One big number: nearly fixed.
+    /// A machine panel, one big number over detail lines: grows down slowly.
     Stat,
     /// A grid of cells: grows both ways.
     Grid,
@@ -63,29 +67,29 @@ impl Kind {
 
     fn name(self) -> &'static str {
         match self {
-            Kind::Log => "log",
-            Kind::Bars => "bars",
-            Kind::Stat => "stat",
+            Kind::Log => "sessions",
+            Kind::Bars => "usage",
+            Kind::Stat => "machine",
             Kind::Grid => "grid",
         }
     }
 
     fn start_amount(self) -> u32 {
         match self {
-            Kind::Log => 3,
-            Kind::Bars => 6,
-            Kind::Stat => 1,
-            Kind::Grid => 4,
+            Kind::Log => 7,
+            Kind::Bars => 18,
+            Kind::Stat => 3,
+            Kind::Grid => 20,
         }
     }
 
     /// The smallest a widget of this kind can be squeezed to.
     fn min_size(self) -> Vec2 {
         match self {
-            Kind::Log => Vec2::new(90.0, 44.0),
-            Kind::Bars => Vec2::new(70.0, 60.0),
-            Kind::Stat => Vec2::new(70.0, 50.0),
-            Kind::Grid => Vec2::new(60.0, 50.0),
+            Kind::Log => Vec2::new(180.0, 90.0),
+            Kind::Bars => Vec2::new(170.0, 110.0),
+            Kind::Stat => Vec2::new(170.0, 90.0),
+            Kind::Grid => Vec2::new(160.0, 100.0),
         }
     }
 }
@@ -107,12 +111,14 @@ pub struct Item {
 impl Item {
     /// Draw the content; the space it takes is the size the body wants.
     fn content(&self, ui: &mut Ui, tokens: &Tokens) {
+        // No panel is smaller than the smallest real one.
+        ui.set_min_size(SMALLEST_PANEL - vec2(2.0 * PAD, 2.0 * PAD));
         ui.label(RichText::new(&self.name).strong());
         match self.kind {
             Kind::Log => {
                 for line in 0..self.amount {
                     ui.label(
-                        RichText::new(format!("12:00:{line:02} event {line}"))
+                        RichText::new(format!("12:00:{line:02}  session {line:02}  opus  working"))
                             .monospace()
                             .color(tokens.colors.text_muted),
                     );
@@ -120,9 +126,9 @@ impl Item {
             }
             Kind::Bars => {
                 ui.horizontal(|ui| {
-                    ui.spacing_mut().item_spacing.x = 3.0;
+                    ui.spacing_mut().item_spacing.x = 4.0;
                     for bar in 0..self.amount {
-                        let (rect, _) = ui.allocate_exact_size(vec2(9.0, 40.0), Sense::hover());
+                        let (rect, _) = ui.allocate_exact_size(vec2(13.0, 130.0), Sense::hover());
                         let level = 0.25 + 0.75 * ((bar * 37 % 11) as f32 / 10.0);
                         let fill = egui::Rect::from_min_max(
                             pos2(rect.min.x, rect.max.y - rect.height() * level),
@@ -133,19 +139,25 @@ impl Item {
                 });
             }
             Kind::Stat => {
-                let digits = "9".repeat(self.amount.clamp(1, 8) as usize);
-                ui.label(RichText::new(digits).monospace().size(26.0));
+                ui.label(RichText::new("37 %").monospace().size(44.0));
+                for line in 0..self.amount {
+                    ui.label(
+                        RichText::new(format!("core {line:02}  load 0.{:02}", line * 7 % 100))
+                            .monospace()
+                            .color(tokens.colors.text_muted),
+                    );
+                }
             }
             Kind::Grid => {
                 let side = (self.amount as f32).sqrt().ceil().max(1.0) as u32;
-                ui.spacing_mut().item_spacing = vec2(3.0, 3.0);
+                ui.spacing_mut().item_spacing = vec2(4.0, 4.0);
                 for row in 0..self.amount.div_ceil(side) {
                     ui.horizontal(|ui| {
                         for col in 0..side.min(self.amount - row * side) {
                             let (rect, _) =
-                                ui.allocate_exact_size(vec2(22.0, 22.0), Sense::hover());
+                                ui.allocate_exact_size(vec2(46.0, 46.0), Sense::hover());
                             let color = tokens.colors.cat[((row + col) % 5) as usize];
-                            ui.painter().rect_filled(rect, 3.0, color);
+                            ui.painter().rect_filled(rect, 4.0, color);
                         }
                     });
                 }
@@ -164,6 +176,8 @@ pub struct Overlay {
     pub tension: bool,
     /// Home spots and the line from each body to its own.
     pub homes: bool,
+    /// Corners being pulled onto other corners.
+    pub snaps: bool,
 }
 
 /// The sandbox app state.
@@ -216,6 +230,7 @@ impl Sandbox {
                 forces: true,
                 tension: true,
                 homes: true,
+                snaps: true,
             },
             auto: false,
             rehome_on_drop: true,
@@ -252,7 +267,7 @@ impl Sandbox {
             )
         });
         // The real size is known after the first frame drew the content.
-        let guess = Vec2::new(120.0, 80.0);
+        let guess = Vec2::new(300.0, 200.0);
         let id = self.world.add(
             BodyDesc::new(from_pos(at), guess)
                 .min_size(kind.min_size())
@@ -428,6 +443,8 @@ impl Sandbox {
             .on_hover_text(
                 "A cross at each home spot and a line to its body: the stretch of the home spring.",
             );
+        ui.checkbox(&mut self.overlay.snaps, "Corner snaps")
+            .on_hover_text("A ring on every corner that is being pulled onto a corner of another widget or of the walls, and a line to where it is pulled. The ring fills as the corner gets there; a filled dot is a corner in place.");
 
         self.param_sliders(ui);
     }
@@ -536,6 +553,25 @@ impl Sandbox {
                 p.walls.set(side, closed);
             }
         });
+
+        ui.section_header(
+            "Corner snapping",
+            "Sticking points on the corners: a corner near a corner of another widget or of the walls is pulled onto it, so panels line up.",
+        );
+        knob(
+            ui,
+            "snap range",
+            &mut p.snap_range,
+            0.0..=80.0,
+            "How near a corner has to be to another corner to be pulled onto it, points. 0 turns corner snapping off.",
+        );
+        knob(
+            ui,
+            "snap stiffness",
+            &mut p.snap_stiffness,
+            0.0..=6000.0,
+            "How hard a corner is pulled into line, 1/s² (critically damped). What is left of a misalignment at rest is about the other pulls over this: gravity 600 against 1500 leaves 0.4 points.",
+        );
 
         ui.section_header("Motion", "Speeds, so that things glide and never jump.");
         knob(
@@ -821,6 +857,15 @@ impl Sandbox {
                     None => wall_point(a.rect, self.world.bounds(), contact.axis),
                 };
                 painter.circle_filled(at, contact.depth.clamp(2.0, 6.0), c.accent_alt);
+            }
+        }
+        if self.overlay.snaps {
+            let color = c.cat[3];
+            for snap in self.world.snaps() {
+                let (from, to) = (to_pos(snap.from), to_pos(snap.to));
+                painter.line_segment([from, to], Stroke::new(tokens.stroke.medium, color));
+                painter.circle_stroke(from, 5.0, Stroke::new(tokens.stroke.thin, color));
+                painter.circle_filled(from, 5.0 * snap.grip.clamp(0.0, 1.0), color);
             }
         }
     }

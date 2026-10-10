@@ -87,7 +87,7 @@ impl Watch {
 /// The sandbox in a window, its first widgets settled.
 fn sandbox() -> (App, Watch) {
     let mut h = Harness::builder()
-        .with_size(vec2(1100.0, 700.0))
+        .with_size(vec2(1600.0, 1000.0))
         .with_step_dt(1.0 / FPS)
         .build_eframe(|cc| Sandbox::new(cc));
     h.step();
@@ -233,7 +233,11 @@ fn dragging_a_widget_through_the_others() {
 #[test]
 fn resizing_the_window_keeps_everything_inside() {
     let (mut h, mut watch) = sandbox();
-    for size in [vec2(820.0, 560.0), vec2(700.0, 480.0), vec2(1300.0, 800.0)] {
+    for size in [
+        vec2(1300.0, 820.0),
+        vec2(1150.0, 760.0),
+        vec2(1800.0, 1100.0),
+    ] {
         h.set_size(size);
         watch.rest(&mut h);
         assert_inside_arena(&h);
@@ -339,4 +343,81 @@ fn content_changing_by_itself_never_overlaps_or_jumps() {
     click_button(&mut h, &mut watch, "Content changes by itself");
     watch.rest(&mut h);
     println!("worst move in one frame: {:.2} points", watch.worst_move);
+}
+
+#[test]
+fn a_widget_dropped_near_another_ones_corner_snaps_to_it() {
+    let (mut h, mut watch) = sandbox();
+    // Two widgets only, so nothing else is in the way.
+    let ids: Vec<_> = h.state().world.bodies().iter().map(|b| b.id).collect();
+    for id in &ids[2..] {
+        let at = center(&h, *id);
+        click_at(&mut h, &mut watch, at);
+        click_button(&mut h, &mut watch, "Remove selected");
+    }
+    watch.rest(&mut h);
+    let (fixed, moved) = (ids[0], ids[1]);
+    let gap = h.state().world.params().gap;
+
+    // Drop it to the right of the other one, its top left corner 9 points
+    // to the right of and 2 above where it would line up. (The two differ
+    // in height, so it is the top corners that are nearest.)
+    let (a, b) = {
+        let world = &h.state().world;
+        (
+            world.body(fixed).unwrap().rect,
+            world.body(moved).unwrap().rect,
+        )
+    };
+    let from = center(&h, moved);
+    let to = pos2(
+        a.max.x + gap + 9.0 + b.size().x / 2.0,
+        a.min.y - 2.0 + b.size().y / 2.0,
+    );
+    drag(&mut h, &mut watch, from, to, 40);
+    watch.rest(&mut h);
+
+    let world = &h.state().world;
+    let (a, b) = (
+        world.body(fixed).unwrap().rect,
+        world.body(moved).unwrap().rect,
+    );
+    assert!(
+        (a.min.y - b.min.y).abs() < 1.0,
+        "tops line up: {} and {}",
+        a.min.y,
+        b.min.y
+    );
+    assert!(
+        (b.min.x - a.max.x - gap).abs() < 1.0,
+        "the gap is between them: {}",
+        b.min.x - a.max.x
+    );
+    assert!(
+        world
+            .snaps()
+            .iter()
+            .any(|s| s.body == moved && s.grip > 0.9),
+        "the overlay shows the corner held: {:?}",
+        world.snaps()
+    );
+
+    // Snap range 0 (the slider's left end) lets go: gravity and the home
+    // spot pull it out of line again.
+    let mut params = *world.params();
+    params.snap_range = 0.0;
+    h.state_mut().world.set_params(params);
+    watch.rest(&mut h);
+    let world = &h.state().world;
+    let (a, b) = (
+        world.body(fixed).unwrap().rect,
+        world.body(moved).unwrap().rect,
+    );
+    assert!(world.snaps().is_empty());
+    assert!(
+        (a.min.y - b.min.y).abs() > 3.0,
+        "no longer held: {} and {}",
+        a.min.y,
+        b.min.y
+    );
 }

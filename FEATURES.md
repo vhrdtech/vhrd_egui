@@ -277,17 +277,28 @@ up and Packery's "others flow around the dragged one". No app uses it yet.
   `grow_speed`, a body added or dropped onto others is *lifted* and they part at `glide_speed`, as do bodies left
   outside walls that moved; a dragged body floats and the others flow around it. Debug readouts per body (pulls,
   velocity, squeeze, pressure) and the step's contacts. No dependencies. `ve_settle/src/` (`world.rs`,
-  `params.rs`, `geom.rs`), 16 tests in `ve_settle/tests/core.rs`, doc example in `lib.rs`.
-- ✅ **SETL-2 Sandbox**: `cargo run -p ve_settle --example sandbox` (eframe): widgets of four kinds whose
-  content grows in different directions (measured from the real egui content a frame late, as a dash would), a
+  `params.rs`, `geom.rs`), tests in `ve_settle/tests/core.rs`, doc example in `lib.rs`.
+- ✅ **SETL-2 Sandbox**: `cargo run -p ve_settle --example sandbox` (eframe): widgets of four kinds (sessions,
+  usage, machine, grid) the size of real dash panels (250-450 wide, 120-400 tall), whose content grows in
+  different directions (measured from the real egui content a frame late, as a dash would), a
   slider with a tooltip on every parameter, overlay layers (bodies with minimum size and id, force and velocity
-  arrows with contact dots, tension tint and percent, home spots), drag to move, corner handle to resize,
+  arrows with contact dots, tension tint and percent, home spots, corner snaps), drag to move, corner handle to resize,
   add (button or double-click), remove, grow / shrink content by hand or by itself, pause and single-step.
   `ve_settle/examples/sandbox/`.
 - ✅ **SETL-3 Sandbox UI tests**: egui_kittest drives the sandbox like a person (add widgets, drag one through
   the others, resize the window, grow and shrink content, corner resize, remove, pause and step, content changing
   by itself for 15 s) and checks on every frame that no two solid bodies overlap and nothing moves more than
   32 points, and that it rests within 300 frames (5 s) of the last change. `ve_settle/tests/sandbox.rs`.
+- ✅ **SETL-8 Corner snapping**: sticking points on the corners (user, 10 Oct 2026). A corner of a free body
+  within `snap_range` (20) of a corner of another body, or of the walls, is pulled to line up with it, the gap
+  kept where the two bodies face each other, so panels align at their corners. `snap_stiffness` (1500) sets how
+  firmly; the pull fades out toward the edge of the range and is critically damped against the other body's
+  motion (bodies moving together are not slowed). Only a body's nearest corner pulls, so panels of nearly the
+  same height line up by their tops or their bottoms, not in between. `World::snaps()` and `Body::snap_pull` for
+  the overlay; the sandbox has both sliders and a "Corner snaps" layer (ring that fills as the corner gets there,
+  line to the target). `snap_pass` in `ve_settle/src/world.rs`, 6 tests in `tests/core.rs`, a drag-and-drop
+  check in `tests/sandbox.rs`. Not done: snapping a corner to a wall *edge* or to a neighbour's edge away from
+  its corners, and snapping while dragging (it acts after the drop).
 - 🐛 **SETL-6 Pile sticks out though there is room beside it**: contacts part two bodies along the axis of least
   overlap only, so rigid bodies piled on one spot (8 of them added on a diagonal, say) part along one axis into a
   column longer than the world and stick out past the walls, instead of spilling sideways. Bodies that can be

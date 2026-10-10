@@ -98,6 +98,9 @@ pub struct Body {
     /// How much overlap contacts took out of this body in the last step,
     /// points: how hard it is pressed.
     pub pressure: f32,
+    /// The pull of its corners toward the corners they snap to in the last
+    /// step, damping included, points/s² (debug overlay).
+    pub snap_pull: Vec2,
     drag_target: Vec2,
     prev: Rect,
 }
@@ -139,6 +142,22 @@ pub struct Contact {
     pub depth: f32,
 }
 
+/// A corner being pulled onto another corner in the last step, at most
+/// one per body (debug overlay).
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct Snap {
+    /// The body whose corner it is.
+    pub body: BodyId,
+    /// Where the corner is.
+    pub from: Vec2,
+    /// Where it is pulled to: lined up with the other corner, the gap
+    /// kept where the two face each other.
+    pub to: Vec2,
+    /// How firmly it is held, 0 at the edge of [`Params::snap_range`] to
+    /// 1 when in place.
+    pub grip: f32,
+}
+
 /// Bodies in a rectangle, stepped with a fixed time step.
 ///
 /// The same calls in the same order always give the same result, bit for
@@ -149,6 +168,7 @@ pub struct World {
     bounds: Rect,
     bodies: Vec<Body>,
     contacts: Vec<Contact>,
+    snaps: Vec<Snap>,
     next_id: u64,
     at_rest: bool,
     calm: u32,
@@ -165,6 +185,7 @@ impl World {
             bounds,
             bodies: Vec::new(),
             contacts: Vec::new(),
+            snaps: Vec::new(),
             next_id: 1,
             at_rest: false,
             calm: 0,
@@ -210,6 +231,11 @@ impl World {
         self.bodies.iter().find(|b| b.id == id)
     }
 
+    /// The corners that were pulled onto another corner in the last step.
+    pub fn snaps(&self) -> &[Snap] {
+        &self.snaps
+    }
+
     /// The contacts of the last step.
     pub fn contacts(&self) -> &[Contact] {
         &self.contacts
@@ -237,6 +263,7 @@ impl World {
             gravity_pull: Vec2::ZERO,
             home_pull: Vec2::ZERO,
             pressure: 0.0,
+            snap_pull: Vec2::ZERO,
             drag_target: desc.center,
             prev: rect,
         });
@@ -432,6 +459,9 @@ impl World {
             b.prev = b.rect;
             b.pressure = 0.0;
             resize(b, &p, dt);
+        }
+        self.snap_pass();
+        for b in &mut self.bodies {
             // A home still drifting keeps the world awake, like a moving body.
             home_moved = home_moved.max(integrate(b, &p, dt));
         }
@@ -489,6 +519,90 @@ impl World {
             }
         }
         true
+    }
+
+    /// Corner snapping: each corner of a free body looks for the nearest
+    /// corner of another body, or of the walls, within
+    /// [`Params::snap_range`] and is pulled to line up with it; where the
+    /// two bodies face each other the gap stays between them. The pull
+    /// fades to nothing at the edge of the range, so entering it is not a
+    /// jolt, and it is damped against the other body's motion, so two
+    /// bodies moving together are not slowed. Only the corner of a body
+    /// that is nearest to its target pulls: two corners wanting different
+    /// places (tops or bottoms of panels of nearly the same height) would
+    /// otherwise leave the body lined up with neither.
+    fn snap_pass(&mut self) {
+        self.snaps.clear();
+        let p = self.params;
+        for b in &mut self.bodies {
+            b.snap_pull = Vec2::ZERO;
+        }
+        if p.snap_range <= 0.0 || p.snap_stiffness <= 0.0 {
+            return;
+        }
+        let inner = Rect {
+            min: self.bounds.min + Vec2::splat(p.gap),
+            max: self.bounds.max - Vec2::splat(p.gap),
+        };
+        let damping = 2.0 * p.snap_stiffness.sqrt();
+        for i in 0..self.bodies.len() {
+            let a = &self.bodies[i];
+            if a.dragged {
+                continue;
+            }
+            let mut winner: Option<(Snap, Vec2)> = None;
+            for ca in CORNERS {
+                let from = corner(&a.rect, ca);
+                // (distance, error, the other side's velocity)
+                let mut best: Option<(f32, Vec2, Vec2)> = None;
+                let mut consider = |error: Vec2, vel: Vec2| {
+                    let dist = error.length();
+                    if dist < p.snap_range && best.is_none_or(|b| dist < b.0) {
+                        best = Some((dist, error, vel));
+                    }
+                };
+                let (wall_x, wall_y) = corner_sides(ca);
+                if p.walls.has(wall_x) && p.walls.has(wall_y) {
+                    consider(corner(&inner, ca) - from, Vec2::ZERO);
+                }
+                for (j, o) in self.bodies.iter().enumerate() {
+                    if j == i || o.dragged {
+                        continue;
+                    }
+                    for cb in CORNERS {
+                        // The same corner of both would put one body on the other.
+                        if cb == ca {
+                            continue;
+                        }
+                        let mut error = corner(&o.rect, cb) - from;
+                        if cb.0 != ca.0 {
+                            error.x -= if ca.0 { p.gap } else { -p.gap };
+                        }
+                        if cb.1 != ca.1 {
+                            error.y -= if ca.1 { p.gap } else { -p.gap };
+                        }
+                        consider(error, o.vel);
+                    }
+                }
+                if let Some((dist, error, vel)) = best {
+                    let grip = 1.0 - dist / p.snap_range;
+                    if winner.is_none_or(|(w, _)| grip > w.grip) {
+                        let pull = (error * p.snap_stiffness + (vel - a.vel) * damping) * grip;
+                        let snap = Snap {
+                            body: a.id,
+                            from,
+                            to: from + error,
+                            grip,
+                        };
+                        winner = Some((snap, pull));
+                    }
+                }
+            }
+            if let Some((snap, pull)) = winner {
+                self.snaps.push(snap);
+                self.bodies[i].snap_pull = pull;
+            }
+        }
     }
 
     /// Contacts with a dragged body, once per step: the held body does not
@@ -684,6 +798,7 @@ fn integrate(b: &mut Body, p: &Params, dt: f32) -> f32 {
         b.vel = Vec2::ZERO;
         b.gravity_pull = Vec2::ZERO;
         b.home_pull = Vec2::ZERO;
+        b.snap_pull = Vec2::ZERO;
         return 0.0;
     }
     b.gravity_pull = p.gravity_side.map_or(Vec2::ZERO, |s| s.dir() * p.gravity);
@@ -691,7 +806,8 @@ fn integrate(b: &mut Body, p: &Params, dt: f32) -> f32 {
         .home
         .map_or(Vec2::ZERO, |h| (h - center) * p.home_stiffness);
     let damp = (-p.damping * dt).exp();
-    b.vel = ((b.vel + (b.gravity_pull + b.home_pull) * dt) * damp).clamp_length(p.max_speed);
+    let pull = b.gravity_pull + b.home_pull + b.snap_pull;
+    b.vel = ((b.vel + pull * dt) * damp).clamp_length(p.max_speed);
     b.rect = b.rect.translate(b.vel * dt);
     if p.home_drift > 0.0
         && let Some(home) = &mut b.home
@@ -714,6 +830,24 @@ fn contact(a: &Rect, b: &Rect, gap: f32) -> Option<(Axis, f32, bool)> {
     }
     let axis = if o.x < o.y { Axis::X } else { Axis::Y };
     Some((axis, o[axis], a.center()[axis] <= b.center()[axis]))
+}
+
+/// The four corners as (high x, high y): `false` is the low side (left, top).
+const CORNERS: [(bool, bool); 4] = [(false, false), (true, false), (false, true), (true, true)];
+
+fn corner(r: &Rect, (high_x, high_y): (bool, bool)) -> Vec2 {
+    Vec2::new(
+        if high_x { r.max.x } else { r.min.x },
+        if high_y { r.max.y } else { r.min.y },
+    )
+}
+
+/// The two walls that meet at a corner.
+fn corner_sides((high_x, high_y): (bool, bool)) -> (Side, Side) {
+    (
+        if high_x { Side::Right } else { Side::Left },
+        if high_y { Side::Bottom } else { Side::Top },
+    )
 }
 
 fn pair_mut(bodies: &mut [Body], i: usize, j: usize) -> (&mut Body, &mut Body) {

@@ -12,7 +12,11 @@ versions follow [Semantic Versioning](https://semver.org/). Feature IDs refer to
   with a tension coefficient, damping, rest and fixed deterministic steps; `Params` holds every knob (SETL-1).
 - ve_settle: the `sandbox` example (`cargo run -p ve_settle --example sandbox`): widgets with growing and
   shrinking content, a slider on every parameter, debug overlay (bodies, forces, tension, home spots), drag,
-  resize, add and remove, pause and single-step (SETL-2), with egui_kittest tests driving it (SETL-3).
+  resize, add and remove, pause and single-step (SETL-2), with egui_kittest tests driving it (SETL-3). Its
+  widgets are the size of real dash panels (sessions, usage, machine, grid: 250-450 wide, 120-400 tall).
+- ve_settle: corner snapping: a corner near a corner of another body or of the walls is pulled onto it, so panels
+  line up at their corners; `Params::snap_range` and `snap_stiffness`, `World::snaps()`, `Snap`,
+  `Body::snap_pull`; a "Corner snaps" overlay layer and two sliders in the sandbox (SETL-8).
 
 ## [0.15.0] - 2026-10-10
 

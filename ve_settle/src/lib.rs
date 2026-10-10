@@ -34,8 +34,10 @@
 //!
 //! 1. sizes follow the wanted size at [`Params::grow_speed`], and squeeze
 //!    is let go at [`Params::restore`];
-//! 2. gravity and the home spring change the velocity, damping takes some
-//!    of it, the body moves;
+//! 2. gravity, the home spring and corner snapping (a corner within
+//!    [`Params::snap_range`] of another body's or the walls' corner is
+//!    pulled onto it) change the velocity, damping takes some of it, the
+//!    body moves;
 //! 3. lifted bodies (just added, dragged) and their neighbours glide
 //!    apart;
 //! 4. walls and overlaps are solved by pushing; if that leaves bodies
@@ -54,4 +56,4 @@ mod world;
 
 pub use geom::{Axis, Rect, Side, Vec2};
 pub use params::{Params, Walls};
-pub use world::{Body, BodyDesc, BodyId, Contact, World};
+pub use world::{Body, BodyDesc, BodyId, Contact, Snap, World};

@@ -76,6 +76,14 @@ pub struct Params {
     /// bodies away from a lifted (dragged, just added) body, and bodies
     /// back inside walls that moved.
     pub glide_speed: f32,
+    /// How near a corner has to be to a corner of another body, or of the
+    /// walls, to be pulled onto it, points. 0 turns corner snapping off.
+    pub snap_range: f32,
+    /// Stiffness of the pull that lines a corner up with the one it snaps
+    /// to, 1/s² (critically damped, so it closes in without swinging).
+    /// What is left of a misalignment at rest is about the other pulls
+    /// over this: gravity 600 against 1500 leaves 0.4 points.
+    pub snap_stiffness: f32,
     /// Speed limit, points/s.
     pub max_speed: f32,
     /// Which sides are closed.
@@ -103,6 +111,8 @@ impl Default for Params {
             restore: 2.0,
             grow_speed: 400.0,
             glide_speed: 900.0,
+            snap_range: 20.0,
+            snap_stiffness: 1500.0,
             max_speed: 2400.0,
             walls: Walls::ALL,
             iterations: 16,

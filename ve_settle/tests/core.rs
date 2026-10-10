@@ -467,3 +467,134 @@ fn drifting_homes_follow_a_body_that_was_pushed_away_for_long() {
         "the home moved down with the body: {home:?}"
     );
 }
+
+/// Two bodies side by side, the right one `dy` lower and `dx` farther
+/// away than the gap; no gravity, no homes, only corner snapping.
+fn side_by_side(dx: f32, dy: f32, params: Params) -> (World, BodyId, BodyId) {
+    let mut w = world(800.0, 600.0, params);
+    let a = w.add(BodyDesc::new(v(300.0, 300.0), v(200.0, 120.0)).home(None));
+    let b = w.add(
+        BodyDesc::new(
+            v(300.0 + 200.0 + params.gap + dx, 300.0 + dy),
+            v(200.0, 120.0),
+        )
+        .home(None),
+    );
+    (w, a, b)
+}
+
+#[test]
+fn a_corner_near_another_bodys_corner_snaps_onto_it() {
+    let p = calm();
+    let (mut w, a, b) = side_by_side(9.0, 11.0, p);
+    assert!(w.step());
+    assert!(!w.snaps().is_empty(), "the overlay has snaps to draw");
+    assert!(w.body(b).unwrap().snap_pull.length() > 0.0);
+    settle_checked(&mut w, 4_000, glide(&p));
+    let (a, b) = (rect(&w, a), rect(&w, b));
+    assert!(
+        (a.min.y - b.min.y).abs() < 0.1,
+        "tops line up: {} and {}",
+        a.min.y,
+        b.min.y
+    );
+    assert!((a.max.y - b.max.y).abs() < 0.1, "bottoms line up");
+    assert!(
+        (b.min.x - a.max.x - p.gap).abs() < 0.1,
+        "the gap stays between them: {}",
+        b.min.x - a.max.x
+    );
+    assert!(
+        w.snaps().iter().all(|s| s.grip > 0.99),
+        "held in place: {:?}",
+        w.snaps()
+    );
+}
+
+#[test]
+fn corners_farther_apart_than_the_range_are_left_alone() {
+    let p = calm();
+    let (mut w, a, b) = side_by_side(0.0, p.snap_range + 15.0, p);
+    let before = (rect(&w, a), rect(&w, b));
+    w.settle(4_000).expect("settles");
+    assert!(w.snaps().is_empty());
+    assert_eq!((rect(&w, a), rect(&w, b)), before);
+}
+
+#[test]
+fn snap_range_zero_turns_snapping_off() {
+    let p = Params {
+        snap_range: 0.0,
+        ..calm()
+    };
+    let (mut w, a, b) = side_by_side(9.0, 11.0, p);
+    let before = (rect(&w, a), rect(&w, b));
+    w.settle(4_000).expect("settles");
+    assert!(w.snaps().is_empty());
+    assert_eq!((rect(&w, a), rect(&w, b)), before);
+}
+
+#[test]
+fn a_corner_snaps_into_a_corner_of_the_walls() {
+    let p = calm();
+    let mut w = world(800.0, 600.0, p);
+    let id = w.add(
+        BodyDesc::new(
+            v(800.0 - 100.0 - 15.0, 600.0 - 60.0 - 14.0),
+            v(200.0, 120.0),
+        )
+        .home(None),
+    );
+    settle_checked(&mut w, 4_000, glide(&p));
+    let r = rect(&w, id);
+    assert!(
+        (r.max - v(800.0 - p.gap, 600.0 - p.gap)).max_abs() < 0.1,
+        "{r:?}"
+    );
+}
+
+#[test]
+fn snapping_holds_against_gravity_and_home() {
+    // The home spot is 12 points off the lined-up place and gravity pulls
+    // down; the corner still ends up within a point of its neighbour's.
+    let p = Params {
+        gravity_side: Some(Side::Bottom),
+        ..Params::default()
+    };
+    let mut w = world(800.0, 2_000.0, p);
+    let a = w.add(BodyDesc::new(v(300.0, 300.0), v(200.0, 120.0)));
+    let b = w.add(BodyDesc::new(v(506.0, 312.0), v(200.0, 120.0)));
+    settle_checked(&mut w, 8_000, glide(&p));
+    let (a, b) = (rect(&w, a), rect(&w, b));
+    assert!(
+        (a.min.y - b.min.y).abs() < 1.0,
+        "tops: {} and {}",
+        a.min.y,
+        b.min.y
+    );
+}
+
+#[test]
+fn bodies_snapped_together_fall_as_fast_as_one_alone() {
+    // The snap's damping acts on the motion between the two, not on both.
+    let p = Params {
+        home_stiffness: 0.0,
+        ..Params::default()
+    };
+    let fall = |pair: bool| {
+        let mut w = world(800.0, 4_000.0, p);
+        let a = w.add(BodyDesc::new(v(300.0, 3_000.0), v(200.0, 120.0)));
+        if pair {
+            w.add(BodyDesc::new(v(506.0, 3_000.0), v(200.0, 120.0)));
+        }
+        for _ in 0..120 {
+            w.step();
+        }
+        rect(&w, a).min.y
+    };
+    let (alone, together) = (fall(false), fall(true));
+    assert!(
+        (alone - together).abs() < 1.0,
+        "alone {alone}, together {together}"
+    );
+}
