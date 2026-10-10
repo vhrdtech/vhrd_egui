@@ -15,8 +15,19 @@ versions follow [Semantic Versioning](https://semver.org/). Feature IDs refer to
 - ve_settle sandbox: a "Vertex attraction" slider section (range, strength) and a "Vertex pulls" overlay layer
   (arrows from pulled corners, the edge without its stretch, the points it grew or shrank) (SETL-12).
 
+- ve_settle: convex polygon bodies: a body can have an outline, a convex polygon in unit coordinates of its
+  rectangle (`BodyDesc::outline`, `Body::outline`, `World::set_outline`), with the shapes `Poly::unit_rect`,
+  `unit_hexagon`, `unit_half_hexagon(side)` and `unit_triangle(side)`; contacts between outlines go through the
+  separating axis test, so hexagons nest and a triangle settles into the notch between two of them. Editing:
+  `World::insert_vertex`, `move_vertex` (clamped so the outline stays convex and inside its rectangle),
+  `remove_vertex`; `Poly::fit`, `to_unit`, `bounds`, `is_convex`, `contains`, `nearest`, `insert`, `remove`,
+  `move_vertex`, `clamp_convex`. Vertex attraction carries over: a vertex of an outline within range of another
+  body's shape or a wall grows flush against it (`Body::nudges`) (SETL-4, SETL-12).
+
 ### Changed
 
+- ve_settle: `World::max_overlap` and `max_gap_violation` measure bodies with an outline by their outline; corner
+  snapping leaves them alone; `BodyDesc` has an `outline` field (SETL-4).
 - ve_settle: with the defaults, panels now rest up to `attract_range` larger or smaller than their content wants
   where that lines them up; `attract_range` 0 gives the old sizes. Corner snapping (SETL-8) acts on the corners a
   body would have without that stretch (SETL-12).

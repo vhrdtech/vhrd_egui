@@ -1,4 +1,4 @@
-//! Physics layout: rectangles that settle.
+//! Physics layout: rectangles (and convex polygons) that settle.
 //!
 //! A [`World`] holds axis-aligned bodies inside walls. Each step, gravity
 //! pulls them toward a side, a spring pulls each one to its home spot (so
@@ -64,9 +64,33 @@
 //! equal), and an edge just short of what it faces grows flush against
 //! it. [`Body::stretch`] is how much that added to the size.
 //!
-//! Limits: bodies are rectangles (other shapes, SETL-4), sizes are given,
-//! not chosen by the layout (SETL-5), and every pair is tested (fine for a
-//! dashboard's worth of bodies).
+//! A body can have a convex *outline* instead of the plain rectangle
+//! ([`BodyDesc::outline`], [`Poly::unit_hexagon`] and the like): a polygon
+//! in unit coordinates of its rectangle, so it is squeezed and resized
+//! with it. Outlines meet through the same separating axis test, so
+//! hexagons nest and a triangle fills the notch between two of them;
+//! [`World::insert_vertex`] and [`World::move_vertex`] edit one, keeping
+//! it convex.
+//!
+//! ```
+//! use ve_settle::{BodyDesc, Params, Poly, Rect, Vec2, World};
+//!
+//! let bounds = Rect::from_min_size(Vec2::ZERO, Vec2::new(400.0, 300.0));
+//! let mut world = World::new(bounds, Params::default());
+//! let size = Vec2::new(160.0, 140.0);
+//! let hex = world.add(BodyDesc::new(Vec2::new(200.0, 150.0), size).outline(Poly::unit_hexagon()));
+//! // A vertex in the middle of the top edge, dragged down: it would dent
+//! // the hexagon, so it stays on the edge.
+//! let top = world.body(hex).unwrap().rect.min.y;
+//! let i = world.insert_vertex(hex, Vec2::new(200.0, top)).unwrap();
+//! let at = world.move_vertex(hex, i, Vec2::new(200.0, top + 40.0)).unwrap();
+//! assert!((at.y - top).abs() < 0.01);
+//! assert!(world.body(hex).unwrap().shape().is_convex());
+//! ```
+//!
+//! Limits: outlines are convex, sizes are given, not chosen by the layout
+//! (SETL-5), and every pair is tested (fine for a dashboard's worth of
+//! bodies).
 
 mod geom;
 mod params;

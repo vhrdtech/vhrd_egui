@@ -342,6 +342,260 @@ impl Poly {
         &self.pts[..self.len]
     }
 
+    /// The unit square: a rectangle body's outline in unit coordinates
+    /// (see [`Poly::fit`]).
+    pub fn unit_rect() -> Self {
+        Self::new(&[
+            Vec2::new(0.0, 0.0),
+            Vec2::new(1.0, 0.0),
+            Vec2::new(1.0, 1.0),
+            Vec2::new(0.0, 1.0),
+        ])
+    }
+
+    /// A hexagon in the unit square, flat on top and bottom (regular when
+    /// the body is 2 wide for every √3 high).
+    pub fn unit_hexagon() -> Self {
+        Self::new(&[
+            Vec2::new(0.25, 0.0),
+            Vec2::new(0.75, 0.0),
+            Vec2::new(1.0, 0.5),
+            Vec2::new(0.75, 1.0),
+            Vec2::new(0.25, 1.0),
+            Vec2::new(0.0, 0.5),
+        ])
+    }
+
+    /// Half a hexagon in the unit square, cut straight on `flat`: the
+    /// piece that closes a honeycomb against that side.
+    pub fn unit_half_hexagon(flat: Side) -> Self {
+        let v = Vec2::new;
+        match flat {
+            Side::Left => Self::new(&[
+                v(0.0, 0.0),
+                v(0.5, 0.0),
+                v(1.0, 0.5),
+                v(0.5, 1.0),
+                v(0.0, 1.0),
+            ]),
+            Side::Right => Self::new(&[
+                v(0.5, 0.0),
+                v(1.0, 0.0),
+                v(1.0, 1.0),
+                v(0.5, 1.0),
+                v(0.0, 0.5),
+            ]),
+            Side::Top => Self::new(&[v(0.0, 0.0), v(1.0, 0.0), v(0.75, 1.0), v(0.25, 1.0)]),
+            Side::Bottom => Self::new(&[v(0.25, 0.0), v(0.75, 0.0), v(1.0, 1.0), v(0.0, 1.0)]),
+        }
+    }
+
+    /// A triangle in the unit square with its tip in the middle of the
+    /// `tip` side and the opposite side as its base.
+    pub fn unit_triangle(tip: Side) -> Self {
+        let v = Vec2::new;
+        match tip {
+            Side::Top => Self::new(&[v(0.5, 0.0), v(1.0, 1.0), v(0.0, 1.0)]),
+            Side::Bottom => Self::new(&[v(0.0, 0.0), v(1.0, 0.0), v(0.5, 1.0)]),
+            Side::Left => Self::new(&[v(0.0, 0.5), v(1.0, 0.0), v(1.0, 1.0)]),
+            Side::Right => Self::new(&[v(0.0, 0.0), v(1.0, 0.5), v(0.0, 1.0)]),
+        }
+    }
+
+    /// This polygon, given in unit coordinates (0..=1 on both axes), laid
+    /// into `r`.
+    pub fn fit(&self, r: &Rect) -> Poly {
+        let size = r.size();
+        let mut out = *self;
+        for p in &mut out.pts[..out.len] {
+            *p = r.min + Vec2::new(p.x * size.x, p.y * size.y);
+        }
+        out
+    }
+
+    /// The point of `r` at `p` in unit coordinates: the inverse of what
+    /// [`Poly::fit`] does to a vertex.
+    pub fn to_unit(r: &Rect, p: Vec2) -> Vec2 {
+        let size = r.size();
+        let d = p - r.min;
+        Vec2::new(
+            if size.x > 0.0 { d.x / size.x } else { 0.0 },
+            if size.y > 0.0 { d.y / size.y } else { 0.0 },
+        )
+    }
+
+    /// The smallest rectangle around the vertices.
+    pub fn bounds(&self) -> Rect {
+        let mut r = Rect {
+            min: Vec2::INFINITY,
+            max: -Vec2::INFINITY,
+        };
+        for &p in self.points() {
+            r.min = r.min.min(p);
+            r.max = r.max.max(p);
+        }
+        r
+    }
+
+    /// Twice the signed area: its sign says which way round the vertices go.
+    fn winding(&self) -> f32 {
+        let pts = self.points();
+        (0..pts.len())
+            .map(|i| cross(pts[i], pts[(i + 1) % pts.len()]))
+            .sum()
+    }
+
+    /// Whether no vertex is a dent (vertices in one line are allowed).
+    pub fn is_convex(&self) -> bool {
+        let pts = self.points();
+        let n = pts.len();
+        if n < 3 {
+            return false;
+        }
+        let way = self.winding().signum();
+        (0..n).all(|i| {
+            let (a, b, c) = (pts[i], pts[(i + 1) % n], pts[(i + 2) % n]);
+            cross(b - a, c - b) * way >= -CONVEX_SLACK
+        })
+    }
+
+    /// Whether `p` is inside (edges included).
+    pub fn contains(&self, p: Vec2) -> bool {
+        let pts = self.points();
+        let way = self.winding().signum();
+        (0..pts.len()).all(|i| {
+            let (a, b) = (pts[i], pts[(i + 1) % pts.len()]);
+            cross(b - a, p - a) * way >= 0.0
+        })
+    }
+
+    /// The point of the outline nearest to `p`: the edge it is on (the
+    /// one from vertex `i` to the next), the point and its distance.
+    pub fn nearest(&self, p: Vec2) -> (usize, Vec2, f32) {
+        let pts = self.points();
+        let mut best = (0, p, f32::INFINITY);
+        for i in 0..pts.len() {
+            let (a, b) = (pts[i], pts[(i + 1) % pts.len()]);
+            let e = b - a;
+            let len2 = e.dot(e);
+            let t = if len2 > 0.0 {
+                ((p - a).dot(e) / len2).clamp(0.0, 1.0)
+            } else {
+                0.0
+            };
+            let q = a + e * t;
+            let d = (p - q).length();
+            if d < best.2 {
+                best = (i, q, d);
+            }
+        }
+        best
+    }
+
+    /// Put a new vertex at `at` between vertex `edge` and the next one.
+    /// Returns its index, or `None` when the polygon is full
+    /// ([`MAX_VERTICES`]).
+    pub fn insert(&mut self, edge: usize, at: Vec2) -> Option<usize> {
+        if self.len >= MAX_VERTICES || edge >= self.len {
+            return None;
+        }
+        let i = edge + 1;
+        self.pts.copy_within(i..self.len, i + 1);
+        self.pts[i] = at;
+        self.len += 1;
+        Some(i)
+    }
+
+    /// Take vertex `i` out; `false` (and nothing done) when it is not
+    /// there or only a triangle is left.
+    pub fn remove(&mut self, i: usize) -> bool {
+        if self.len <= 3 || i >= self.len {
+            return false;
+        }
+        self.pts.copy_within(i + 1..self.len, i);
+        self.len -= 1;
+        true
+    }
+
+    /// Move vertex `i` to `to`, or as near to it as it can go with the
+    /// polygon staying convex and inside `within`: it stops at the line
+    /// through its two neighbours and at the lines their far edges lie
+    /// on. Returns where it ended up.
+    pub fn move_vertex(&mut self, i: usize, to: Vec2, within: &Rect) -> Vec2 {
+        if i >= self.len {
+            return to;
+        }
+        let at = self.clamp_convex(i, to, within);
+        self.pts[i] = at;
+        at
+    }
+
+    /// Where vertex `i` may go nearest to `to`; see [`Poly::move_vertex`].
+    pub fn clamp_convex(&self, i: usize, to: Vec2, within: &Rect) -> Vec2 {
+        let pts = self.points();
+        let n = pts.len();
+        if n < 3 || i >= n {
+            return to;
+        }
+        let way = self.winding().signum();
+        let (prev, next) = (pts[(i + n - 1) % n], pts[(i + 1) % n]);
+        let (prev2, next2) = (pts[(i + n - 2) % n], pts[(i + 2) % n]);
+        // Each (point on the line, direction along it): the vertex has to
+        // stay on the inner side of all of them.
+        let lines = [
+            (prev2, prev - prev2),
+            (next, next2 - next),
+            (next, prev - next),
+        ];
+        let inside = |p: Vec2, slack: f32| {
+            within.contains(p)
+                && lines
+                    .iter()
+                    .all(|&(a, d)| d.length() <= 1e-6 || cross(d, p - a) * way >= -slack)
+        };
+        let mut p = to.max(within.min).min(within.max);
+        // Projecting onto each line it is beyond, a few times round, ends
+        // on the nearest allowed point or close to it.
+        for _ in 0..16 {
+            for &(a, d) in &lines {
+                let len = d.length();
+                if len <= 1e-6 {
+                    continue;
+                }
+                let n = Vec2::new(-d.y, d.x) * (way / len);
+                let out = (p - a).dot(n);
+                if out < 0.0 {
+                    p -= n * out;
+                }
+            }
+            p = p.max(within.min).min(within.max);
+        }
+        // The lines only know the neighbours: the whole outline has the
+        // last word (it must not fold over or shrink to nothing). Where
+        // the projected point fails, it goes as far toward it as it may.
+        let scale = self.bounds().size().max_abs().max(1e-6);
+        let ok = |p: Vec2| {
+            let mut moved = *self;
+            moved.pts[i] = p;
+            inside(p, CONVEX_SLACK * scale)
+                && moved.is_convex()
+                && moved.winding() * way >= MIN_AREA * scale * scale
+        };
+        if ok(p) {
+            return p;
+        }
+        let (mut good, mut far) = (pts[i], p);
+        for _ in 0..16 {
+            let mid = (good + far) * 0.5;
+            if ok(mid) {
+                good = mid;
+            } else {
+                far = mid;
+            }
+        }
+        good
+    }
+
     /// The mean of the vertices: inside, since the polygon is convex.
     pub fn centroid(&self) -> Vec2 {
         let sum = self.points().iter().fold(Vec2::ZERO, |s, &p| s + p);
@@ -381,6 +635,18 @@ impl Poly {
             Some(if (c - p).dot(n) > 0.0 { -n } else { n })
         })
     }
+}
+
+/// The least area an outline keeps when a vertex is moved, as a share
+/// of the square on its longest side (twice the area is compared).
+const MIN_AREA: f32 = 0.02;
+/// How far a turn may bend the wrong way and still count as straight.
+const CONVEX_SLACK: f32 = 1e-4;
+
+/// The z of the cross product: positive when `b` is clockwise of `a` on
+/// screen (y down).
+fn cross(a: Vec2, b: Vec2) -> f32 {
+    a.x * b.y - a.y * b.x
 }
 
 /// Where two polygons meet: how to push them apart.

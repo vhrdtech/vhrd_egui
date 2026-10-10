@@ -408,8 +408,34 @@ up and Packery's "others flow around the dragged one". No app uses it yet.
 - 📋 **SETL-7 egui adapter**: a `ve_dash` (or `ve_settle` feature) helper that owns a `World`, puts each panel's
   `Ui` on its body, learns the content sizes a frame late and handles drag and resize, i.e. the sandbox's
   `body_ui` as a reusable piece; then port tpm_mesh_dash from `masonry.rs` to it (P2605#7oct-1717).
-- 📋 **SETL-4 Polygon bodies**: hexagons and half hexagons on the edges mixed with rectangles
-  (P2620#9oct-1721): polygon contacts (parry2d is pure Rust), drawing and clipping to the shape, own hit test.
+- ✅ **SETL-4 Convex polygon bodies** (P2620#9oct-1721, P2605#10oct-1656; user, 10 Oct 2026: convex only for now, a
+  dragged vertex is clamped to keep the shape convex): a body can have an *outline*, a convex polygon of up to 12
+  vertices in unit coordinates of its rectangle (`Body::outline`, `BodyDesc::outline`, `World::set_outline`), so
+  size, minimum, squeeze and walls keep working on the rectangle and the outline is resized with it. Shapes:
+  `Poly::unit_rect`, `unit_hexagon`, `unit_half_hexagon(side)` (closes a honeycomb against a side),
+  `unit_triangle(side)`. Contacts of a pair with an outline go through `sat` on the two shapes (own code, no
+  parry2d; `outline_hit` in `world.rs`): hexagons nest where their rectangles would overlap, a triangle rises into
+  the notch between two hexagons, rectangles and polygons mix. Along an outline's slanted edge bodies part as far as
+  it takes (the half-glide limit is the pillow's). Outline bodies do not bulge and never yield (their shape is not
+  pressure), corner snapping (SETL-8) leaves them alone, `max_overlap` measures them by their outline.
+  Editing: `World::insert_vertex(id, at)` puts a vertex on the outline nearest to a point (a plain rectangle gets
+  its four corners first), `move_vertex(id, i, to)` moves one as near as it can go with the outline convex and
+  inside its rectangle (`Poly::clamp_convex`: the lines through its neighbours and their far edges, then the whole
+  outline checked, halving back where it fails, never under 2 % of the area), `remove_vertex` (a triangle keeps
+  three).
+  Vertex attraction on outlines (SETL-12 carried over, `World::attract_vertices`): each vertex within
+  `attract_range` of the point where it would lie flush against another body's shape or a wall is pulled there,
+  and the pull moves the vertex itself (`Body::nudges`), convexity kept; it only grows into free room. Decided:
+  between two outlines the one added later does the growing (both filling the room chased each other for ever);
+  a vertex that meets something pushing back gives the growth back and waits a quarter second before growing again
+  (growing and giving way in turn chattered). Rectangles see an outline body as its rectangle for their own
+  stretch.
+  Tests in `tests/polygon.rs` (shapes convex and filling their rectangle, clamp incl. 200 random drags, insert /
+  drag / remove through the world, nesting, the notch, a mixed pile at rest without overlap, a hexagon's tips
+  growing to a wall and a rectangle). Not done: drawing content clipped to the shape and a hit test by outline in
+  an app (the sandbox draws the polygon and grabs by the rectangle); concave shapes; into-line pulls for outline
+  vertices (flush only); snapping outline vertices; an outline whose vertex was dragged off a side no longer
+  touches its rectangle there, and walls and rectangle neighbours still see the rectangle.
 - 📋 **SETL-5 Sizes chosen by the layout**: a body offers several sizes (auto / compact / normal / wide,
   P2605#8oct-1205) and the layout picks the one that fits best, instead of only squeezing.
 
