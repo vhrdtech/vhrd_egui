@@ -5,6 +5,8 @@ versions follow [Semantic Versioning](https://semver.org/). Feature IDs refer to
 
 ## [Unreleased]
 
+## [0.16.0] - 2026-10-10
+
 ### Added
 
 - ve_settle: new crate, a physics layout prototype with no dependencies: `World` of rectangular bodies (wanted,

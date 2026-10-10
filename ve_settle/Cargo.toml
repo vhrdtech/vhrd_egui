@@ -14,7 +14,7 @@ repository.workspace = true
 egui.workspace = true
 eframe = { workspace = true, features = ["wgpu"] }
 egui_kittest = { workspace = true, features = ["wgpu", "eframe"] }
-ve_theme = { path = "../ve_theme", version = "0.15" }
+ve_theme = { path = "../ve_theme", version = "0.16" }
 
 [[example]]
 name = "sandbox"
