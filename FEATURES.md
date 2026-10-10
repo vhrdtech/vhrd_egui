@@ -304,16 +304,16 @@ up and Packery's "others flow around the dragged one". No app uses it yet.
   hexagons, SETL-4, are a shape away). A body's shape is the *pillow* of its rectangle (`Body::shape`): a vertex in
   the middle of each edge pushed out by a bulge; two bulged edges meet at one ridge, unstable, so bodies pressed
   too hard slide off each other. The UI draws the plain rectangle. Settled in the session:
-  (1) *pressure law*: bulge = `bulge_rest` (0) + `bulge_gain` (1) × load, capped at `bulge_max` (24) and a quarter
-  of the edge, following at `bulge_speed`; load is squeeze plus `Body::jam` (the squeeze a rigid or fully
-  squeezed body would have taken), both let go at `restore`. A calm row has no load, so it is plain rectangles and
-  rests bit for bit as before.
+  (1) *pressure law*: bulge = `bulge_rest` (0) + `bulge_gain` (1) × (load − `bulge_from` (2)), capped at
+  `bulge_max` (24) and a quarter of the edge, following at `bulge_speed`; load is squeeze plus `Body::jam` (the
+  squeeze a rigid or fully squeezed body would have taken), both let go at `restore`. A calm row has no load and a
+  stack resting under gravity stays below `bulge_from`, so they are plain rectangles and rest as before.
   (2) *gap vs bulge*: between two pillows the gap shrinks by both bulges along the normal (below 0 too), so tips
   meeting keep the edges exactly `gap` apart and a growing bulge takes no room (it took room at first, which
   squeezed the neighbours, which bulged more); the rectangles are still kept a quarter gap apart, never overlap.
   (3) *one leaves at a time*: ridge on ridge is unstable for every pair, so all bodies of a full row started out at
   once (and the top wall blocked half the pushes). One *yielder* per world (`Body::yielding`: most bulged, newest on
-  a tie, kept while bulged) meets its neighbours as pillows, ties push it away from gravity's side (and across,
+  a tie, kept while bulged and at least half as bulged as the most bulged one) meets its neighbours as pillows, ties push it away from gravity's side (and across,
   toward the middle); every other pair meets as rectangles and squeezes as before. The yielder lets go of its
   corner snaps (SETL-8) and of its home in step with its bulge, and its home drifts to where it goes, so it does not
   press back in. Walls see the plain rectangle.
@@ -324,6 +324,18 @@ up and Packery's "others flow around the dragged one". No app uses it yet.
   with homes, and rigid), a full column spills one to the side, a calm row stays put, SETL-6 is gone.
   `ve_settle/src/geom.rs` (`Poly`, `sat`), `world.rs` (`touch_at`, `pick_yielder`, `resize`), tests in
   `tests/pillow.rs`. Sandbox overlay and sliders follow.
+- ✅ **SETL-10 Grid pitch** (user, 10 Oct 2026): touching bodies are guided to line up their edges at whole steps of
+  one global `grid_pitch` (24) along each contact (body under body: left edges; side by side: tops; against a wall:
+  whole steps from the walls' corner), like studs meshing. Decided: not real kinks on the edges, which would make the
+  shapes non-convex (sawtooth contacts: no SAT, many contact points, jitter as teeth skip), but a washboard force
+  along each contact: a sine of the offset with one pitch (`World::grid_pass`, `washboard`), strongest a quarter pitch
+  off a step, lightly damped near a step, so it never jumps and every step is a dip. Its depth is `grid_stiffness`
+  (1/s² near a step) and it fades in as two bodies slow down against each other (`GRID_CALM_SPEED` 120 points/s),
+  so free motion stays smooth and the end snaps to the grid. Off by default (`grid_stiffness` 0): it changes where
+  every panel rests, so it waits for the user to try it in the sandbox; with corner snapping it agrees for panels of
+  the same size and competes for others. The grid's own damping is half critical: with corner snapping's on top, a
+  full critical one made a stack of six ring forever. `Body::grid_pull` for the overlay. Tests in `tests/grid.rs`
+  (released off the grid, both axes, off when 0).
 - ✅ **SETL-6 Pile sticks out though there is room beside it**: contacts parted two bodies along the axis of least
   overlap only, so rigid bodies piled on one spot (8 of them added on a diagonal) parted into a column longer than
   the world and stuck out past the walls. Fixed by the pillow (SETL-9): the jammed bodies bulge and spill sideways;

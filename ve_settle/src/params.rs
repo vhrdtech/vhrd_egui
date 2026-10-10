@@ -88,9 +88,13 @@ pub struct Params {
     /// the middle of each edge stands out of the rectangle in the solver's
     /// eyes. 0 (the default) keeps a calm row lined up exactly.
     pub bulge_rest: f32,
-    /// How much the bulge grows with pressure, points of bulge per point of
-    /// pressure (the squeeze a body has on an axis, or would have if it
-    /// could give). The edges facing the squeeze bulge, like a balloon, so
+    /// Pressure below which nothing bulges, points: a stack resting under
+    /// gravity keeps a little (the solver leaves a few hundredths of a
+    /// point per step to its last passes), and must stay plain rectangles.
+    pub bulge_from: f32,
+    /// How much the bulge grows with pressure beyond `bulge_from`, points of
+    /// bulge per point of pressure (the squeeze a body has on an axis, or
+    /// would have if it could give). The edges facing the squeeze bulge, like a balloon, so
     /// bodies pressed too hard in a row or column slide off each other
     /// instead of being crushed. 0 turns it off.
     pub bulge_gain: f32,
@@ -137,6 +141,7 @@ impl Default for Params {
             snap_range: 20.0,
             snap_stiffness: 1500.0,
             bulge_rest: 0.0,
+            bulge_from: 2.0,
             bulge_gain: 1.0,
             bulge_max: 24.0,
             bulge_speed: 120.0,

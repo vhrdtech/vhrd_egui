@@ -9,9 +9,12 @@ versions follow [Semantic Versioning](https://semver.org/). Feature IDs refer to
 
 - ve_settle: one polygon solver: contacts go through convex polygons (`Poly`, `sat`, `Hit`); a body's shape is the
   pillow of its rectangle (`Body::shape`), its edges bulging with the pressure on them (`Params::bulge_rest`,
-  `bulge_gain`, `bulge_max`, `bulge_speed`; `Body::bulge`, `jam`, `load`, `yielding`, `slide_pull`), so of the
+  `bulge_from`, `bulge_gain`, `bulge_max`, `bulge_speed`; `Body::bulge`, `jam`, `load`, `yielding`, `slide_pull`), so of the
   bodies pressed too hard in a row or column one slides out into the next row or column instead of all being
   crushed; a calm row is unchanged (SETL-9).
+- ve_settle: grid pitch: touching bodies are guided to line up their edges at whole steps of `Params::grid_pitch`
+  along each contact, a washboard pull whose depth is `Params::grid_stiffness` (0, off, by default) and which fades
+  in as they slow down; `Body::grid_pull` (SETL-10).
 
 ### Changed
 

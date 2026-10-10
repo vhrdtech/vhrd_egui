@@ -609,23 +609,29 @@ impl World {
 
     /// The body that gives way this step ([`Body::yielding`]).
     fn pick_yielder(&mut self) {
-        let bulged = |b: &Body| !b.dragged && b.bulge.x.max(b.bulge.y) > YIELD_BULGE;
-        let keep = self
-            .yielder
-            .filter(|&id| self.bodies.iter().any(|b| b.id == id && bulged(b)));
-        self.yielder = keep.or_else(|| {
-            let mut best: Option<&Body> = None;
-            for b in self.bodies.iter().filter(|b| bulged(b)) {
-                let (bb, wb) = (
-                    b.bulge.x.max(b.bulge.y),
-                    best.map_or(0.0, |w| w.bulge.x.max(w.bulge.y)),
-                );
-                if best.is_none() || bb >= wb {
-                    best = Some(b);
-                }
+        let bulge = |b: &Body| {
+            if b.dragged {
+                0.0
+            } else {
+                b.bulge.x.max(b.bulge.y)
             }
-            best.map(|b| b.id)
+        };
+        // The most bulged, the newest on a tie.
+        let mut best: Option<&Body> = None;
+        for b in self.bodies.iter().filter(|b| bulge(b) > YIELD_BULGE) {
+            if best.is_none_or(|w| bulge(b) >= bulge(w)) {
+                best = Some(b);
+            }
+        }
+        let most = best.map_or(0.0, bulge);
+        // The one already giving way keeps at it while it is bulged and
+        // not far less than the most bulged one.
+        let keep = self.yielder.filter(|&id| {
+            self.bodies
+                .iter()
+                .any(|b| b.id == id && bulge(b) > YIELD_BULGE && bulge(b) * 2.0 >= most)
         });
+        self.yielder = keep.or(best.map(|b| b.id));
         for b in &mut self.bodies {
             b.yielding = Some(b.id) == self.yielder;
         }
@@ -1035,7 +1041,7 @@ fn washboard(offset: f32, rel_vel: f32, p: &Params) -> f32 {
     let phase = std::f32::consts::TAU * off / pitch;
     let calm = (1.0 - rel_vel.abs() / GRID_CALM_SPEED).clamp(0.0, 1.0);
     let spring = -p.grid_stiffness * pitch / std::f32::consts::TAU * phase.sin();
-    let damp = -2.0 * p.grid_stiffness.sqrt() * rel_vel * phase.cos().max(0.0);
+    let damp = -p.grid_stiffness.sqrt() * rel_vel * phase.cos().max(0.0);
     (spring + damp) * calm
 }
 
@@ -1069,7 +1075,8 @@ fn resize(b: &mut Body, p: &Params, dt: f32) -> f32 {
         // The edges across `axis` bulge: they are the ones pressed.
         let edge = b.rect.size()[axis.other()];
         let cap = p.bulge_max.min(edge * 0.25).max(0.0);
-        let want = (p.bulge_rest + p.bulge_gain * b.load()[axis]).clamp(0.0, cap);
+        let load = (b.load()[axis] - p.bulge_from).max(0.0);
+        let want = (p.bulge_rest + p.bulge_gain * load).clamp(0.0, cap);
         let step = p.bulge_speed.max(0.0) * dt;
         let bulge = b.bulge[axis] + (want - b.bulge[axis]).clamp(-step, step);
         bulged = bulged.max((bulge - b.bulge[axis]).abs());
