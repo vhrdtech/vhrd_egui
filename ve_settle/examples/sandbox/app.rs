@@ -178,6 +178,11 @@ pub struct Overlay {
     pub homes: bool,
     /// Corners being pulled onto other corners.
     pub snaps: bool,
+    /// The collision shapes the solver sees: pillows with their bulge, and
+    /// which body gives way (SETL-9).
+    pub shapes: bool,
+    /// Pitch marks along every edge and the walls (SETL-10).
+    pub grid: bool,
 }
 
 /// The sandbox app state.
@@ -231,6 +236,8 @@ impl Sandbox {
                 tension: true,
                 homes: true,
                 snaps: true,
+                shapes: true,
+                grid: true,
             },
             auto: false,
             rehome_on_drop: true,
@@ -436,7 +443,7 @@ impl Sandbox {
         ui.checkbox(&mut self.overlay.bodies, "Bodies")
             .on_hover_text("Each body's rectangle, its minimum size (inner outline) and its id. Lifted bodies (just added, dragged, dropped on others) are drawn in the info colour.");
         ui.checkbox(&mut self.overlay.forces, "Forces")
-            .on_hover_text("Arrows from each body's middle: gravity and the home spring's pull (points/s², drawn at 1/25), and velocity (points/s, drawn at 1/10). Dots mark the contacts of the last step, bigger for deeper ones.");
+            .on_hover_text("Arrows from each body's middle: gravity, the home spring's pull, the sideways push of slanted contacts (a bulged widget sliding off) and the grid's pull (points/s², drawn at 1/25), and velocity (points/s, drawn at 1/10). Dots mark the contacts of the last step, bigger for deeper ones.");
         ui.checkbox(&mut self.overlay.tension, "Tension")
             .on_hover_text("Squeezed bodies get a warning tint and the share of their size that is squeezed off, in percent.");
         ui.checkbox(&mut self.overlay.homes, "Home spots")
@@ -445,6 +452,10 @@ impl Sandbox {
             );
         ui.checkbox(&mut self.overlay.snaps, "Corner snaps")
             .on_hover_text("A ring on every corner that is being pulled onto a corner of another widget or of the walls, and a line to where it is pulled. The ring fills as the corner gets there; a filled dot is a corner in place.");
+        ui.checkbox(&mut self.overlay.shapes, "Collision shapes")
+            .on_hover_text("The shape the solver sees where it differs from the rectangle: a pressed widget's edges bulge in the middle (a pillow), with its bulge in points. The one that gives way and slides out of its row or column is drawn thicker and marked \"yields\". Calm widgets are plain rectangles.");
+        ui.checkbox(&mut self.overlay.grid, "Grid pitch")
+            .on_hover_text("Ticks every grid pitch along each widget's edges, from its top left corner, and along the walls from their corner. Touching widgets are pulled to line their ticks up (when grid stiffness is above 0).");
 
         self.param_sliders(ui);
     }
@@ -571,6 +582,65 @@ impl Sandbox {
             &mut p.snap_stiffness,
             0.0..=6000.0,
             "How hard a corner is pulled into line, 1/s² (critically damped). What is left of a misalignment at rest is about the other pulls over this: gravity 600 against 1500 leaves 0.4 points.",
+        );
+
+        ui.section_header(
+            "Pillow",
+            "Under pressure a widget's edges bulge in the middle, so widgets pressed too hard in a row or column slide off each other: one moves to the next row or column instead of all being crushed.",
+        );
+        knob(
+            ui,
+            "bulge at rest",
+            &mut p.bulge_rest,
+            0.0..=20.0,
+            "How far the middle of each edge stands out with no pressure, points. 0 keeps a calm row lined up exactly; above 0 every contact is a ridge.",
+        );
+        knob(
+            ui,
+            "bulge from",
+            &mut p.bulge_from,
+            0.0..=20.0,
+            "Pressure below which nothing bulges, points of squeeze. A stack resting under gravity keeps a little and must stay plain rectangles.",
+        );
+        knob(
+            ui,
+            "bulge gain",
+            &mut p.bulge_gain,
+            0.0..=5.0,
+            "Points of bulge per point of pressure beyond \"bulge from\" (the squeeze a widget has, or would have if it could give). 0 turns the pillow off: widgets are squeezed as before.",
+        );
+        knob(
+            ui,
+            "bulge max",
+            &mut p.bulge_max,
+            0.0..=60.0,
+            "The most an edge bulges, points; never more than a quarter of the edge's length.",
+        );
+        knob(
+            ui,
+            "bulge speed",
+            &mut p.bulge_speed,
+            10.0..=1000.0,
+            "How fast the bulge follows the pressure, points/s.",
+        );
+
+        ui.section_header(
+            "Grid",
+            "Touching widgets are pulled to line their edges up at whole steps of one pitch, like studs meshing: a washboard along each contact that grows as they slow down.",
+        );
+        knob(
+            ui,
+            "grid pitch",
+            &mut p.grid_pitch,
+            4.0..=96.0,
+            "The grid step, points. Edges along a contact are pulled to whole steps apart; a widget against a wall to whole steps from the walls' corner.",
+        );
+        knob(
+            ui,
+            "grid stiffness",
+            &mut p.grid_stiffness,
+            0.0..=3000.0,
+            "How hard edges are pulled onto grid steps, 1/s² near a step (strongest a quarter pitch off). 0 turns the grid off.",
         );
 
         ui.section_header("Motion", "Speeds, so that things glide and never jump.");
@@ -779,6 +849,7 @@ impl Sandbox {
         let painter = ui.painter().with_clip_rect(self.arena);
         let font = FontId::monospace(10.0);
         let (gravity_color, home_color, vel_color) = (c.cat[0], c.cat[1], c.cat[2]);
+        let (slide_color, grid_color) = (c.cat[4], c.cat[3]);
         for body in self.world.bodies() {
             let rect = to_rect(body.rect);
             let center = rect.center();
@@ -839,6 +910,8 @@ impl Sandbox {
                     (to_vec(body.gravity_pull) / 25.0, gravity_color),
                     (to_vec(body.home_pull) / 25.0, home_color),
                     (to_vec(body.vel) / 10.0, vel_color),
+                    (to_vec(body.slide_pull) / 25.0, slide_color),
+                    (to_vec(body.grid_pull) / 25.0, grid_color),
                 ];
                 for (arrow, color) in arrows {
                     if arrow.length() > 1.5 {
@@ -859,6 +932,12 @@ impl Sandbox {
                 painter.circle_filled(at, contact.depth.clamp(2.0, 6.0), c.accent_alt);
             }
         }
+        if self.overlay.shapes {
+            self.paint_shapes(&painter, tokens, &font);
+        }
+        if self.overlay.grid {
+            self.paint_pitch(&painter, tokens);
+        }
         if self.overlay.snaps {
             let color = c.cat[3];
             for snap in self.world.snaps() {
@@ -868,6 +947,79 @@ impl Sandbox {
                 painter.circle_filled(from, 5.0 * snap.grip.clamp(0.0, 1.0), color);
             }
         }
+    }
+}
+
+impl Sandbox {
+    /// Pillows of the bodies that bulge, the yielding one thicker.
+    fn paint_shapes(&self, painter: &egui::Painter, tokens: &Tokens, font: &FontId) {
+        let color = tokens.colors.cat[4];
+        for body in self.world.bodies() {
+            if body.bulge.max_abs() < 0.05 {
+                continue;
+            }
+            let points: Vec<Pos2> = body.shape().points().iter().map(|&p| to_pos(p)).collect();
+            let width = if body.yielding {
+                tokens.stroke.thick
+            } else {
+                tokens.stroke.thin
+            };
+            painter.add(egui::Shape::closed_line(points, Stroke::new(width, color)));
+            let label = if body.yielding {
+                format!("yields  bulge {:.0}", body.bulge.max_abs())
+            } else {
+                format!("bulge {:.0}", body.bulge.max_abs())
+            };
+            painter.text(
+                to_pos(body.rect.center()),
+                Align2::CENTER_CENTER,
+                label,
+                font.clone(),
+                color,
+            );
+        }
+    }
+
+    /// Ticks every pitch along each body's edges from its top left
+    /// corner, and along the closed walls from their corner.
+    fn paint_pitch(&self, painter: &egui::Painter, tokens: &Tokens) {
+        let p = self.world.params();
+        if p.grid_pitch < 4.0 {
+            return;
+        }
+        let stroke = Stroke::new(tokens.stroke.thin, tokens.colors.line_strong);
+        let tick = 4.0;
+        let ticks = |from: Pos2, along: egui::Vec2, len: f32, out: egui::Vec2| {
+            let mut d = 0.0;
+            while d <= len + 0.01 {
+                let at = from + along * d;
+                painter.line_segment([at, at + out * tick], stroke);
+                d += p.grid_pitch;
+            }
+        };
+        for body in self.world.bodies() {
+            let r = to_rect(body.rect);
+            let (w, h) = (r.width(), r.height());
+            ticks(r.left_top(), vec2(1.0, 0.0), w, vec2(0.0, 1.0));
+            ticks(r.left_bottom(), vec2(1.0, 0.0), w, vec2(0.0, -1.0));
+            ticks(r.left_top(), vec2(0.0, 1.0), h, vec2(1.0, 0.0));
+            ticks(r.right_top(), vec2(0.0, 1.0), h, vec2(-1.0, 0.0));
+        }
+        let inner = to_rect(self.world.bounds()).shrink(p.gap);
+        let (w, h) = (inner.width(), inner.height());
+        let outer = to_rect(self.world.bounds());
+        ticks(
+            pos2(inner.min.x, outer.min.y),
+            vec2(1.0, 0.0),
+            w,
+            vec2(0.0, 1.0),
+        );
+        ticks(
+            pos2(outer.min.x, inner.min.y),
+            vec2(0.0, 1.0),
+            h,
+            vec2(1.0, 0.0),
+        );
     }
 }
 

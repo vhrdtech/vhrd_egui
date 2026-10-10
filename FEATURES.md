@@ -189,6 +189,10 @@ Small helpers every app uses, crate `ve_basics`. UI rules that go with them: AGE
   widest forever: after `COMPACT_AFTER` (3 min) without growth the width glides (`animate_value`) down to the
   widest the content needed since, never while the content's width is still changing (5 s), and growth stays
   immediate; `reset_steady` still forgets everything. `ve_dash/src/steady.rs`, unit tests for the policy.
+- 🐛 **DASH-21 Snapshots differ on omarchy-m1**: `cargo test -p ve_dash --test ui` fails `sparkline_gradient`,
+  `sparkline_axis` and `dash_panel` by 2-9 pixels on omarchy-m1 (aarch64, its wgpu renderer), on main as well
+  (seen 10 Oct 2026 by session settle-polygon), so `just test` is red there. Needs a per-test failing-pixel
+  threshold (egui_kittest `SnapshotOptions`) or snapshots that agree across the PCs.
 - ✅ **BAS-1 Build info**: `BuildInfo`, `build_info!()` (captures the *calling* crate's name, version,
   `GIT_SHA`, `BUILD_TIME` and `cfg!(debug_assertions)`) and `build_info_label` — `version · sha · debug|release`
   with an orange debug marker and a tooltip spelling everything out. The app's `build.rs` sets `GIT_SHA` /
@@ -282,7 +286,7 @@ up and Packery's "others flow around the dragged one". No app uses it yet.
   usage, machine, grid) the size of real dash panels (250-450 wide, 120-400 tall), whose content grows in
   different directions (measured from the real egui content a frame late, as a dash would), a
   slider with a tooltip on every parameter, overlay layers (bodies with minimum size and id, force and velocity
-  arrows with contact dots, tension tint and percent, home spots, corner snaps), drag to move, corner handle to resize,
+  arrows with contact dots, tension tint and percent, home spots, corner snaps, collision shapes, grid pitch), drag to move, corner handle to resize,
   add (button or double-click), remove, grow / shrink content by hand or by itself, pause and single-step.
   `ve_settle/examples/sandbox/`.
 - ✅ **SETL-3 Sandbox UI tests**: egui_kittest drives the sandbox like a person (add widgets, drag one through
@@ -299,7 +303,7 @@ up and Packery's "others flow around the dragged one". No app uses it yet.
   line to the target). `snap_pass` in `ve_settle/src/world.rs`, 6 tests in `tests/core.rs`, a drag-and-drop
   check in `tests/sandbox.rs`. Not done: snapping a corner to a wall *edge* or to a neighbour's edge away from
   its corners, and snapping while dragging (it acts after the drop).
-- 🚧 **SETL-9 One polygon solver, rectangles as its limit** (user, 10 Oct 2026, P2605#10oct-1622): every contact
+- ✅ **SETL-9 One polygon solver, rectangles as its limit** (user, 10 Oct 2026, P2605#10oct-1622): every contact
   goes through convex polygons (`Poly`, at most 12 vertices on the stack; own separating axis test `sat`, so
   hexagons, SETL-4, are a shape away). A body's shape is the *pillow* of its rectangle (`Body::shape`): a vertex in
   the middle of each edge pushed out by a bulge; two bulged edges meet at one ridge, unstable, so bodies pressed
@@ -319,11 +323,16 @@ up and Packery's "others flow around the dragged one". No app uses it yet.
   press back in. Walls see the plain rectangle.
   (4) *making it slide*: a slanted contact also pushes sideways (`Body::slide_pull`, bulges × slope, at most 4 ×
   gravity), so squeezing does not eat the slide; where the rectangle floor holds, the push still follows the
-  slope; slopes move a body sideways at most `glide_speed` per step, so making room is a glide, not a jump.
+  slope; slopes move a body sideways at most half a glide per step and a body that slid keeps no more speed than
+  `glide_speed`, so making room is a glide, not a jump.
   Result: a row overfilled by one widget sends exactly one to the next row and nothing stays squeezed (squeezable
   with homes, and rigid), a full column spills one to the side, a calm row stays put, SETL-6 is gone.
   `ve_settle/src/geom.rs` (`Poly`, `sat`), `world.rs` (`touch_at`, `pick_yielder`, `resize`), tests in
-  `tests/pillow.rs`. Sandbox overlay and sliders follow.
+  `tests/pillow.rs`. Sandbox: a "Pillow" slider section (bulge at rest, from, gain, max, speed), a "Collision
+  shapes" overlay layer (the pillows of bulged bodies with their bulge, the yielder thicker and marked "yields"),
+  the slide push as a force arrow; kittest `a_row_overfilled_by_the_window_sends_one_widget_to_the_next_row`
+  (four panels, window narrowed to three: one moves down, nothing crushed, no overlap or jump on any frame).
+  Still open: the yielder is one per world, so two rows overfilled at once take turns.
 - ✅ **SETL-10 Grid pitch** (user, 10 Oct 2026): touching bodies are guided to line up their edges at whole steps of
   one global `grid_pitch` (24) along each contact (body under body: left edges; side by side: tops; against a wall:
   whole steps from the walls' corner), like studs meshing. Decided: not real kinks on the edges, which would make the
@@ -335,7 +344,9 @@ up and Packery's "others flow around the dragged one". No app uses it yet.
   every panel rests, so it waits for the user to try it in the sandbox; with corner snapping it agrees for panels of
   the same size and competes for others. The grid's own damping is half critical: with corner snapping's on top, a
   full critical one made a stack of six ring forever. `Body::grid_pull` for the overlay. Tests in `tests/grid.rs`
-  (released off the grid, both axes, off when 0).
+  (released off the grid, both axes, off when 0). Sandbox: a "Grid" slider section (pitch, stiffness), a "Grid
+  pitch" overlay layer (ticks every pitch along each panel's edges from its top left corner, and along the walls),
+  the grid pull as a force arrow.
 - ✅ **SETL-6 Pile sticks out though there is room beside it**: contacts parted two bodies along the axis of least
   overlap only, so rigid bodies piled on one spot (8 of them added on a diagonal) parted into a column longer than
   the world and stuck out past the walls. Fixed by the pillow (SETL-9): the jammed bodies bulge and spill sideways;

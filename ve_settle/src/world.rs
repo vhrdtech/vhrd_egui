@@ -586,8 +586,13 @@ impl World {
             moved = moved.max(d);
             if !b.dragged {
                 moved_free = moved_free.max(d);
-                b.vel =
-                    ((b.rect.center() - b.prev.center()) * (1.0 / dt)).clamp_length(p.max_speed);
+                // Sliding off a slope is a glide: it does not build up speed.
+                let limit = if b.slid > 0.0 {
+                    p.glide_speed.min(p.max_speed)
+                } else {
+                    p.max_speed
+                };
+                b.vel = ((b.rect.center() - b.prev.center()) * (1.0 / dt)).clamp_length(limit);
             }
         }
         self.last_move = moved_free;
@@ -966,15 +971,15 @@ impl World {
                 hi.squeeze[axis] += s_hi;
                 hi.rect.min[axis] += s_hi;
                 // `normal` points from `a` to `b`. Along a slope a body
-                // moves sideways at most `glide` per step; past that the
+                // moves sideways at most half a glide per step; past that the
                 // push is straight, so making room by sliding is a glide.
                 let (a, b) = if a_low { (lo, hi) } else { (hi, lo) };
                 let mut sideways = each;
                 sideways[axis] = 0.0;
                 let straight = each - sideways;
                 let (slide_a, slide_b) = (
-                    spend_slide(a, sideways, glide),
-                    spend_slide(b, sideways, glide),
+                    spend_slide(a, sideways, glide * 0.5),
+                    spend_slide(b, sideways, glide * 0.5),
                 );
                 a.shift(-straight - slide_a);
                 b.shift(straight + slide_b);

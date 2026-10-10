@@ -421,3 +421,66 @@ fn a_widget_dropped_near_another_ones_corner_snaps_to_it() {
         b.min.y
     );
 }
+
+#[test]
+fn a_row_overfilled_by_the_window_sends_one_widget_to_the_next_row() {
+    let (mut h, mut watch) = sandbox();
+    // Start from four widgets of one size in a row under the top wall.
+    let ids: Vec<_> = h.state().world.bodies().iter().map(|b| b.id).collect();
+    for id in ids {
+        let at = center(&h, id);
+        click_at(&mut h, &mut watch, at);
+        click_button(&mut h, &mut watch, "Remove selected");
+    }
+    let arena = h.state().arena;
+    let size = vec2(280.0, 180.0);
+    for i in 0..4 {
+        let at = arena.min + vec2(20.0 + size.x / 2.0 + i as f32 * (size.x + 30.0), 120.0);
+        let id = h.state_mut().add_widget(Some(at));
+        let item = h.state_mut().items.iter_mut().find(|item| item.id == id);
+        item.expect("just added").user_size = Some(size);
+    }
+    watch.rest(&mut h);
+    let world = &h.state().world;
+    let top = world.bodies()[0].rect.min.y;
+    assert!(
+        world
+            .bodies()
+            .iter()
+            .all(|b| (b.rect.min.y - top).abs() < 6.0),
+        "one row: {:?}",
+        world.bodies().iter().map(|b| b.rect).collect::<Vec<_>>()
+    );
+
+    // Narrow the window until only three fit; watch the pillow at work.
+    let gap = world.params().gap;
+    let three = 3.0 * size.x + 4.0 * gap;
+    let window = h.ctx.content_rect().size();
+    h.set_size(vec2(window.x - (arena.width() - three) + 30.0, window.y));
+    let mut yielded = false;
+    for _ in 0..SETTLE_FRAMES {
+        watch.frame(&mut h);
+        yielded |= h.state().world.bodies().iter().any(|b| b.yielding);
+        if h.state().world.is_at_rest() {
+            break;
+        }
+    }
+    watch.rest(&mut h);
+    assert!(yielded, "one widget gave way");
+    assert_inside_arena(&h);
+    let world = &h.state().world;
+    let below = world
+        .bodies()
+        .iter()
+        .filter(|b| b.rect.min.y > top + size.y)
+        .count();
+    assert_eq!(below, 1, "exactly one moved down: {:#?}", world.bodies());
+    for b in world.bodies() {
+        assert!(b.tension() < 0.01, "not crushed: {b:?}");
+        assert_eq!(b.bulge, ve_settle::Vec2::ZERO, "calm again: {b:?}");
+    }
+    // The overlay layer for it is there to switch.
+    h.get_by_label("Collision shapes").click();
+    watch.frame(&mut h);
+    assert!(!h.state().overlay.shapes);
+}
