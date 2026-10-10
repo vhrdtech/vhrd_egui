@@ -10,7 +10,7 @@
 //! or icon, never used as the only carrier of meaning.
 
 use egui::Color32;
-use ve_theme::Tokens;
+use ve_theme::{Status, Tokens};
 
 /// Color tokens the widgets draw from. Start from [`Theme::dark`] / [`Theme::light`]
 /// (or [`Theme::from_tokens`] with your own tokens) and override fields.
@@ -40,6 +40,11 @@ pub struct Theme {
     pub crit: Color32,
     /// Status: offline / disabled.
     pub off: Color32,
+    /// The brand status groups in full (error, warning, ok, info, neutral: solid, soft, line, hover).
+    /// `status.info.hover` with `status.info.line` is the cross-reference highlight ([`Theme::highlight`]).
+    pub status: Status,
+    /// Categorical label colors (models, series, tags): violet, teal, blue, pink, lime. Never a state.
+    pub cat: [Color32; 5],
     /// Brand red accent (wordmark, product name). Use sparingly; not a series color.
     pub red: Color32,
     /// Identifier text: an agent session's slug. Distinct from the series and status colors.
@@ -68,6 +73,8 @@ impl Theme {
             warn: c.warn,
             crit: c.crit,
             off: c.off,
+            status: c.status,
+            cat: c.cat,
             red: c.red,
             slug: c.slug,
             task: c.task,
@@ -82,6 +89,12 @@ impl Theme {
     /// Light theme: the VHRD brand light set, `ve_theme::Tokens::light`.
     pub const fn light() -> Self {
         Self::from_tokens(&Tokens::light())
+    }
+
+    /// Fill and outline of a cross-reference highlight (hover one thing, its counterpart lights up): the
+    /// info group's hover and line steps.
+    pub const fn highlight(&self) -> (Color32, Color32) {
+        (self.status.info.hover, self.status.info.line)
     }
 
     /// Apply the theme to egui's visuals: panel/window fills, text color, widget strokes.

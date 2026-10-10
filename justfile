@@ -11,6 +11,10 @@ lint:
     cargo clippy --workspace --all-targets -- -D warnings
     cargo fmt --all --check
 
+# Refresh ve_theme's copy of the vhrd_brand palette export (sibling checkout); build.rs makes the constants
+brand:
+    cp ../vhrd_brand/web/palette.json ve_theme/brand/palette.json
+
 # Local install: the app template command (the crates themselves are depended on, not installed)
 install:
     cargo install --path ve_template --locked

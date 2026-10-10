@@ -252,6 +252,13 @@ on every background (unit-tested), status colors always come with a text label.
 - ✅ **THM-10 Categorical hues**: `ve_theme::hue` (OKLab ΔE, OKLCH hue, `ALERT_HUES` 5°–85°, `is_alert_hue`) so apps test
   that labels, chips, series, hosts and models stay out of the red / orange range reserved for error and warning
   and are clearly apart from each other; the identifier tokens are checked the same way.
+- ✅ **THM-11 Brand export feeds the tokens**: `ve_theme/brand/palette.json` is a copy of vhrd_brand's export (`just
+  brand`), `build.rs` turns it into the `ve_theme::vhrd` constants, and `Tokens::dark` / `light` take every brand colour
+  from them. `Palette::status` holds the brand status groups (`Status`: error, warning, ok, info, neutral, each a `Ramp`
+  of solid, soft, line, hover), `Palette::cat` the five categorical hues; `good` / `warn` / `crit` are the solids of ok,
+  warning, error, so `crit` is no longer the brand red and `warn` no longer the power orange. ve_dash `Theme` carries
+  `status`, `cat` and `highlight()` (info hover + line, the cross-reference highlight). Tests: stated contrast, error
+  apart from brand red, warning apart from power orange, the copy equal to the sibling export.
 - 💡 **THM-6 Hot reload of tokens**: in debug builds, read the tokens from a RON file and re-apply on change, as
   re_ui's `hot_reload_design_tokens` does, so tuning doesn't need a rebuild. Needs serde on the token types.
 

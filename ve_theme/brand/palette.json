@@ -1,0 +1,140 @@
+{
+  "brand": {
+    "red": "#c8141c",
+    "black": "#1a1a1a",
+    "grey": "#6e6e6e",
+    "light": "#e6e6e6",
+    "paper": "#f6f6f6"
+  },
+  "signal": {
+    "power": "#e8710a",
+    "usb": "#1565c0",
+    "bus": "#2e7d32",
+    "can": "#00838f",
+    "analog": "#6a1b9a",
+    "ctrl": "#6e6e6e"
+  },
+  "signal-names": {
+    "power": "Power",
+    "usb": "USB",
+    "bus": "Digital IO",
+    "can": "CAN",
+    "analog": "Analog",
+    "ctrl": "Control / GPIO"
+  },
+  "grey": {
+    "0": "#ffffff",
+    "50": "#f6f6f6",
+    "100": "#efefef",
+    "200": "#e6e6e6",
+    "300": "#d0d0d0",
+    "400": "#a8a8a8",
+    "500": "#8a8a8a",
+    "600": "#6e6e6e",
+    "700": "#4a4a4a",
+    "800": "#2e2e2e",
+    "900": "#1a1a1a",
+    "950": "#0f0f10"
+  },
+  "dark": {
+    "bg": "#0f0f10",
+    "surface": "#161617",
+    "line": "#2a2a2b",
+    "text": "#ececec",
+    "muted": "#9a9a9a",
+    "red": "#f24c44"
+  },
+  "signal-dark": {
+    "power": "#ff9a3c",
+    "usb": "#5c9cf5",
+    "bus": "#5cb860",
+    "can": "#26c6da",
+    "analog": "#b47cd8",
+    "ctrl": "#9a9a9a"
+  },
+  "status": {
+    "error": {
+      "solid": "#a9043e",
+      "soft": "#fee8ea",
+      "line": "#c05b6b",
+      "hover": "#ffccd0"
+    },
+    "warning": {
+      "solid": "#775403",
+      "soft": "#f9edd9",
+      "line": "#a77601",
+      "hover": "#f3d6a7"
+    },
+    "ok": {
+      "solid": "#046e30",
+      "soft": "#e1f5e4",
+      "line": "#3b9555",
+      "hover": "#bbe8c3"
+    },
+    "info": {
+      "solid": "#0159ae",
+      "soft": "#e4f0ff",
+      "line": "#4682cc",
+      "hover": "#c3ddff"
+    },
+    "neutral": {
+      "solid": "#4a4a4a",
+      "soft": "#e6e6e6",
+      "line": "#8a8a8a",
+      "hover": "#d0d0d0"
+    }
+  },
+  "status-dark": {
+    "error": {
+      "solid": "#ff6d87",
+      "soft": "#36171b",
+      "line": "#ac495a",
+      "hover": "#5d202b"
+    },
+    "warning": {
+      "solid": "#e4a409",
+      "soft": "#2e1e01",
+      "line": "#906606",
+      "hover": "#4b3301"
+    },
+    "ok": {
+      "solid": "#58cd78",
+      "soft": "#0d2814",
+      "line": "#258343",
+      "hover": "#05441d"
+    },
+    "info": {
+      "solid": "#7ab4fe",
+      "soft": "#102239",
+      "line": "#346fb8",
+      "hover": "#123865"
+    },
+    "neutral": {
+      "solid": "#9a9a9a",
+      "soft": "#212123",
+      "line": "#6e6e6e",
+      "hover": "#2e2e2e"
+    }
+  },
+  "status-names": {
+    "error": "Error",
+    "warning": "Warning",
+    "ok": "OK",
+    "info": "Info",
+    "neutral": "Neutral / off"
+  },
+  "categorical": {
+    "violet": "#714ca6",
+    "teal": "#008081",
+    "blue": "#256bb1",
+    "pink": "#b2548d",
+    "lime": "#727d0a"
+  },
+  "categorical-dark": {
+    "violet": "#b494ed",
+    "teal": "#50bfbe",
+    "blue": "#70aff4",
+    "pink": "#ee97c9",
+    "lime": "#a4c665"
+  }
+}

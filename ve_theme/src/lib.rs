@@ -48,7 +48,7 @@ pub use fonts::{
     BRAND_FAMILY, NUMBER_FAMILY, PLEX_MONO, PLEX_MONO_BOLD, PLEX_SANS, PLEX_SANS_BOLD, brand_font,
     install_fonts, number_font, number_text,
 };
-pub use tokens::{Elevation, Palette, Radius, Space, Strokes, Tokens};
+pub use tokens::{Elevation, Palette, Radius, Ramp, Space, Status, Strokes, Tokens, vhrd};
 pub use ui_ext::{Tone, UiExt};
 
 /// Turn the VHRD theme on: brand fonts, dark and light styles from [`Tokens::dark`] / [`Tokens::light`].

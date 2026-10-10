@@ -3682,6 +3682,7 @@ dependencies = [
  "eframe",
  "egui",
  "egui_kittest",
+ "serde_json",
 ]
 
 [[package]]
