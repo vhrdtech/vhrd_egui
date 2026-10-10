@@ -13,6 +13,7 @@ versions follow [Semantic Versioning](https://semver.org/). Feature IDs refer to
   from the sibling vhrd_brand) (THM-11).
 - ve_dash: `Theme::status`, `Theme::cat` and `Theme::highlight()` (fill and outline of a cross-reference
   highlight) (THM-11).
+- ve_dash: `Status::Info` (the info blue) for something going on that is not a warning: working, landing, queued.
 
 ### Changed
 

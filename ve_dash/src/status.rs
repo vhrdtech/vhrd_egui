@@ -14,6 +14,8 @@ pub enum Status {
     Good,
     Warn,
     Crit,
+    /// Going on, nothing to do about it (working, landing, queued): the info blue, not a warning.
+    Info,
     Off,
 }
 
@@ -23,6 +25,7 @@ impl Status {
             Self::Good => theme.good,
             Self::Warn => theme.warn,
             Self::Crit => theme.crit,
+            Self::Info => theme.status.info.solid,
             Self::Off => theme.off,
         }
     }
