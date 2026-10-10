@@ -5,6 +5,23 @@ versions follow [Semantic Versioning](https://semver.org/). Feature IDs refer to
 
 ## [Unreleased]
 
+### Added
+
+- ve_settle: one polygon solver: contacts go through convex polygons (`Poly`, `sat`, `Hit`); a body's shape is the
+  pillow of its rectangle (`Body::shape`), its edges bulging with the pressure on them (`Params::bulge_rest`,
+  `bulge_gain`, `bulge_max`, `bulge_speed`; `Body::bulge`, `jam`, `load`, `yielding`, `slide_pull`), so of the
+  bodies pressed too hard in a row or column one slides out into the next row or column instead of all being
+  crushed; a calm row is unchanged (SETL-9).
+
+### Changed
+
+- ve_settle: `Contact` has a `normal` (pushes can be off the axis now) (SETL-9).
+
+### Fixed
+
+- ve_settle: rigid bodies piled on one spot no longer part into a column that sticks out past the walls; they spill
+  sideways (SETL-6).
+
 ## [0.16.0] - 2026-10-10
 
 ### Added

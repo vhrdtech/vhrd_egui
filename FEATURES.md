@@ -299,10 +299,35 @@ up and Packery's "others flow around the dragged one". No app uses it yet.
   line to the target). `snap_pass` in `ve_settle/src/world.rs`, 6 tests in `tests/core.rs`, a drag-and-drop
   check in `tests/sandbox.rs`. Not done: snapping a corner to a wall *edge* or to a neighbour's edge away from
   its corners, and snapping while dragging (it acts after the drop).
-- 🐛 **SETL-6 Pile sticks out though there is room beside it**: contacts part two bodies along the axis of least
-  overlap only, so rigid bodies piled on one spot (8 of them added on a diagonal, say) part along one axis into a
-  column longer than the world and stick out past the walls, instead of spilling sideways. Bodies that can be
-  squeezed hide it. Needs a sideways escape for bodies held against a wall, or a packing pass that picks homes.
+- 🚧 **SETL-9 One polygon solver, rectangles as its limit** (user, 10 Oct 2026, P2605#10oct-1622): every contact
+  goes through convex polygons (`Poly`, at most 12 vertices on the stack; own separating axis test `sat`, so
+  hexagons, SETL-4, are a shape away). A body's shape is the *pillow* of its rectangle (`Body::shape`): a vertex in
+  the middle of each edge pushed out by a bulge; two bulged edges meet at one ridge, unstable, so bodies pressed
+  too hard slide off each other. The UI draws the plain rectangle. Settled in the session:
+  (1) *pressure law*: bulge = `bulge_rest` (0) + `bulge_gain` (1) × load, capped at `bulge_max` (24) and a quarter
+  of the edge, following at `bulge_speed`; load is squeeze plus `Body::jam` (the squeeze a rigid or fully
+  squeezed body would have taken), both let go at `restore`. A calm row has no load, so it is plain rectangles and
+  rests bit for bit as before.
+  (2) *gap vs bulge*: between two pillows the gap shrinks by both bulges along the normal (below 0 too), so tips
+  meeting keep the edges exactly `gap` apart and a growing bulge takes no room (it took room at first, which
+  squeezed the neighbours, which bulged more); the rectangles are still kept a quarter gap apart, never overlap.
+  (3) *one leaves at a time*: ridge on ridge is unstable for every pair, so all bodies of a full row started out at
+  once (and the top wall blocked half the pushes). One *yielder* per world (`Body::yielding`: most bulged, newest on
+  a tie, kept while bulged) meets its neighbours as pillows, ties push it away from gravity's side (and across,
+  toward the middle); every other pair meets as rectangles and squeezes as before. The yielder lets go of its
+  corner snaps (SETL-8) and of its home in step with its bulge, and its home drifts to where it goes, so it does not
+  press back in. Walls see the plain rectangle.
+  (4) *making it slide*: a slanted contact also pushes sideways (`Body::slide_pull`, bulges × slope, at most 4 ×
+  gravity), so squeezing does not eat the slide; where the rectangle floor holds, the push still follows the
+  slope; slopes move a body sideways at most `glide_speed` per step, so making room is a glide, not a jump.
+  Result: a row overfilled by one widget sends exactly one to the next row and nothing stays squeezed (squeezable
+  with homes, and rigid), a full column spills one to the side, a calm row stays put, SETL-6 is gone.
+  `ve_settle/src/geom.rs` (`Poly`, `sat`), `world.rs` (`touch_at`, `pick_yielder`, `resize`), tests in
+  `tests/pillow.rs`. Sandbox overlay and sliders follow.
+- ✅ **SETL-6 Pile sticks out though there is room beside it**: contacts parted two bodies along the axis of least
+  overlap only, so rigid bodies piled on one spot (8 of them added on a diagonal) parted into a column longer than
+  the world and stuck out past the walls. Fixed by the pillow (SETL-9): the jammed bodies bulge and spill sideways;
+  `a_rigid_pile_spills_sideways_and_stays_inside_the_walls` in `tests/pillow.rs`.
 - 📋 **SETL-7 egui adapter**: a `ve_dash` (or `ve_settle` feature) helper that owns a `World`, puts each panel's
   `Ui` on its body, learns the content sizes a frame late and handles drag and resize, i.e. the sandbox's
   `body_ui` as a reusable piece; then port tpm_mesh_dash from `masonry.rs` to it (P2605#7oct-1717).

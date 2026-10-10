@@ -41,19 +41,29 @@
 //! 3. lifted bodies (just added, dragged) and their neighbours glide
 //!    apart;
 //! 4. walls and overlaps are solved by pushing; if that leaves bodies
-//!    without room they are squeezed by [`Params::tension`]; a last pass
-//!    puts bodies apart, so a wall gives before two bodies overlap;
+//!    without room they are squeezed by [`Params::tension`] and feel the
+//!    pressure; a last pass puts bodies apart, so a wall gives before two
+//!    bodies overlap;
 //! 5. velocities are taken from what actually moved (contacts don't
 //!    bounce), and after [`Params::rest_steps`] calm steps the world rests.
 //!
-//! v0 limits: rectangles only (polygons, SETL-4), sizes are given, not
-//! chosen by the layout (SETL-5), and every pair is tested (fine for a
+//! Contacts go through convex polygons ([`Poly`], [`sat`]). A body's shape
+//! is the *pillow* of its rectangle ([`Body::shape`]): a vertex in the
+//! middle of each edge stands out by a bulge that grows with the pressure
+//! on it ([`Params::bulge_gain`]) and is 0 at rest, so a calm row stays
+//! lined up. Two bulged edges pressed together meet at one ridge and slide
+//! off each other: of the bodies pressed too hard in a row or column one
+//! (the [`Body::yielding`] one) slides out into the next row or column
+//! instead of all of them being crushed. The UI draws the plain rectangle.
+//!
+//! Limits: bodies are rectangles (other shapes, SETL-4), sizes are given,
+//! not chosen by the layout (SETL-5), and every pair is tested (fine for a
 //! dashboard's worth of bodies).
 
 mod geom;
 mod params;
 mod world;
 
-pub use geom::{Axis, Rect, Side, Vec2};
+pub use geom::{Axis, Hit, MAX_VERTICES, Poly, Rect, Side, Vec2, sat};
 pub use params::{Params, Walls};
 pub use world::{Body, BodyDesc, BodyId, Contact, Snap, World};

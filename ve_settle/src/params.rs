@@ -84,6 +84,29 @@ pub struct Params {
     /// What is left of a misalignment at rest is about the other pulls
     /// over this: gravity 600 against 1500 leaves 0.4 points.
     pub snap_stiffness: f32,
+    /// Bulge of a body's pillow with no pressure on it, points: how far
+    /// the middle of each edge stands out of the rectangle in the solver's
+    /// eyes. 0 (the default) keeps a calm row lined up exactly.
+    pub bulge_rest: f32,
+    /// How much the bulge grows with pressure, points of bulge per point of
+    /// pressure (the squeeze a body has on an axis, or would have if it
+    /// could give). The edges facing the squeeze bulge, like a balloon, so
+    /// bodies pressed too hard in a row or column slide off each other
+    /// instead of being crushed. 0 turns it off.
+    pub bulge_gain: f32,
+    /// The most an edge bulges, points; never more than a quarter of the
+    /// edge's length either.
+    pub bulge_max: f32,
+    /// How fast the bulge follows the pressure, points/s.
+    pub bulge_speed: f32,
+    /// Grid pitch, points: touching bodies are guided to line up their
+    /// edges along the contact at whole steps of this apart (SETL-10).
+    pub grid_pitch: f32,
+    /// Stiffness of the pull onto grid steps, 1/s² near a step
+    /// (critically damped there); it is a washboard, strongest a quarter
+    /// pitch off a step, and only grows as two bodies slow down against
+    /// each other, so free motion stays smooth. 0 turns it off.
+    pub grid_stiffness: f32,
     /// Speed limit, points/s.
     pub max_speed: f32,
     /// Which sides are closed.
@@ -113,6 +136,12 @@ impl Default for Params {
             glide_speed: 900.0,
             snap_range: 20.0,
             snap_stiffness: 1500.0,
+            bulge_rest: 0.0,
+            bulge_gain: 1.0,
+            bulge_max: 24.0,
+            bulge_speed: 120.0,
+            grid_pitch: 24.0,
+            grid_stiffness: 0.0,
             max_speed: 2400.0,
             walls: Walls::ALL,
             iterations: 16,
