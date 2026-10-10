@@ -1,6 +1,6 @@
 //! The world: bodies, forces, contacts and the fixed step that moves them.
 
-use crate::geom::{Axis, Hit, MAX_VERTICES, Poly, Rect, Side, Vec2, sat};
+use crate::geom::{Axis, Hit, Poly, Rect, Side, Vec2, sat};
 use crate::params::Params;
 
 /// Overlaps below this (points) count as touching.
@@ -53,19 +53,15 @@ const ATTRACT_KEEPS: f32 = 1.1;
 /// An edge moved by vertex attraction keeps the world awake down to this
 /// share of [`Params::rest_eps`] per step (SETL-12).
 const ATTRACT_AWAKE: f32 = 0.2;
-/// Steps in a row vertex attraction alone keeps the world awake (two
-/// seconds by default).
-const ATTRACT_PATIENCE: u32 = 240;
-/// How deep (points) an outline with what its vertices grew may be in
-/// another shape's gap before it is taken back.
-const NUDGE_SLOP: f32 = 0.01;
-/// A vertex of an outline moved by vertex attraction keeps the world
-/// awake down to this many times [`Params::rest_eps`] per step. Where a
-/// grown vertex is stopped by a neighbour, the neighbour's last
-/// thousandths of a point show up several times as large in where the
-/// vertex stops; so about 0.2 points of the way are left when the world
-/// rests.
-const NUDGE_AWAKE: f32 = 4.0;
+/// After this many steps in a row without more than a tremble the world
+/// rests (two seconds by default).
+const SLEEP_STEPS: u32 = 240;
+/// A tremble: a move of at most this many times [`Params::rest_eps`] per
+/// step (0.02 points, 2.4 points/s by default).
+const SLEEP_COARSE: f32 = 4.0;
+/// The most speed a body keeps from a step in which contacts put it back
+/// onto a slope it sits on, points/s (SETL-15).
+const SEAT_SPEED: f32 = 60.0;
 /// A body whose edge on gravity's side is within the gap and this much
 /// (points) of a wall or a body rests on it (SETL-12).
 const RESTS_SLACK: f32 = 0.25;
@@ -199,9 +195,6 @@ pub struct Body {
     /// unit coordinates of `rect`, so it is squeezed and resized with it
     /// (SETL-4). Such a body does not bulge.
     pub outline: Option<Poly>,
-    /// How far vertex attraction has moved each vertex of the outline,
-    /// points (SETL-12 on polygons).
-    nudge: [Vec2; MAX_VERTICES],
     /// How far vertex attraction (SETL-12) has moved the left and the top
     /// edge outward, points (negative: inward): the body is that much
     /// larger or smaller than its content wants, so its edges line up with
@@ -212,6 +205,9 @@ pub struct Body {
     /// How far vertex attraction moved the middle in the last step: not
     /// motion, so it gives no speed.
     attract_shift: Vec2,
+    /// Contacts put it back onto a slope it sits on in this step
+    /// (SETL-15): it keeps next to no speed from that.
+    seated: bool,
     /// Which edges vertex attraction pulled in the last step, per axis:
     /// [low, high].
     caught: [[bool; 2]; 2],
@@ -253,36 +249,17 @@ impl Body {
     /// rectangle).
     pub fn shape(&self) -> Poly {
         match self.outline {
-            Some(_) => self.shape_in(&self.rect, true),
+            Some(_) => self.shape_in(&self.rect),
             None => Poly::pillow(&self.rect, self.bulge),
         }
     }
 
-    /// How far vertex attraction has moved each vertex of the outline,
-    /// points; empty without an outline.
-    pub fn nudges(&self) -> &[Vec2] {
-        &self.nudge[..self.outline.map_or(0, |o| o.points().len())]
-    }
-
-    /// The outline (or the plain rectangle) as it lies in `rect`, with or
-    /// without what vertex attraction added. Contacts go by the outline
-    /// alone: a vertex grown into free room carries no load (it would
-    /// push its neighbours, which would move the room it grew into).
-    fn shape_in(&self, rect: &Rect, nudged: bool) -> Poly {
-        let Some(outline) = self.outline else {
-            return Poly::rect(rect);
-        };
-        let fitted = outline.fit(rect);
-        if !nudged {
-            return fitted;
+    /// The outline (or the plain rectangle) as it lies in `rect`.
+    fn shape_in(&self, rect: &Rect) -> Poly {
+        match self.outline {
+            Some(outline) => outline.fit(rect),
+            None => Poly::rect(rect),
         }
-        let moved: Vec<Vec2> = fitted
-            .points()
-            .iter()
-            .zip(&self.nudge)
-            .map(|(&p, &n)| p + n)
-            .collect();
-        Poly::new(&moved)
     }
 
     /// How much vertex attraction adds to the size on each axis (negative:
@@ -356,6 +333,15 @@ pub struct Pull {
     /// How firmly: 1 (kept for the overlay, which draws snaps and pulls
     /// alike).
     pub grip: f32,
+    /// It is there (within [`Pull::LOCKED`] points) and held: the edges
+    /// it moved stay lined up until the two are more than 1.1 ×
+    /// [`Params::attract_range`] apart without their stretch.
+    pub locked: bool,
+}
+
+impl Pull {
+    /// A pull with less than this left to go (points) is locked.
+    pub const LOCKED: f32 = 0.25;
 }
 
 /// Bodies in a rectangle, stepped with a fixed time step.
@@ -371,9 +357,8 @@ pub struct World {
     snaps: Vec<Snap>,
     pulls: Vec<Pull>,
     yielder: Option<BodyId>,
-    /// Steps in a row in which no body moved (vertex attraction may still
-    /// have been closing in).
-    nudging: u32,
+    /// Steps in a row in which nothing moved more than a tremble.
+    quiet: u32,
     /// How far the field ahead of the yielder may still shift this step.
     band_budget: f32,
     next_id: u64,
@@ -395,7 +380,7 @@ impl World {
             snaps: Vec::new(),
             pulls: Vec::new(),
             yielder: None,
-            nudging: 0,
+            quiet: 0,
             band_budget: 0.0,
             next_id: 1,
             at_rest: false,
@@ -486,10 +471,10 @@ impl World {
             bulge: Vec2::ZERO,
             jam: Vec2::ZERO,
             outline: desc.outline,
-            nudge: [Vec2::ZERO; MAX_VERTICES],
             stretch_lo: Vec2::ZERO,
             stretch_hi: Vec2::ZERO,
             attract_shift: Vec2::ZERO,
+            seated: false,
             caught: [[false; 2]; 2],
             pressed_lo: Vec2::ZERO,
             pressed_hi: Vec2::ZERO,
@@ -539,9 +524,6 @@ impl World {
         self.change(id, |b| {
             let changed = b.outline != outline;
             b.outline = outline;
-            if changed {
-                b.nudge = [Vec2::ZERO; MAX_VERTICES];
-            }
             changed
         });
     }
@@ -557,8 +539,6 @@ impl World {
         let (edge, on, _) = outline.fit(&b.rect).nearest(at);
         let index = outline.insert(edge, Poly::to_unit(&b.rect, on))?;
         b.outline = Some(outline);
-        b.nudge.copy_within(index..MAX_VERTICES - 1, index + 1);
-        b.nudge[index] = Vec2::ZERO;
         self.wake();
         Some(index)
     }
@@ -576,8 +556,6 @@ impl World {
             return false;
         }
         b.outline = Some(outline);
-        b.nudge.copy_within(index + 1.., index);
-        b.nudge[MAX_VERTICES - 1] = Vec2::ZERO;
         self.wake();
         true
     }
@@ -674,6 +652,7 @@ impl World {
     pub fn wake(&mut self) {
         self.at_rest = false;
         self.calm = 0;
+        self.quiet = 0;
     }
 
     /// Fixed steps taken so far.
@@ -769,6 +748,7 @@ impl World {
             // Pushed off by several slopes at once, it still glides.
             b.slide_pull = b.slide_pull.clamp_length(SLIDE_MAX);
             b.slid = 0.0;
+            b.seated = false;
             b.prev = b.rect;
             b.pressure = 0.0;
             // A bulge still changing keeps the world awake, like a moving body.
@@ -811,11 +791,6 @@ impl World {
             }
         }
         self.land_lifted();
-        // Last, on where everything ended up: what the vertices of
-        // outlines grow carries no load, it only has to be clear of the
-        // others when the step is over.
-        let nudged = self.attract_vertices(dt);
-
         let mut moved = home_moved;
         let mut moved_free = 0.0f32;
         for b in &mut self.bodies {
@@ -832,23 +807,34 @@ impl World {
                     p.max_speed
                 };
                 let travelled = b.rect.center() - b.prev.center() - b.attract_shift;
+                // Put back onto a slope it sits on, it keeps next to no
+                // speed: being put back is not travelling.
+                let limit = if b.seated {
+                    limit.min(SEAT_SPEED)
+                } else {
+                    limit
+                };
                 b.vel = (travelled * (1.0 / dt)).clamp_length(limit);
             }
         }
-        // An edge or a vertex still closing in keeps the world awake, and
-        // for smaller moves than a body's: the pull is a share of what is
-        // left, so the last tenth of a point is slow, and rest would
-        // freeze it there. But not for ever by itself: where it is
-        // stopped by a neighbour it can go on trembling by a few
-        // thousandths, and nothing else would ever let the world rest.
-        let closing_in = pulled > p.rest_eps * ATTRACT_AWAKE || nudged > p.rest_eps * NUDGE_AWAKE;
-        if moved > p.rest_eps {
-            self.nudging = 0;
+        // An edge still closing in keeps the world awake, and for smaller
+        // moves than a body's: the pull is a share of what is left, so
+        // the last tenth of a point is slow, and rest would freeze it
+        // there.
+        let closing_in = pulled > p.rest_eps * ATTRACT_AWAKE;
+        // Sleep: where pieces sit on each other's slopes, or an edge is
+        // stopped by a neighbour, they can go on trembling by a few
+        // thousandths of a point for ever, now and then just over the
+        // rest threshold. After a while (`SLEEP_STEPS`) in which nothing
+        // moved more than a few times that threshold, the world rests
+        // all the same; only a real change wakes it.
+        self.quiet = if moved > p.rest_eps * SLEEP_COARSE {
+            0
         } else {
-            self.nudging = self.nudging.saturating_add(1);
-            if closing_in && self.nudging < ATTRACT_PATIENCE {
-                moved = moved.max(p.rest_eps * 2.0);
-            }
+            self.quiet.saturating_add(1)
+        };
+        if closing_in && self.quiet < SLEEP_STEPS {
+            moved = moved.max(p.rest_eps * 2.0);
         }
         self.last_move = moved_free;
         self.steps += 1;
@@ -857,7 +843,7 @@ impl World {
         } else {
             0
         };
-        if self.calm >= p.rest_steps.max(1) {
+        if self.calm >= p.rest_steps.max(1) || self.quiet >= SLEEP_STEPS {
             self.at_rest = true;
             self.last_move = 0.0;
             for b in &mut self.bodies {
@@ -1044,13 +1030,16 @@ impl World {
     /// pulling on each other meet in the middle and one that cannot give
     /// leaves the whole way to the other.
     ///
-    /// It only fits a size between two things: an axis is resized when
-    /// both of its edges have something to line up with. With one side
-    /// free, moving the body would line it up, which is corner snapping's
-    /// part (SETL-8); and what both edges want alike is a move too. The
-    /// edge on gravity's side is what the body rests on (or hangs from its
-    /// home by): it holds no stretch and is what the edge across from it
-    /// is fitted against.
+    /// Every pull that is shown closes: a captured edge goes all the way
+    /// (it is then *locked*, [`Pull::locked`], and held until the two are
+    /// clearly apart again), whether or not the edge across from it has
+    /// anything to line up with. Only the edge on gravity's side is left
+    /// alone: the body rests on it (or hangs from its home by it), and
+    /// resizing there would only move the body.
+    ///
+    /// Outlines are the user's: a body with one is resized as a whole,
+    /// its outline kept as it is in its rectangle; no vertex is ever
+    /// moved by the solver.
     ///
     /// What is in range is decided on where the bodies would be without
     /// any stretch, so a pull does not keep itself alive: when the content
@@ -1081,10 +1070,6 @@ impl World {
         let toward = p.gravity_side.filter(|_| p.gravity > 0.0);
         // How far an edge of body `i` is from the wall it faces and from
         // the nearest body it faces (the gap kept), outward.
-        // An outline's vertices are pulled one by one (`attract_vertices`);
-        // its rectangle is neither stretched nor something to go into
-        // line with, only something an edge can come flush against.
-        let boxy: Vec<bool> = self.bodies.iter().map(|b| b.outline.is_none()).collect();
         let room = |rects: &[Rect], i: usize, axis: Axis, high: bool| {
             let (r, t) = (&rects[i], axis.other());
             let wall = if !p.walls.has(axis_side(axis, high)) {
@@ -1114,7 +1099,7 @@ impl World {
             let mut edges: [[Option<(f32, f32)>; 2]; 2] = [[None; 2]; 2];
             let mut lined = [[false; 2]; 2];
             let mut held = [[false; 2]; 2];
-            if on && free[i] && boxy[i] {
+            if on && free[i] {
                 // Whether nothing on gravity's side holds the body up.
                 let mut hangs = false;
                 if let Some(side) = toward {
@@ -1148,7 +1133,7 @@ impl World {
                             let v_rest = corner(&rest[i], ca);
                             let mut best: Option<(f32, f32)> = None;
                             for j in 0..self.bodies.len() {
-                                if j == i || !free[j] || !boxy[j] {
+                                if j == i || !free[j] {
                                     continue;
                                 }
                                 let to = gapped(corner(&rest[j], cb), ca, cb, p.gap);
@@ -1203,6 +1188,7 @@ impl World {
                         from,
                         to: from,
                         grip: 0.0,
+                        locked: false,
                     };
                     for axis in Axis::BOTH {
                         if let Some((error, grip)) =
@@ -1213,6 +1199,7 @@ impl World {
                         }
                     }
                     if pull.grip > 0.0 {
+                        pull.locked = (pull.to - pull.from).max_abs() < Pull::LOCKED;
                         self.pulls.push(pull);
                     }
                 }
@@ -1238,38 +1225,26 @@ impl World {
                 // neighbours. Never more than half the distance in a step,
                 // so two edges closing in on each other meet.
                 let pace = |d: f32| d * (p.attract_strength * dt).min(0.5);
-                let held = held[axis as usize];
                 let stretch = [b.stretch_lo[axis], b.stretch_hi[axis]];
                 // Where the stretch has each edge, along the axis.
                 let at = [-stretch[0], stretch[1]];
-                let mut pulls = edges[axis as usize].map(|e| e.unwrap_or((0.0, 0.0)));
-                // A size is fitted between two things: with one side free,
-                // moving the body would do.
-                let anchored = |e: usize| held[e] || pulls[e].1 > 0.0;
-                if !(anchored(0) && anchored(1)) {
-                    pulls = [(0.0, 0.0); 2];
-                }
-                // What both edges want alike is a move too.
-                let both = common(pulls.map(|(want, grip)| want * grip));
+                let pulls = edges[axis as usize].map(|e| e.unwrap_or((0.0, 0.0)));
                 // How far each edge is to go along the axis ([low, high]):
                 // to where it is pulled as far as the pull grips, and back
                 // to no stretch as far as it does not.
                 let mut go = [0.0f32; 2];
                 for e in 0..2 {
                     let (want, grip) = pulls[e];
-                    go[e] = pace(want * grip - both - (1.0 - grip) * at[e]);
+                    go[e] = pace(want * grip - (1.0 - grip) * at[e]);
                     // Letting go lands on 0 once it is nearly there.
                     if grip == 0.0 && (at[e] + go[e]).abs() < ATTRACT_LANDS {
                         go[e] = -at[e];
                     }
                 }
-                // One edge grown and the other shrunk by as much is the body
-                // moved, not resized: given back.
-                let back = pace(common(at));
                 for (e, go) in go.iter_mut().enumerate() {
                     let outward = if e == 0 { -1.0 } else { 1.0 };
                     let s = stretch[e];
-                    let mut d = (*go - back) * outward;
+                    let mut d = *go * outward;
                     if d > 0.0 {
                         d *= calm;
                     }
@@ -1321,193 +1296,6 @@ impl World {
             if let Some(home) = &mut b.home {
                 *home += shift;
             }
-        }
-        most_moved
-    }
-
-    /// Vertex attraction on outlines (SETL-12 on polygons, SETL-4): each vertex
-    /// of a free body's outline is pulled to the nearest point within
-    /// [`Params::attract_range`] where it lies flush (the gap kept)
-    /// against another body's shape or a wall, and the pull moves the
-    /// vertex itself ([`Body::nudges`]), as far as the outline stays
-    /// convex. It only grows the outline into free room; range is decided
-    /// on the outline without its nudges, against the others as they are.
-    /// Between two outlines the one added later does the growing. What a
-    /// vertex grew carries no load: contacts go by the outline alone.
-    /// Returns the farthest it moved a vertex.
-    fn attract_vertices(&mut self, dt: f32) -> f32 {
-        let p = self.params;
-        let range = p.attract_range;
-        let on = range > 0.0 && p.attract_strength > 0.0;
-        let rate = (p.attract_strength * dt).min(0.5);
-        let mut shapes: Vec<Poly> = self.bodies.iter().map(Body::shape).collect();
-        let outlined: Vec<bool> = self.bodies.iter().map(|b| b.outline.is_some()).collect();
-        // Lifted and dragged bodies float over the others: no need to be
-        // clear of them.
-        let apart: Vec<bool> = self.bodies.iter().map(|b| b.lifted || b.dragged).collect();
-        let free: Vec<bool> = self
-            .bodies
-            .iter()
-            .map(|b| !b.dragged && !b.lifted && b.bulge.max_abs() <= YIELD_BULGE)
-            .collect();
-        let inner = Rect {
-            min: self.bounds.min + Vec2::splat(p.gap),
-            max: self.bounds.max - Vec2::splat(p.gap),
-        };
-        // Where a nudged vertex may be: inside the closed walls.
-        let mut within = Rect {
-            min: -Vec2::INFINITY,
-            max: Vec2::INFINITY,
-        };
-        for side in Side::ALL {
-            if p.walls.has(side) {
-                let axis = side.axis();
-                if side.is_low() {
-                    within.min[axis] = inner.min[axis];
-                } else {
-                    within.max[axis] = inner.max[axis];
-                }
-            }
-        }
-        let mut most_moved = 0.0f32;
-        for i in 0..self.bodies.len() {
-            let Some(outline) = self.bodies[i].outline else {
-                continue;
-            };
-            let unmoved = outline.fit(&self.bodies[i].rect);
-            let count = unmoved.points().len();
-            let middle = unmoved.centroid();
-            let mut want = [Vec2::ZERO; MAX_VERTICES];
-            if on && free[i] {
-                for (k, &v) in unmoved.points().iter().enumerate() {
-                    // (room, the way there)
-                    let mut best: Option<(f32, Vec2)> = None;
-                    let mut consider = |room: f32, way: Vec2| {
-                        // Outward only: it grows the outline, never dents it.
-                        let outward = way.dot(v - middle) > 0.0;
-                        if room > 0.0 && room < range && outward && best.is_none_or(|b| room < b.0)
-                        {
-                            best = Some((room, way));
-                        }
-                    };
-                    for (j, shape) in shapes.iter().enumerate() {
-                        // Of two outlines the one added later grows to the
-                        // other, as that one is now: if both filled the
-                        // room between them, each would chase the other.
-                        if j == i || !free[j] || (outlined[j] && j > i) {
-                            continue;
-                        }
-                        let (_, q, d) = shape.nearest(v);
-                        let room = d - p.gap;
-                        if d > 0.0 && !shape.contains(v) {
-                            consider(room, (q - v) * (room / d));
-                        }
-                    }
-                    for side in Side::ALL {
-                        if !p.walls.has(side) {
-                            continue;
-                        }
-                        let axis = side.axis();
-                        let room = if side.is_low() {
-                            v[axis] - inner.min[axis]
-                        } else {
-                            inner.max[axis] - v[axis]
-                        };
-                        consider(room, side.dir() * room);
-                    }
-                    if let Some((_, way)) = best {
-                        want[k] = way;
-                        self.pulls.push(Pull {
-                            body: self.bodies[i].id,
-                            from: shapes[i].points()[k],
-                            to: v + way,
-                            grip: 1.0,
-                        });
-                    }
-                }
-            }
-            let base: Vec<f32> = shapes
-                .iter()
-                .map(|other| depth_in(&unmoved, other, p.gap))
-                .collect();
-            let b = &mut self.bodies[i];
-            let before = b.nudge;
-            let mut shape = shapes[i];
-            for (k, &want) in want.iter().enumerate().take(count) {
-                // Growing is a share of the distance per second; when the
-                // room gets smaller the vertex is back at once, so it is
-                // never in what came nearer.
-                let mut d = want - b.nudge[k];
-                if want.length() >= b.nudge[k].length() {
-                    d = d * rate;
-                }
-                // Letting go lands on 0 once it is nearly there.
-                if want == Vec2::ZERO && (b.nudge[k] + d).length() < ATTRACT_LANDS {
-                    d = -b.nudge[k];
-                }
-                if d == Vec2::ZERO {
-                    continue;
-                }
-                let from = shape.points()[k];
-                let mut at = shape.move_vertex(k, from + d, &within);
-                // Its edges go along: where they would come into another
-                // shape's gap, the vertex stops short. (Stopping each
-                // vertex by itself leaves the others where they are, so a
-                // blocked one does not keep the world awake.)
-                if !clear_of(&shape, i, &shapes, &apart, &base, p.gap) {
-                    let (mut keep, mut drop) = (from, at);
-                    for _ in 0..12 {
-                        let mid = (keep + drop) * 0.5;
-                        let mut probe = shape;
-                        probe.move_vertex(k, mid, &within);
-                        if clear_of(&probe, i, &shapes, &apart, &base, p.gap) {
-                            keep = mid;
-                        } else {
-                            drop = mid;
-                        }
-                    }
-                    at = shape.move_vertex(k, keep, &within);
-                }
-                let moved = at - from;
-                b.nudge[k] = if moved == d && want == Vec2::ZERO && d == -b.nudge[k] {
-                    Vec2::ZERO
-                } else {
-                    b.nudge[k] + moved
-                };
-            }
-            // Clear of everybody else as they are now, or back toward the
-            // plain outline (which contacts keep clear) as far as it takes.
-            let clear = |shape: &Poly| clear_of(shape, i, &shapes, &apart, &base, p.gap);
-            if !clear(&shape) {
-                let nudged = |share: f32| {
-                    let points: Vec<Vec2> = unmoved
-                        .points()
-                        .iter()
-                        .zip(&self.bodies[i].nudge)
-                        .map(|(&at, &n)| at + n * share)
-                        .collect();
-                    Poly::new(&points)
-                };
-                let (mut keep, mut drop) = (0.0f32, 1.0f32);
-                for _ in 0..16 {
-                    let mid = (keep + drop) * 0.5;
-                    if clear(&nudged(mid)) {
-                        keep = mid;
-                    } else {
-                        drop = mid;
-                    }
-                }
-                shape = nudged(keep);
-                for n in &mut self.bodies[i].nudge {
-                    *n = *n * keep;
-                }
-            }
-            // What counts as motion is what is left of it: growing and
-            // being taken back in one step is none.
-            for (now, was) in self.bodies[i].nudge.iter().zip(&before) {
-                most_moved = most_moved.max((*now - *was).max_abs());
-            }
-            shapes[i] = shape;
         }
         most_moved
     }
@@ -1774,26 +1562,42 @@ impl World {
                 let (a, b) = if a_low { (lo, hi) } else { (hi, lo) };
                 let mut sideways = each;
                 sideways[axis] = 0.0;
-                let straight = each - sideways;
+                let mut straight = each - sideways;
+                let mut seated = false;
+                // Seated (SETL-15): an outline pressed onto a slope by
+                // gravity does not slide along it while the slope is no
+                // steeper than the friction holds. The two part along
+                // gravity's axis alone, so each stays where it sat down.
+                if outlined && let Some(side) = self.params.gravity_side {
+                    let g = side.axis();
+                    let (along, across) = (hit.normal[g].abs(), hit.normal[g.other()].abs());
+                    if along > 1e-3 && across <= self.params.friction * along {
+                        let mut up = Vec2::ZERO;
+                        up[g] = each[g] / (along * along);
+                        (straight, sideways) = (up, Vec2::ZERO);
+                        seated = true;
+                    }
+                }
                 let (slide_a, slide_b) = (
                     spend_slide(a, sideways, glide * 0.5),
                     spend_slide(b, sideways, glide * 0.5),
                 );
-                // A lifted outline lies on several others at once (they
-                // nest): all their pushes together move it no more than a
-                // glide per step.
-                let (straight_a, straight_b) = (
-                    if outlined && a.lifted {
-                        spend_slide(a, straight, glide)
-                    } else {
-                        straight
-                    },
-                    if outlined && b.lifted {
-                        spend_slide(b, straight, glide)
-                    } else {
-                        straight
-                    },
-                );
+                // An outline lies on several others at once (they nest):
+                // all their pushes together move it no more than a glide
+                // per step.
+                // (Put back onto a slope it travels twice as far as the
+                // overlap is deep: half a glide, as a slide.)
+                let most = if seated { glide * 0.5 } else { glide };
+                let (straight_a, straight_b) = if outlined {
+                    (
+                        spend_slide(a, straight, most),
+                        spend_slide(b, straight, most),
+                    )
+                } else {
+                    (straight, straight)
+                };
+                a.seated |= seated;
+                b.seated |= seated;
                 a.shift(-straight_a - slide_a);
                 b.shift(straight_b + slide_b);
             }
@@ -2020,33 +1824,12 @@ fn touch(a: &Body, b: &Body, gap: f32, yield_dir: Vec2) -> Option<Hit> {
 /// their polygons (a plain rectangle meets an outline as its rectangle,
 /// without bulge).
 fn outline_hit(a: &Body, ar: &Rect, b: &Body, br: &Rect, gap: f32, prefer: Vec2) -> Option<Hit> {
-    let (pa, pb) = (a.shape_in(ar, false), b.shape_in(br, false));
+    let (pa, pb) = (a.shape_in(ar), b.shape_in(br));
     let o = pa.bounds().overlap(&pb.bounds(), gap);
     if o.x <= 0.0 || o.y <= 0.0 {
         return None;
     }
     sat(&pa, &pb, |_| gap, prefer)
-}
-
-/// Whether `shape`, body `i`'s, keeps the gap to every other body's shape
-/// as well as its plain outline does (`base`: how deep that one is in
-/// each; bodies pressed together sit a little in each other's gap). Those
-/// `apart` float over the others and do not count.
-fn clear_of(
-    shape: &Poly,
-    i: usize,
-    shapes: &[Poly],
-    apart: &[bool],
-    base: &[f32],
-    gap: f32,
-) -> bool {
-    (0..shapes.len())
-        .all(|j| j == i || apart[j] || depth_in(shape, &shapes[j], gap) <= base[j] + NUDGE_SLOP)
-}
-
-/// How deep two shapes are in each other's gap, points; 0 when clear.
-fn depth_in(a: &Poly, b: &Poly, gap: f32) -> f32 {
-    sat(a, b, |_| gap, Vec2::ZERO).map_or(0.0, |hit| hit.depth)
 }
 
 /// The bulges a pair meets with: their own when one of them is the
@@ -2161,16 +1944,6 @@ fn corner_of(axis: Axis, high: bool, t_high: bool) -> (bool, bool) {
     match axis {
         Axis::X => (high, t_high),
         Axis::Y => (t_high, high),
-    }
-}
-
-/// What two moves along an axis have in common: the smaller one when they
-/// go the same way, nothing otherwise.
-fn common([a, b]: [f32; 2]) -> f32 {
-    if a * b > 0.0 {
-        a.signum() * a.abs().min(b.abs())
-    } else {
-        0.0
     }
 }
 

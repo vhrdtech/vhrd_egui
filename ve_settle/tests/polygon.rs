@@ -168,6 +168,42 @@ fn hexagons_nest_where_their_rectangles_would_overlap() {
 }
 
 #[test]
+fn a_nested_hexagon_holds_on_the_slope_it_sat_down_on() {
+    // SETL-15: in a wide world a hexagon under another one's slanted edge
+    // has all the room beside it, and on ice (friction 0) gravity slides
+    // it out along the slope until it lies beside the other one. With
+    // friction it stays where it sat down.
+    let run = |friction: f32| {
+        let p = Params {
+            home_stiffness: 0.0,
+            attract_range: 0.0,
+            friction,
+            ..Params::default()
+        };
+        let mut w = world(900.0, 800.0, p);
+        let a = hexagon(&mut w, v(200.0, 76.0));
+        let b = hexagon(&mut w, v(326.0, 260.0));
+        settle(&mut w);
+        (w.body(a).unwrap().rect, w.body(b).unwrap().rect)
+    };
+    let (a, b) = run(2.0);
+    assert!(b.min.y < a.max.y - 20.0, "nested: {a:?} {b:?}");
+    assert!(
+        (b.center().x - 326.0).abs() < 1.0,
+        "where it sat down: {b:?}"
+    );
+    assert!(
+        a.min.y < 7.0,
+        "the upper one is not pushed off the wall: {a:?}"
+    );
+    let (a, b) = run(0.0);
+    assert!(
+        b.min.x > a.max.x && b.min.y < 7.0,
+        "slid out beside it: {a:?} {b:?}"
+    );
+}
+
+#[test]
 fn a_triangle_fills_the_gap_between_two_hexagons() {
     let p = Params {
         home_stiffness: 0.0,
@@ -243,62 +279,77 @@ fn polygons_and_rectangles_mix_without_overlap() {
 }
 
 #[test]
-fn a_polygons_vertex_grows_to_what_it_is_just_short_of() {
+fn the_solver_never_changes_an_outline_however_strong_the_pull() {
+    // User, 10 Oct 2026: outlines change only by the user's hand; the
+    // solver changes a body's size within its limits, the shape kept.
     let p = Params {
-        gravity_side: None,
-        home_stiffness: 0.0,
-        snap_range: 0.0,
+        attract_range: 80.0,
+        attract_strength: 60.0,
+        snap_range: 80.0,
+        snap_stiffness: 6000.0,
+        grid_stiffness: 3000.0,
         ..Params::default()
     };
-    let mut w = world(600.0, 400.0, p);
-    // Its right tip 8 short of the right wall's gap line; the left one
-    // 60 from a rectangle.
-    let hex = hexagon(&mut w, v(600.0 - p.gap - 8.0 - 80.0, 200.0));
-    w.add(
-        BodyDesc::new(
-            v(600.0 - p.gap - 8.0 - 160.0 - 60.0 - 50.0, 200.0),
-            v(100.0, 100.0),
+    let mut w = world(700.0, 700.0, p);
+    let shapes = [
+        Poly::unit_hexagon(),
+        Poly::unit_triangle(Side::Bottom),
+        Poly::unit_half_hexagon(Side::Left),
+        Poly::unit_hexagon(),
+        Poly::unit_triangle(Side::Top),
+        Poly::unit_half_hexagon(Side::Top),
+    ];
+    let mut ids = Vec::new();
+    for (i, shape) in shapes.iter().enumerate() {
+        let at = v(
+            120.0 + 150.0 * (i % 3) as f32,
+            100.0 + 160.0 * (i / 3) as f32,
+        );
+        let size = v(150.0 + 7.0 * i as f32, 130.0 - 5.0 * i as f32);
+        ids.push(
+            w.add(
+                BodyDesc::new(at, size)
+                    .min_size(v(100.0, 80.0))
+                    .outline(*shape),
+            ),
+        );
+    }
+    w.add(BodyDesc::new(v(600.0, 300.0), v(150.0, 133.0)).min_size(v(100.0, 80.0)));
+    for _ in 0..3_000 {
+        w.step();
+        for (id, shape) in ids.iter().zip(&shapes) {
+            let b = w.body(*id).unwrap();
+            assert_eq!(b.outline, Some(*shape), "the outline is the user's");
+            // What is drawn and collided with is that outline in the
+            // body's rectangle, nothing else.
+            assert_eq!(b.shape(), shape.fit(&b.rect));
+        }
+    }
+}
+
+#[test]
+fn a_polygon_is_resized_as_a_whole_to_line_up() {
+    // Two hexagons side by side under the top wall, 5 apart in height:
+    // their bottoms end in one line, each still its preset in its rectangle.
+    let p = Params {
+        home_stiffness: 0.0,
+        ..Params::default()
+    };
+    let mut w = world(700.0, 600.0, p);
+    let gap = p.gap;
+    let mut add = |x: f32, h: f32| {
+        w.add(
+            BodyDesc::new(v(x + 80.0, gap + h * 0.5), v(160.0, h))
+                .home(None)
+                .min_size(v(80.0, 70.0))
+                .outline(Poly::unit_hexagon()),
         )
-        .home(None),
-    );
+    };
+    let a = add(gap, 140.0);
+    let b = add(gap + 160.0 + gap, 145.0);
     settle(&mut w);
-    let b = w.body(hex).unwrap();
-    let tip = b.shape().points()[2];
-    assert!(
-        (tip.x - (600.0 - p.gap)).abs() < 0.1,
-        "tip at the wall: {tip:?}"
-    );
-    assert!((b.nudges()[2].x - 8.0).abs() < 0.1, "{:?}", b.nudges());
-    assert_eq!(b.nudges()[5], Vec2::ZERO, "60 away stays: {:?}", b.nudges());
-    assert!(b.shape().is_convex());
-    assert_eq!(
-        b.rect.size(),
-        v(160.0, 140.0),
-        "the vertex moved, not the body"
-    );
-    assert!(w.pulls().iter().any(|q| q.body == hex));
-
-    // The same against a rectangle that comes near: the gap is kept.
-    let near =
-        w.add(BodyDesc::new(v(b.rect.min.x - p.gap - 9.0 - 30.0, 200.0), v(60.0, 60.0)).home(None));
-    settle(&mut w);
-    let b = w.body(hex).unwrap();
-    let edge = w.body(near).unwrap().rect.max.x;
-    let tip = b.shape().points()[5];
-    assert!((tip.x - edge - p.gap).abs() < 0.1, "{tip:?} against {edge}");
-    assert!(w.max_gap_violation() < 0.05);
-
-    // Range 0 lets go.
-    w.set_params(Params {
-        attract_range: 0.0,
-        ..p
-    });
-    settle(&mut w);
-    assert!(
-        w.body(hex)
-            .unwrap()
-            .nudges()
-            .iter()
-            .all(|&n| n == Vec2::ZERO)
-    );
+    let (ra, rb) = (w.body(a).unwrap().rect, w.body(b).unwrap().rect);
+    assert!((ra.max.y - rb.max.y).abs() < 0.1, "{ra:?} {rb:?}");
+    assert!((ra.size().y - 142.5).abs() < 0.5, "{ra:?}");
+    assert_eq!(w.body(a).unwrap().shape(), Poly::unit_hexagon().fit(&ra));
 }

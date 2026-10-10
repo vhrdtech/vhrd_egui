@@ -231,6 +231,9 @@ pub enum Scene {
     /// Pieces of a honeycomb (hexagons, half hexagons, triangles) and two
     /// panels in a closed box: convex outlines at work (SETL-4).
     Shapes,
+    /// The same pieces seeded pressed into each other, a tight honeycomb:
+    /// the scene SETL-14 (a tile dropped on it jumps) was found in.
+    Tight,
 }
 
 impl Scene {
@@ -494,6 +497,19 @@ impl Sandbox {
         }
     }
 
+    /// Remove every widget and keep everything else (parameters, scene,
+    /// overlay): an empty arena to build a case in by hand.
+    pub fn clear(&mut self) {
+        self.world = World::new(from_rect(self.arena), *self.world.params());
+        self.scroll = 0.0;
+        self.items.clear();
+        self.selected = None;
+        self.vertex_drag = None;
+        // Nothing is seeded or topped up again until Reset.
+        self.seeded = true;
+        self.filled_for = f32::INFINITY;
+    }
+
     fn selected_item(&mut self) -> Option<&mut Item> {
         let id = self.selected?;
         self.items.iter_mut().find(|item| item.id == id)
@@ -516,8 +532,8 @@ impl Sandbox {
             self.seed_full();
             return;
         }
-        if self.scene == Scene::Shapes {
-            self.seed_shapes();
+        if matches!(self.scene, Scene::Shapes | Scene::Tight) {
+            self.seed_shapes(self.scene == Scene::Tight);
             return;
         }
         let spots = [
@@ -539,7 +555,7 @@ impl Sandbox {
     /// two panels. Their homes are where they are seeded, a little apart;
     /// gravity closes them up, and the homes keep the triangles from
     /// wedging the row apart (nothing rubs here).
-    fn seed_shapes(&mut self) {
+    fn seed_shapes(&mut self, tight: bool) {
         let gap = self.world.params().gap;
         let origin = self.arena.min + vec2(gap, gap);
         let at = |x: f32, y: f32| Some(origin + vec2(x, y));
@@ -559,14 +575,24 @@ impl Sandbox {
             let notch = first + pitch * (i as f32 + 0.5);
             self.add_shape(Outline::Triangle(Side::Bottom), at(notch, 39.0));
             // Under the notch, not pressed into it (SETL-14).
-            self.add_shape(Outline::Triangle(Side::Top), at(notch, hex.y + 80.0));
+            let y = if tight {
+                hex.y / 2.0 + 67.0
+            } else {
+                hex.y + 80.0
+            };
+            self.add_shape(Outline::Triangle(Side::Top), at(notch, y));
         }
+        let (row, half_row) = if tight {
+            (hex.y * 1.5 + 30.0, hex.y + 69.0)
+        } else {
+            (hex.y * 2.2, hex.y * 2.0)
+        };
         for i in 0..3 {
-            self.add_shape(Outline::Hexagon, at(first + pitch * i as f32, hex.y * 2.2));
+            self.add_shape(Outline::Hexagon, at(first + pitch * i as f32, row));
         }
         self.add_shape(
             Outline::HalfHexagon(Side::Top),
-            at(first + pitch * 3.0, hex.y * 2.0),
+            at(first + pitch * 3.0, half_row),
         );
         self.add_widget(at(right + 250.0, 120.0));
         self.add_widget(at(right + 250.0, 420.0));
@@ -740,6 +766,15 @@ impl Sandbox {
             }
             if ui
                 .danger_button(
+                    "Clear scene",
+                    "Remove every widget and keep the parameters: an empty arena to build a case in by hand (Add widget, Add hexagon, double-click the arena). Reset seeds the scene again.",
+                )
+                .clicked()
+            {
+                self.clear();
+            }
+            if ui
+                .danger_button(
                     "Reset",
                     "Remove every widget, put the parameters back to the scene's defaults and seed the scene's widgets again.",
                 )
@@ -757,6 +792,8 @@ impl Sandbox {
                 .on_hover_text("Five widgets floating in a closed box.");
             ui.selectable_value(&mut scene, Scene::Shapes, "shapes")
                 .on_hover_text("Hexagons, half hexagons, triangles and two panels in a closed box: bodies with convex outlines; triangles fill the notches between hexagons. Select one to edit its outline: drag a square to move a vertex, drag or click a + to put a new one on an edge.");
+            ui.selectable_value(&mut scene, Scene::Tight, "tight")
+                .on_hover_text("The shapes scene seeded pressed together: a tight honeycomb. Known bug SETL-14 was found here: \"Add half hexagon\" drops a tile on the pack, and in the headless test it moved 43 points in one frame (a jump; a glide is under 32). Watch the new tile right after the click.");
             if scene != self.scene {
                 self.scene = scene;
                 self.reset();
@@ -787,7 +824,7 @@ impl Sandbox {
         ui.checkbox(&mut self.overlay.grid, "Grid pitch")
             .on_hover_text("Ticks every grid pitch along each widget's edges, from its top left corner, and along the walls from their corner. Touching widgets are pulled to line their ticks up (when grid stiffness is above 0).");
         ui.checkbox(&mut self.overlay.pulls, "Vertex pulls")
-            .on_hover_text("Vertex attraction at work: an arrow from every corner that is pulled to where it is pulled (a square: it is there), and for every edge the pull has moved a line where the edge would be without it, with the points it grew (+) or shrank (-).");
+            .on_hover_text("Vertex attraction at work. Pulling: a ring on the corner and an arrow to where it is pulled (green). Locked: a filled square (accent colour), the corner is there and held until the two are pulled clearly apart. For every edge the pull has moved, a line where the edge would be without it, with the points it grew (+) or shrank (-).");
 
         self.param_sliders(ui);
     }
@@ -933,6 +970,18 @@ impl Sandbox {
             &mut p.attract_strength,
             0.0..=60.0,
             "How fast an edge closes in on what it is pulled to: the share of the distance per second, 1/s. 0 turns vertex attraction off.",
+        );
+
+        ui.section_header(
+            "Outlines",
+            "Bodies with a convex outline (hexagons, triangles): how they sit on each other.",
+        );
+        knob(
+            ui,
+            "friction",
+            &mut p.friction,
+            0.0..=4.0,
+            "How steep a slanted edge holds a tile that gravity presses onto it (the slope's tangent). 2 holds on a hexagon's 60° edges, so nested tiles stay where they sat down; 0 is ice: tiles slide along every slope and wedge each other apart.",
         );
 
         ui.section_header(
@@ -1489,14 +1538,13 @@ impl Sandbox {
         let stroke = Stroke::new(tokens.stroke.medium, color);
         for pull in self.world.pulls() {
             let (from, to) = (self.screen_pos(pull.from), self.screen_pos(pull.to));
-            if (to - from).length() > 0.5 {
-                painter.arrow(from, to - from, stroke);
+            if pull.locked {
+                // It is there and held.
+                let square = egui::Rect::from_center_size(from, vec2(7.0, 7.0));
+                painter.rect_filled(square, 0.0, tokens.colors.accent);
             } else {
-                painter.rect_filled(
-                    egui::Rect::from_center_size(from, vec2(5.0, 5.0)),
-                    0.0,
-                    color,
-                );
+                painter.arrow(from, to - from, stroke);
+                painter.circle_stroke(from, 4.0, stroke);
             }
         }
         let thin = Stroke::new(tokens.stroke.thin, color);

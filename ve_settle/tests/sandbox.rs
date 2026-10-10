@@ -106,7 +106,7 @@ fn sandbox_with(scene: Scene) -> (App, Watch) {
     // (SETL-11).
     let limit = match scene {
         Scene::Few => SETTLE_FRAMES,
-        Scene::Full | Scene::Shapes => SETTLE_FRAMES * 2,
+        Scene::Full | Scene::Shapes | Scene::Tight => SETTLE_FRAMES * 2,
     };
     watch.rest_within(&mut h, limit);
     (h, watch)
@@ -664,6 +664,88 @@ fn the_shapes_scene_settles_and_an_outline_can_be_edited() {
         .expect("outline");
     assert_eq!(outline.points().len(), 5);
     watch.rest(&mut h);
+}
+
+/// `frames` more frames in which nothing at all moves: the world sleeps.
+fn assert_asleep(h: &mut App, watch: &mut Watch, frames: usize) {
+    let frozen = h.state().world.bodies().to_vec();
+    let steps = h.state().world.steps();
+    for _ in 0..frames {
+        watch.frame(h);
+    }
+    assert!(h.state().world.is_at_rest());
+    assert_eq!(h.state().world.steps(), steps, "no step runs at rest");
+    assert_eq!(h.state().world.bodies(), &frozen[..], "exactly zero motion");
+}
+
+#[test]
+fn every_captured_pair_in_the_full_scene_ends_lined_up_and_the_field_sleeps() {
+    let (mut h, mut watch) = sandbox_with(Scene::Full);
+    let world = &h.state().world;
+    assert!(world.is_at_rest());
+    // Pulls there are (the field is full of near-equal neighbours), and
+    // every one of them is closed: locked, less than half a point left.
+    assert!(world.pulls().len() > 20, "{} pulls", world.pulls().len());
+    for pull in world.pulls() {
+        let left = (pull.to - pull.from).max_abs();
+        assert!(left < 0.5 && pull.locked, "open by {left}: {pull:?}");
+    }
+    let stretched = world
+        .bodies()
+        .iter()
+        .filter(|b| b.stretch_lo.max_abs().max(b.stretch_hi.max_abs()) > 0.5)
+        .count();
+    assert!(stretched >= 5, "{stretched} widgets were resized");
+    assert_asleep(&mut h, &mut watch, 120);
+}
+
+#[test]
+fn the_mixed_scenes_come_to_full_rest_and_clear_empties_the_arena() {
+    for scene in [Scene::Shapes, Scene::Tight] {
+        let (mut h, mut watch) = sandbox_with(scene);
+        assert_asleep(&mut h, &mut watch, 120);
+        // A tile dropped on the pack (SETL-14): nothing jumps (the watch
+        // checks every frame), and it all sleeps again.
+        for label in [
+            "Add half hexagon",
+            "Add hexagon",
+            "Add triangle",
+            "Add half hexagon",
+        ] {
+            click_button(&mut h, &mut watch, label);
+            for _ in 0..20 {
+                watch.frame(&mut h);
+            }
+        }
+        watch.rest_within(&mut h, SETTLE_FRAMES * 2);
+        assert_asleep(&mut h, &mut watch, 120);
+
+        // Clear scene: an empty arena, the parameters kept; widgets can
+        // be added by hand, and Reset seeds the scene again.
+        let params = *h.state().world.params();
+        h.get_by_label("Clear scene").click();
+        h.step();
+        // (A new world: its ids start over, so the watch does too.)
+        let mut watch = Watch::new(&h);
+        assert!(h.state().world.bodies().is_empty() && h.state().items.is_empty());
+        assert_eq!(*h.state().world.params(), params);
+        for _ in 0..30 {
+            watch.frame(&mut h);
+        }
+        assert!(
+            h.state().world.bodies().is_empty(),
+            "nothing is seeded again"
+        );
+        click_button(&mut h, &mut watch, "Add hexagon");
+        click_button(&mut h, &mut watch, "Add widget");
+        watch.rest(&mut h);
+        assert_eq!(h.state().world.bodies().len(), 2);
+        h.get_by_label("Reset").click();
+        h.step();
+        let mut watch = Watch::new(&h);
+        watch.rest_within(&mut h, SETTLE_FRAMES * 2);
+        assert!(h.state().world.bodies().len() > 10);
+    }
 }
 
 #[test]

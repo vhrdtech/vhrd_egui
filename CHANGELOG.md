@@ -21,17 +21,23 @@ versions follow [Semantic Versioning](https://semver.org/). Feature IDs refer to
   separating axis test, so hexagons nest and a triangle settles into the notch between two of them. Editing:
   `World::insert_vertex`, `move_vertex` (clamped so the outline stays convex and inside its rectangle),
   `remove_vertex`; `Poly::fit`, `to_unit`, `bounds`, `is_convex`, `contains`, `nearest`, `insert`, `remove`,
-  `move_vertex`, `clamp_convex`. Vertex attraction carries over: a vertex of an outline within range of another
-  body's shape or a wall grows flush against it (`Body::nudges`, part of `Body::shape`; it carries no load,
-  contacts go by the plain outline) (SETL-4, SETL-12).
+  `move_vertex`, `clamp_convex`. Vertex attraction resizes a body with an outline as a whole, the outline kept;
+  the solver never moves a vertex (SETL-4, SETL-12).
+- ve_settle: `Pull::locked`: a pull with less than 0.25 points left is there and held (SETL-12).
+- ve_settle: `Params::friction` (2): a tile that gravity presses onto another one's slanted edge stays where it
+  sat down instead of sliding along it; 0 is the old behaviour (SETL-15).
+- ve_settle: sleep: after 2 s in which nothing moved more than 0.02 points per step the world rests, even where
+  pieces tremble by thousandths (SETL-15).
 - ve_settle sandbox: "Add hexagon", "Add half hexagon" and "Add triangle" buttons, a *shapes* scene (a honeycomb
   row with triangles in its notches, a second row, two panels), and outline editing on the selected body: drag a
   vertex (kept convex), click or drag a "+" on an edge for a new one, double-click a vertex to take it out
   (`Scene::Shapes`, `Outline`, `Sandbox::add_shape`, `vertex_pos`, `plus_pos`) (SETL-13).
+- ve_settle sandbox: "Clear scene" (empty arena, parameters kept), scene *tight* (the honeycomb seeded pressed
+  together), a "friction" slider, and locked pulls drawn as filled squares, pulling ones as ring and arrow
+  (SETL-12, SETL-13, SETL-15).
 
 ### Changed
 
-- ve_settle: vertex attraction alone keeps the world awake for at most 2 s after the last body moved (SETL-12).
 - ve_settle: `World::max_overlap` and `max_gap_violation` measure bodies with an outline by their outline; corner
   snapping leaves them alone; `BodyDesc` has an `outline` field (SETL-4).
 - ve_settle: with the defaults, panels now rest up to `attract_range` larger or smaller than their content wants

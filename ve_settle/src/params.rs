@@ -93,6 +93,11 @@ pub struct Params {
     /// about a hundredth of a point is left). 0 turns vertex attraction
     /// off.
     pub attract_strength: f32,
+    /// How steep a slope of an outline holds a body that gravity presses
+    /// onto it: the most its tangent may be (sideways over along gravity).
+    /// 2 holds on a hexagon's 60° edges; 0 lets everything slide, as on
+    /// ice (SETL-15). Only between bodies of which one has an outline.
+    pub friction: f32,
     /// Bulge of a body's pillow with no pressure on it, points: how far
     /// the middle of each edge stands out of the rectangle in the solver's
     /// eyes. 0 (the default) keeps a calm row lined up exactly.
@@ -168,6 +173,7 @@ impl Default for Params {
             snap_stiffness: 1500.0,
             attract_range: 16.0,
             attract_strength: 12.0,
+            friction: 2.0,
             bulge_rest: 0.0,
             bulge_from: 2.0,
             bulge_gain: 1.0,

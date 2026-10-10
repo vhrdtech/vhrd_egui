@@ -523,8 +523,10 @@ fn corners_farther_apart_than_the_range_are_left_alone() {
 
 #[test]
 fn snap_range_zero_turns_snapping_off() {
+    // (Vertex attraction off too: it would line the two up by resizing.)
     let p = Params {
         snap_range: 0.0,
+        attract_range: 0.0,
         ..calm()
     };
     let (mut w, a, b) = side_by_side(9.0, 11.0, p);
