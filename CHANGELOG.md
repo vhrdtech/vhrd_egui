@@ -22,10 +22,16 @@ versions follow [Semantic Versioning](https://semver.org/). Feature IDs refer to
   `World::insert_vertex`, `move_vertex` (clamped so the outline stays convex and inside its rectangle),
   `remove_vertex`; `Poly::fit`, `to_unit`, `bounds`, `is_convex`, `contains`, `nearest`, `insert`, `remove`,
   `move_vertex`, `clamp_convex`. Vertex attraction carries over: a vertex of an outline within range of another
-  body's shape or a wall grows flush against it (`Body::nudges`) (SETL-4, SETL-12).
+  body's shape or a wall grows flush against it (`Body::nudges`, part of `Body::shape`; it carries no load,
+  contacts go by the plain outline) (SETL-4, SETL-12).
+- ve_settle sandbox: "Add hexagon", "Add half hexagon" and "Add triangle" buttons, a *shapes* scene (a honeycomb
+  row with triangles in its notches, a second row, two panels), and outline editing on the selected body: drag a
+  vertex (kept convex), click or drag a "+" on an edge for a new one, double-click a vertex to take it out
+  (`Scene::Shapes`, `Outline`, `Sandbox::add_shape`, `vertex_pos`, `plus_pos`) (SETL-13).
 
 ### Changed
 
+- ve_settle: vertex attraction alone keeps the world awake for at most 2 s after the last body moved (SETL-12).
 - ve_settle: `World::max_overlap` and `max_gap_violation` measure bodies with an outline by their outline; corner
   snapping leaves them alone; `BodyDesc` has an `outline` field (SETL-4).
 - ve_settle: with the defaults, panels now rest up to `attract_range` larger or smaller than their content wants

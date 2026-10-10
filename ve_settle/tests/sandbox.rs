@@ -106,7 +106,7 @@ fn sandbox_with(scene: Scene) -> (App, Watch) {
     // (SETL-11).
     let limit = match scene {
         Scene::Few => SETTLE_FRAMES,
-        Scene::Full => SETTLE_FRAMES * 2,
+        Scene::Full | Scene::Shapes => SETTLE_FRAMES * 2,
     };
     watch.rest_within(&mut h, limit);
     (h, watch)
@@ -577,6 +577,93 @@ fn widgets_of_nearly_the_same_height_end_with_one_bottom_line() {
     h.get_by_label("Vertex pulls").click();
     watch.frame(&mut h);
     assert!(!h.state().overlay.pulls);
+}
+
+#[test]
+fn the_shapes_scene_settles_and_an_outline_can_be_edited() {
+    let (mut h, mut watch) = sandbox_with(Scene::Shapes);
+    // Hexagons, half hexagons, triangles and panels came to rest without
+    // overlap (the watch checks every frame, by outline).
+    let world = &h.state().world;
+    let tiles = world
+        .bodies()
+        .iter()
+        .filter(|b| b.outline.is_some())
+        .count();
+    assert!(tiles >= 12 && tiles < world.bodies().len(), "{tiles} tiles");
+    assert!(
+        world
+            .bodies()
+            .iter()
+            .all(|b| !b.lifted && b.shape().is_convex())
+    );
+    assert_inside_arena(&h);
+
+    // The buttons add more.
+    let before = world.bodies().len();
+    for label in ["Add hexagon", "Add half hexagon", "Add triangle"] {
+        click_button(&mut h, &mut watch, label);
+    }
+    watch.rest(&mut h);
+    assert_eq!(h.state().world.bodies().len(), before + 3);
+
+    // Select a hexagon and drag the + of its top edge down, into it: a
+    // vertex is put on the edge, and stays there (it would dent the outline).
+    let hex = h.state().world.bodies()[0].id;
+    let at = center(&h, hex);
+    click_at(&mut h, &mut watch, at);
+    assert_eq!(h.state().selected, Some(hex));
+    let plus = h.state().plus_pos(hex, 0).expect("the top edge has a +");
+    drag(&mut h, &mut watch, plus, plus + vec2(0.0, 40.0), 10);
+    let outline = h.state().world.body(hex).unwrap().outline.expect("outline");
+    assert_eq!(outline.points().len(), 7, "{outline:?}");
+    assert!(
+        outline.points()[1].y.abs() < 1e-3,
+        "on the top edge: {outline:?}"
+    );
+    assert!(outline.is_convex());
+
+    // Its right tip (now vertex 3) dragged inward moves; dragged far out
+    // it stops at the rectangle.
+    let tip = h.state().vertex_pos(hex, 3).expect("the tip");
+    drag(&mut h, &mut watch, tip, tip + vec2(-30.0, 0.0), 10);
+    let outline = h.state().world.body(hex).unwrap().outline.unwrap();
+    assert!(
+        (outline.points()[3].x - 0.83).abs() < 0.05,
+        "moved in by 30 of 180: {outline:?}"
+    );
+    let tip = h.state().vertex_pos(hex, 3).expect("the tip");
+    drag(&mut h, &mut watch, tip, tip + vec2(200.0, 10.0), 10);
+    let outline = h.state().world.body(hex).unwrap().outline.unwrap();
+    assert!(outline.points()[3].x <= 1.0 + 1e-3, "{outline:?}");
+    assert!(outline.is_convex(), "{outline:?}");
+    watch.rest(&mut h);
+
+    // A plain panel gets an outline with its first new vertex.
+    let panel = h
+        .state()
+        .world
+        .bodies()
+        .iter()
+        .find(|b| b.outline.is_none())
+        .expect("a panel")
+        .id;
+    let at = center(&h, panel);
+    click_at(&mut h, &mut watch, at);
+    let plus = h
+        .state()
+        .plus_pos(panel, 1)
+        .expect("the right edge has a +");
+    click_at(&mut h, &mut watch, plus);
+    let outline = h
+        .state()
+        .world
+        .body(panel)
+        .unwrap()
+        .outline
+        .expect("outline");
+    assert_eq!(outline.points().len(), 5);
+    watch.rest(&mut h);
 }
 
 #[test]

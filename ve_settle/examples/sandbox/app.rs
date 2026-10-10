@@ -9,7 +9,7 @@ use egui::{
     Align2, Button, CentralPanel, Color32, FontId, Frame, Id, Panel, Pos2, RichText, ScrollArea,
     Sense, Slider, Stroke, StrokeKind, TextWrapMode, Ui, UiBuilder, pos2, vec2,
 };
-use ve_settle::{Axis, BodyDesc, BodyId, Params, Rect, Side, Vec2, World};
+use ve_settle::{Axis, BodyDesc, BodyId, MAX_VERTICES, Params, Poly, Rect, Side, Vec2, World};
 use ve_theme::{Tokens, UiExt as _};
 
 /// Space between a widget's frame and its content.
@@ -59,6 +59,51 @@ pub enum Kind {
     Stat,
     /// A grid of cells: grows both ways.
     Grid,
+    /// A plain tile with a convex outline (hexagon, half hexagon,
+    /// triangle): only its name, the size it was added with.
+    Tile,
+}
+
+/// The outlines "Add ..." offers besides the rectangle (SETL-4).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Outline {
+    /// A hexagon, flat on top and bottom.
+    Hexagon,
+    /// Half a hexagon, cut straight on this side.
+    HalfHexagon(Side),
+    /// A triangle with its tip on this side.
+    Triangle(Side),
+}
+
+impl Outline {
+    fn poly(self) -> Poly {
+        match self {
+            Outline::Hexagon => Poly::unit_hexagon(),
+            Outline::HalfHexagon(side) => Poly::unit_half_hexagon(side),
+            Outline::Triangle(side) => Poly::unit_triangle(side),
+        }
+    }
+
+    fn name(self) -> &'static str {
+        match self {
+            Outline::Hexagon => "hexagon",
+            Outline::HalfHexagon(_) => "half hexagon",
+            Outline::Triangle(_) => "triangle",
+        }
+    }
+
+    /// The size a tile of this outline is added with: pieces of one
+    /// honeycomb, so they fit each other.
+    fn size(self) -> egui::Vec2 {
+        let upright = |side: Side| matches!(side, Side::Left | Side::Right);
+        match self {
+            Outline::Hexagon => vec2(180.0, 156.0),
+            Outline::HalfHexagon(side) if upright(side) => vec2(90.0, 156.0),
+            Outline::HalfHexagon(_) => vec2(180.0, 78.0),
+            Outline::Triangle(side) if upright(side) => vec2(78.0, 90.0),
+            Outline::Triangle(_) => vec2(90.0, 78.0),
+        }
+    }
 }
 
 impl Kind {
@@ -71,6 +116,7 @@ impl Kind {
             Kind::Bars => "usage",
             Kind::Stat => "machine",
             Kind::Grid => "grid",
+            Kind::Tile => "tile",
         }
     }
 
@@ -80,6 +126,7 @@ impl Kind {
             Kind::Bars => 18,
             Kind::Stat => 3,
             Kind::Grid => 20,
+            Kind::Tile => 0,
         }
     }
 
@@ -90,6 +137,7 @@ impl Kind {
             Kind::Bars => Vec2::new(170.0, 110.0),
             Kind::Stat => Vec2::new(170.0, 90.0),
             Kind::Grid => Vec2::new(160.0, 100.0),
+            Kind::Tile => Vec2::new(60.0, 52.0),
         }
     }
 }
@@ -111,10 +159,15 @@ pub struct Item {
 impl Item {
     /// Draw the content; the space it takes is the size the body wants.
     fn content(&self, ui: &mut Ui, tokens: &Tokens) {
+        if self.kind == Kind::Tile {
+            ui.vertical_centered(|ui| ui.label(RichText::new(&self.name).strong()));
+            return;
+        }
         // No panel is smaller than the smallest real one.
         ui.set_min_size(SMALLEST_PANEL - vec2(2.0 * PAD, 2.0 * PAD));
         ui.label(RichText::new(&self.name).strong());
         match self.kind {
+            Kind::Tile => {}
             Kind::Log => {
                 for line in 0..self.amount {
                     ui.label(
@@ -175,6 +228,9 @@ pub enum Scene {
     Full,
     /// Five widgets floating in a closed box.
     Few,
+    /// Pieces of a honeycomb (hexagons, half hexagons, triangles) and two
+    /// panels in a closed box: convex outlines at work (SETL-4).
+    Shapes,
 }
 
 impl Scene {
@@ -252,6 +308,11 @@ pub struct Sandbox {
     auto_clock: f32,
     grab_offset: egui::Vec2,
     resize_from: Option<ResizeStart>,
+    /// The vertex a drag that began on an edge's "+" put there and moves.
+    vertex_drag: Option<(BodyId, usize)>,
+    /// How many tiles the "Add ..." buttons added: the half hexagon and
+    /// the triangle turn a quarter with each one.
+    turns: usize,
 }
 
 /// Where a resize by the corner handle began.
@@ -300,6 +361,8 @@ impl Sandbox {
             auto_clock: 0.0,
             grab_offset: egui::Vec2::ZERO,
             resize_from: None,
+            vertex_drag: None,
+            turns: 0,
         }
     }
 
@@ -375,6 +438,55 @@ impl Sandbox {
         id
     }
 
+    /// Add a tile with `outline` with its middle at the world point `at`
+    /// (or at a spot picked inside the walls).
+    pub fn add_shape(&mut self, outline: Outline, at: Option<Pos2>) -> BodyId {
+        let at = at.unwrap_or_else(|| {
+            let (rx, ry) = (self.random() % 1000, self.random() % 1000);
+            let inner = to_rect(self.world.bounds()).shrink(60.0);
+            pos2(
+                inner.min.x + inner.width().max(0.0) * rx as f32 / 1000.0,
+                inner.min.y + inner.height().max(0.0) * ry as f32 / 1000.0,
+            )
+        });
+        self.seq += 1;
+        let size = outline.size();
+        let id = self.world.add(
+            BodyDesc::new(from_pos(at), Vec2::new(size.x, size.y))
+                .min_size(Kind::Tile.min_size())
+                .home(Some(from_pos(at)))
+                .outline(outline.poly()),
+        );
+        self.items.push(Item {
+            id,
+            kind: Kind::Tile,
+            name: format!("{} {}", outline.name(), self.seq),
+            amount: 0,
+            user_size: Some(size),
+        });
+        self.selected = Some(id);
+        id
+    }
+
+    /// Where vertex `index` of a body's shape is on the screen.
+    pub fn vertex_pos(&self, id: BodyId, index: usize) -> Option<Pos2> {
+        let shape = self.world.body(id)?.shape();
+        shape.points().get(index).map(|&p| self.screen_pos(p))
+    }
+
+    /// Where the "+" of the edge from vertex `edge` to the next one is on
+    /// the screen: its middle.
+    pub fn plus_pos(&self, id: BodyId, edge: usize) -> Option<Pos2> {
+        let body = self.world.body(id)?;
+        let shape = match body.outline {
+            Some(_) => body.shape(),
+            None => Poly::rect(&body.rect),
+        };
+        let points = shape.points();
+        let (a, b) = (*points.get(edge)?, points[(edge + 1) % points.len()]);
+        Some(self.screen_pos((a + b) * 0.5))
+    }
+
     fn remove_selected(&mut self) {
         if let Some(id) = self.selected.take() {
             self.world.remove(id);
@@ -404,6 +516,10 @@ impl Sandbox {
             self.seed_full();
             return;
         }
+        if self.scene == Scene::Shapes {
+            self.seed_shapes();
+            return;
+        }
         let spots = [
             (0.2, 0.25),
             (0.5, 0.2),
@@ -415,6 +531,45 @@ impl Sandbox {
             let at = self.arena.min + vec2(self.arena.width() * fx, self.arena.height() * fy);
             self.add_widget(Some(at));
         }
+        self.selected = None;
+    }
+
+    /// A row of hexagons closed by half hexagons at its ends, triangles
+    /// for the notches above and below it, a second row of hexagons and
+    /// two panels. Their homes are where they are seeded, a little apart;
+    /// gravity closes them up, and the homes keep the triangles from
+    /// wedging the row apart (nothing rubs here).
+    fn seed_shapes(&mut self) {
+        let gap = self.world.params().gap;
+        let origin = self.arena.min + vec2(gap, gap);
+        let at = |x: f32, y: f32| Some(origin + vec2(x, y));
+        let (hex, half) = (Outline::Hexagon.size(), 90.0);
+        let pitch = hex.x + gap;
+        let first = half + gap + hex.x / 2.0;
+        for i in 0..4 {
+            self.add_shape(Outline::Hexagon, at(first + pitch * i as f32, hex.y / 2.0));
+        }
+        self.add_shape(
+            Outline::HalfHexagon(Side::Left),
+            at(half / 2.0, hex.y / 2.0),
+        );
+        let right = first + pitch * 3.0 + hex.x / 2.0 + gap + half / 2.0;
+        self.add_shape(Outline::HalfHexagon(Side::Right), at(right, hex.y / 2.0));
+        for i in 0..3 {
+            let notch = first + pitch * (i as f32 + 0.5);
+            self.add_shape(Outline::Triangle(Side::Bottom), at(notch, 39.0));
+            // Under the notch, not pressed into it (SETL-14).
+            self.add_shape(Outline::Triangle(Side::Top), at(notch, hex.y + 80.0));
+        }
+        for i in 0..3 {
+            self.add_shape(Outline::Hexagon, at(first + pitch * i as f32, hex.y * 2.2));
+        }
+        self.add_shape(
+            Outline::HalfHexagon(Side::Top),
+            at(first + pitch * 3.0, hex.y * 2.0),
+        );
+        self.add_widget(at(right + 250.0, 120.0));
+        self.add_widget(at(right + 250.0, 420.0));
         self.selected = None;
     }
 
@@ -560,6 +715,21 @@ impl Sandbox {
                 item.user_size = None;
             }
         });
+        ui.horizontal_wrapped(|ui| {
+            let sides = [Side::Left, Side::Top, Side::Right, Side::Bottom];
+            let side = sides[self.turns % sides.len()];
+            let pieces = [
+                (Outline::Hexagon, "Add hexagon", "Add a hexagon tile: a body whose outline is a convex polygon. Hexagons nest where rectangles would overlap."),
+                (Outline::HalfHexagon(side), "Add half hexagon", "Add half a hexagon, cut straight on one side (the next side with each click): the piece that closes a honeycomb against a wall."),
+                (Outline::Triangle(side), "Add triangle", "Add a triangle tile (its tip on the next side with each click): it settles into the notch between two hexagons."),
+            ];
+            for (outline, label, tip) in pieces {
+                if ui.button(label).on_hover_text(tip).clicked() {
+                    self.add_shape(outline, None);
+                    self.turns += 1;
+                }
+            }
+        });
         ui.horizontal(|ui| {
             if ui
                 .button("Homes here")
@@ -585,6 +755,8 @@ impl Sandbox {
                 .on_hover_text("Enough widgets to fill the width and run past the bottom of the window: the bottom wall is open and the arena scrolls. The layout under real pressure.");
             ui.selectable_value(&mut scene, Scene::Few, "few")
                 .on_hover_text("Five widgets floating in a closed box.");
+            ui.selectable_value(&mut scene, Scene::Shapes, "shapes")
+                .on_hover_text("Hexagons, half hexagons, triangles and two panels in a closed box: bodies with convex outlines; triangles fill the notches between hexagons. Select one to edit its outline: drag a square to move a vertex, drag or click a + to put a new one on an edge.");
             if scene != self.scene {
                 self.scene = scene;
                 self.reset();
@@ -920,6 +1092,7 @@ impl Sandbox {
         for i in order {
             self.body_ui(ui, i, &tokens);
         }
+        self.vertex_ui(ui, &tokens);
         self.paint_overlay(ui, &tokens);
         self.paint_scrollbar(ui, &tokens);
     }
@@ -950,6 +1123,11 @@ impl Sandbox {
         let body = &self.world.bodies()[index];
         let (id, rect, lifted) = (body.id, self.screen_rect(body.rect), body.lifted);
         let (min_size, home) = (to_vec(body.min_size), body.home);
+        // A body with an outline is drawn as the solver sees it.
+        let outline: Option<Vec<Pos2>> = body.outline.map(|_| {
+            let shape = body.shape();
+            shape.points().iter().map(|&p| self.screen_pos(p)).collect()
+        });
         let Some(item_index) = self.items.iter().position(|item| item.id == id) else {
             return;
         };
@@ -961,13 +1139,17 @@ impl Sandbox {
         } else {
             tokens.colors.surface
         };
-        painter.rect_filled(rect, tokens.radius.m, fill);
         let stroke = if selected {
             Stroke::new(tokens.stroke.medium, tokens.colors.accent)
         } else {
             Stroke::new(tokens.stroke.thin, tokens.colors.line)
         };
-        painter.rect_stroke(rect, tokens.radius.m, stroke, StrokeKind::Inside);
+        if let Some(points) = outline {
+            painter.add(egui::Shape::convex_polygon(points, fill, stroke));
+        } else {
+            painter.rect_filled(rect, tokens.radius.m, fill);
+            painter.rect_stroke(rect, tokens.radius.m, stroke, StrokeKind::Inside);
+        }
 
         // The content is drawn at its own size and clipped to the body, so
         // what it measures is what it wants, however squeezed it is now.
@@ -1056,6 +1238,103 @@ impl Sandbox {
                 [rect.max - vec2(inset, 3.0), rect.max - vec2(3.0, inset)],
                 Stroke::new(tokens.stroke.thin, grip),
             );
+        }
+    }
+
+    /// The selected body's outline to edit (SETL-4): a square on every
+    /// vertex to drag (it stops where the outline would dent), a "+" in
+    /// the middle of every edge to put a new vertex there.
+    fn vertex_ui(&mut self, ui: &mut Ui, tokens: &Tokens) {
+        let Some(id) = self.selected else {
+            return;
+        };
+        let Some(body) = self.world.body(id) else {
+            return;
+        };
+        if body.dragged {
+            return;
+        }
+        let has_outline = body.outline.is_some();
+        let count = body.outline.map_or(4, |o| o.points().len());
+        let painter = ui.painter().with_clip_rect(self.arena);
+        let color = tokens.colors.accent;
+        // A plain rectangle keeps its corner for resizing: its vertices
+        // can be moved once it has an outline (a "+" gives it one).
+        if has_outline {
+            for index in 0..count {
+                let Some(at) = self.vertex_pos(id, index) else {
+                    continue;
+                };
+                let handle = egui::Rect::from_center_size(at, vec2(11.0, 11.0));
+                let response = ui
+                    .interact(handle, Id::new(("settle_vertex", id.0, index)), Sense::click_and_drag())
+                    .on_hover_text("A vertex of the outline. Drag: move it; it stops where the outline would dent (convex shapes only) and at the body's rectangle. Double-click: take it out (a triangle keeps its three).");
+                if response.dragged()
+                    && let Some(pointer) = response.interact_pointer_pos()
+                {
+                    self.world.move_vertex(id, index, self.world_pos(pointer));
+                }
+                if response.double_clicked() {
+                    self.world.remove_vertex(id, index);
+                }
+                let fill = if response.hovered() || response.dragged() {
+                    color
+                } else {
+                    tokens.colors.surface_raised
+                };
+                painter.rect_filled(handle.shrink(2.0), 0.0, fill);
+                painter.rect_stroke(
+                    handle.shrink(2.0),
+                    0.0,
+                    Stroke::new(tokens.stroke.medium, color),
+                    StrokeKind::Inside,
+                );
+            }
+        }
+        let full = count >= MAX_VERTICES;
+        for edge in 0..count {
+            let Some(at) = self.plus_pos(id, edge) else {
+                continue;
+            };
+            let handle = egui::Rect::from_center_size(at, vec2(11.0, 11.0));
+            let sense = if full {
+                Sense::hover()
+            } else {
+                Sense::click_and_drag()
+            };
+            let response = ui.interact(handle, Id::new(("settle_plus", id.0, edge)), sense);
+            let response = if full {
+                response.on_hover_text(format!(
+                    "Not available: the outline is full ({MAX_VERTICES} vertices). Double-click a vertex to take one out."
+                ))
+            } else {
+                response.on_hover_text("Click or drag: put a new vertex on this edge (and drag it where it should be). The outline stays convex: a vertex in the middle of a straight edge can only go outward, as far as the body's rectangle.")
+            };
+            if !full && (response.clicked() || response.drag_started()) {
+                let index = self.world.insert_vertex(id, self.world_pos(at));
+                self.vertex_drag = index.filter(|_| response.drag_started()).map(|i| (id, i));
+            }
+            if response.dragged()
+                && let Some((body, index)) = self.vertex_drag
+                && let Some(pointer) = response.interact_pointer_pos()
+            {
+                self.world.move_vertex(body, index, self.world_pos(pointer));
+            }
+            if response.drag_stopped() {
+                self.vertex_drag = None;
+            }
+            let tint = if full {
+                tokens.colors.line
+            } else if response.hovered() || response.dragged() {
+                color
+            } else {
+                tokens.colors.line_strong
+            };
+            painter.circle_filled(at, 4.5, tokens.colors.surface_raised);
+            painter.circle_stroke(at, 4.5, Stroke::new(tokens.stroke.thin, tint));
+            for d in [vec2(2.5, 0.0), vec2(0.0, 2.5)] {
+                painter.line_segment([at - d, at + d], Stroke::new(tokens.stroke.thin, tint));
+            }
         }
     }
 

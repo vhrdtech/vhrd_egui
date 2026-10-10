@@ -288,6 +288,7 @@ up and Packery's "others flow around the dragged one". No app uses it yet.
   slider with a tooltip on every parameter, overlay layers (bodies with minimum size and id, force and velocity
   arrows with contact dots, tension tint and percent, home spots, corner snaps, collision shapes, grid pitch, vertex pulls), drag to move, corner handle to resize,
   add (button or double-click), remove, grow / shrink content by hand or by itself, pause and single-step.
+  A third scene, *shapes*, is SETL-13.
   Scenes (user, 10 Oct 2026): *full*, the default, drops enough widgets to fill 1.8 windows, seeded a little
   tighter than they fit, with the bottom wall open, so the layout is tried under real pressure and runs past the
   bottom of the window; the arena scrolls (wheel over it, a thin bar on the right shows where you are). *Few* is
@@ -415,8 +416,8 @@ up and Packery's "others flow around the dragged one". No app uses it yet.
   `Poly::unit_rect`, `unit_hexagon`, `unit_half_hexagon(side)` (closes a honeycomb against a side),
   `unit_triangle(side)`. Contacts of a pair with an outline go through `sat` on the two shapes (own code, no
   parry2d; `outline_hit` in `world.rs`): hexagons nest where their rectangles would overlap, a triangle rises into
-  the notch between two hexagons, rectangles and polygons mix. Along an outline's slanted edge bodies part as far as
-  it takes (the half-glide limit is the pillow's). Outline bodies do not bulge and never yield (their shape is not
+  the notch between two hexagons, rectangles and polygons mix. Along a slanted edge a body slides at most half a glide per
+  step, as with the pillow. Outline bodies do not bulge and never yield (their shape is not
   pressure), corner snapping (SETL-8) leaves them alone, `max_overlap` measures them by their outline.
   Editing: `World::insert_vertex(id, at)` puts a vertex on the outline nearest to a point (a plain rectangle gets
   its four corners first), `move_vertex(id, i, to)` moves one as near as it can go with the outline convex and
@@ -425,17 +426,44 @@ up and Packery's "others flow around the dragged one". No app uses it yet.
   three).
   Vertex attraction on outlines (SETL-12 carried over, `World::attract_vertices`): each vertex within
   `attract_range` of the point where it would lie flush against another body's shape or a wall is pulled there,
-  and the pull moves the vertex itself (`Body::nudges`), convexity kept; it only grows into free room. Decided:
-  between two outlines the one added later does the growing (both filling the room chased each other for ever);
-  a vertex that meets something pushing back gives the growth back and waits a quarter second before growing again
-  (growing and giving way in turn chattered). Rectangles see an outline body as its rectangle for their own
-  stretch.
+  and the pull moves the vertex itself (`Body::nudges`, in `Body::shape`), convexity kept; it only grows into free
+  room. Decided on the way: (1) *what a vertex grew carries no load*: contacts go by the plain outline. With the
+  grown vertices in the collision shape, a vertex touching a body pressed onto it pushed that body, which moved the
+  room it grew into: growing and giving way chattered for ever, and a honeycomb never rested. So the pass runs last
+  in the step, on where everything ended up; growing is a share of the distance per second, a room getting smaller
+  takes the vertex back at once, and each vertex stops short where its edges would come into another shape's gap
+  (compared with the plain outline, since bodies pressed together sit a few hundredths in each other's gap), so the
+  shapes as drawn never overlap either (`max_overlap` measures them). (2) Between two outlines the one added later
+  does the growing (both filling the room between them chased each other). (3) The world stays awake for grown
+  vertices only down to 4 × `rest_eps` per step (about 0.2 points of the way are left), and vertex attraction
+  alone, edges or vertices, keeps it awake for at most 2 s after the last body moved (`ATTRACT_PATIENCE`): an edge
+  or a vertex stopped by a neighbour can tremble by thousandths for ever. A lifted outline lying on several nested
+  neighbours is moved by all their pushes together no more than one glide per step. Rectangles see an outline
+  body as its rectangle for their own stretch.
   Tests in `tests/polygon.rs` (shapes convex and filling their rectangle, clamp incl. 200 random drags, insert /
   drag / remove through the world, nesting, the notch, a mixed pile at rest without overlap, a hexagon's tips
   growing to a wall and a rectangle). Not done: drawing content clipped to the shape and a hit test by outline in
   an app (the sandbox draws the polygon and grabs by the rectangle); concave shapes; into-line pulls for outline
   vertices (flush only); snapping outline vertices; an outline whose vertex was dragged off a side no longer
   touches its rectangle there, and walls and rectangle neighbours still see the rectangle.
+- ✅ **SETL-13 Sandbox: shape tiles and outline editing** (P2605#10oct-1656): "Add hexagon", "Add half hexagon" and
+  "Add triangle" add tiles with a convex outline (the half hexagon and the triangle turn a quarter with each
+  click); the *shapes* scene seeds a row of hexagons closed by half hexagons, triangles for the notches above and
+  below it, a second row and two panels, which close up into a honeycomb. The selected body's outline can be
+  edited: a square on every vertex to drag (it stops where the outline would dent and at the body's rectangle;
+  double-click takes it out), a "+" in the middle of every edge to click or drag a new vertex out of (shown
+  disabled with the reason when the outline is full). A plain panel keeps its resize corner and gets an outline with
+  its first "+". Bodies with an outline are drawn as the polygon, with what vertex attraction added.
+  `ve_settle/examples/sandbox/app.rs` (`Outline`, `add_shape`, `vertex_ui`, `seed_shapes`), kittest
+  `the_shapes_scene_settles_and_an_outline_can_be_edited`. Homes stay on in that scene: nothing rubs in this
+  solver, so without them the triangles wedge the row apart.
+- 🐛 **SETL-14 A tile dropped onto a tight honeycomb jumps**: with the shapes scene seeded tighter (the lower
+  triangles pressed into their notches, the second row right under the first), a half hexagon added on top of it
+  moved 43 points in one frame in the kittest (the limit that reads as a jump is 32), and before the per-step cap on
+  a lifted outline's pushes the scene also missed its rest deadline. Not found yet which pass moves it (the pushes
+  of several nested neighbours are capped at one glide per step now; squeeze of a pressed tile is the next
+  suspect). The sandbox seeds the lower triangles under their notches and the second row lower instead
+  (`seed_shapes`), where everything rests in about 3 s and nothing jumps.
 - 📋 **SETL-5 Sizes chosen by the layout**: a body offers several sizes (auto / compact / normal / wide,
   P2605#8oct-1205) and the layout picks the one that fits best, instead of only squeezing.
 
