@@ -106,8 +106,8 @@ pub struct Params {
     /// Grid pitch, points: touching bodies are guided to line up their
     /// edges along the contact at whole steps of this apart (SETL-10).
     pub grid_pitch: f32,
-    /// Stiffness of the pull onto grid steps, 1/s² near a step
-    /// (critically damped there); it is a washboard, strongest a quarter
+    /// Stiffness of the pull onto grid steps, 1/s² near a step (half
+    /// critically damped there); it is a washboard, strongest a quarter
     /// pitch off a step, and only grows as two bodies slow down against
     /// each other, so free motion stays smooth. 0 turns it off.
     pub grid_stiffness: f32,
