@@ -1,0 +1,342 @@
+//! The sandbox driven like a person through egui_kittest: add a widget,
+//! drag one, resize the window, and on every frame no two solid bodies
+//! overlap, nothing jumps, and it all comes to rest in time (SETL-3).
+
+#[path = "../examples/sandbox/app.rs"]
+#[allow(dead_code)]
+mod app;
+
+use std::collections::HashMap;
+
+use app::Sandbox;
+use egui::{Pos2, pos2, vec2};
+use egui_kittest::Harness;
+use egui_kittest::kittest::Queryable;
+use ve_settle::{BodyId, Rect};
+
+/// Frames per second the tests run at.
+const FPS: f32 = 60.0;
+/// Everything has to be at rest this many frames after the last change (5 s).
+const SETTLE_FRAMES: usize = 300;
+/// The farthest a body's edge may move in one frame, points: beyond this
+/// it reads as a jump, not a glide.
+const MAX_FRAME_MOVE: f32 = 32.0;
+
+type App = Harness<'static, Sandbox>;
+
+/// Steps the app frame by frame and checks the promises on each one.
+struct Watch {
+    seen: HashMap<BodyId, Rect>,
+    /// The largest move of a body in one frame so far.
+    worst_move: f32,
+}
+
+impl Watch {
+    fn new(h: &App) -> Self {
+        let mut watch = Self {
+            seen: HashMap::new(),
+            worst_move: 0.0,
+        };
+        watch.look(h);
+        watch
+    }
+
+    fn look(&mut self, h: &App) {
+        let world = &h.state().world;
+        assert_eq!(world.max_overlap(), 0.0, "two solid bodies overlap");
+        let mut now = HashMap::new();
+        for body in world.bodies() {
+            // The held body goes where the pointer goes.
+            if let (Some(before), false) = (self.seen.get(&body.id), body.dragged) {
+                let moved = (body.rect.min - before.min)
+                    .max_abs()
+                    .max((body.rect.max - before.max).max_abs());
+                assert!(
+                    moved <= MAX_FRAME_MOVE,
+                    "body {:?} jumped {moved} points in one frame",
+                    body.id
+                );
+                self.worst_move = self.worst_move.max(moved);
+            }
+            now.insert(body.id, body.rect);
+        }
+        self.seen = now;
+    }
+
+    /// One frame.
+    fn frame(&mut self, h: &mut App) {
+        h.step();
+        self.look(h);
+    }
+
+    /// Frames until the world rests; panics if that takes too long.
+    fn rest(&mut self, h: &mut App) -> usize {
+        // The frame after an input applies it; only then is "at rest" news.
+        self.frame(h);
+        self.frame(h);
+        for n in 2..SETTLE_FRAMES {
+            if h.state().world.is_at_rest() {
+                return n;
+            }
+            self.frame(h);
+        }
+        panic!("not at rest {SETTLE_FRAMES} frames after the last change");
+    }
+}
+
+/// The sandbox in a window, its first widgets settled.
+fn sandbox() -> (App, Watch) {
+    let mut h = Harness::builder()
+        .with_size(vec2(1100.0, 700.0))
+        .with_step_dt(1.0 / FPS)
+        .build_eframe(|cc| Sandbox::new(cc));
+    h.step();
+    let mut watch = Watch::new(&h);
+    watch.rest(&mut h);
+    (h, watch)
+}
+
+fn click_button(h: &mut App, watch: &mut Watch, label: &str) {
+    h.get_by_label(label).click();
+    watch.frame(h);
+}
+
+fn center(h: &App, id: BodyId) -> Pos2 {
+    let c = h.state().world.body(id).expect("body exists").rect.center();
+    pos2(c.x, c.y)
+}
+
+/// Press, move in small steps like a hand does, release.
+fn drag(h: &mut App, watch: &mut Watch, from: Pos2, to: Pos2, frames: usize) {
+    h.hover_at(from);
+    watch.frame(h);
+    h.drag_at(from);
+    watch.frame(h);
+    for n in 1..=frames {
+        h.hover_at(from + (to - from) * (n as f32 / frames as f32));
+        watch.frame(h);
+    }
+    h.drop_at(to);
+    watch.frame(h);
+}
+
+fn click_at(h: &mut App, watch: &mut Watch, at: Pos2) {
+    h.hover_at(at);
+    watch.frame(h);
+    h.drag_at(at);
+    watch.frame(h);
+    h.drop_at(at);
+    watch.frame(h);
+}
+
+fn assert_inside_arena(h: &App) {
+    let arena = h.state().arena;
+    for body in h.state().world.bodies() {
+        let r = body.rect;
+        assert!(
+            r.min.x >= arena.min.x - 0.5
+                && r.min.y >= arena.min.y - 0.5
+                && r.max.x <= arena.max.x + 0.5
+                && r.max.y <= arena.max.y + 0.5,
+            "body {:?} at {r:?} is outside the arena {arena:?}",
+            body.id
+        );
+    }
+}
+
+#[test]
+fn the_first_widgets_settle_and_then_nothing_moves() {
+    let (mut h, mut watch) = sandbox();
+    let world = &h.state().world;
+    assert_eq!(world.bodies().len(), 5);
+    assert!(world.bodies().iter().all(|b| !b.lifted));
+    assert_inside_arena(&h);
+
+    let (frozen, steps) = (world.bodies().to_vec(), world.steps());
+    for _ in 0..30 {
+        watch.frame(&mut h);
+    }
+    assert_eq!(
+        h.state().world.bodies(),
+        &frozen[..],
+        "at rest nothing moves"
+    );
+    assert_eq!(
+        h.state().world.steps(),
+        steps,
+        "at rest nothing is computed"
+    );
+}
+
+#[test]
+fn adding_widgets_makes_room_for_them() {
+    let (mut h, mut watch) = sandbox();
+    for n in 0..4 {
+        click_button(&mut h, &mut watch, "Add widget");
+        let frames = watch.rest(&mut h);
+        assert!(frames > 2, "widget {n}: the world had something to do");
+        assert_eq!(h.state().world.bodies().len(), 6 + n);
+        assert!(h.state().world.bodies().iter().all(|b| !b.lifted));
+        assert_inside_arena(&h);
+    }
+    // Double-clicking empty arena adds one under the pointer.
+    let arena = h.state().arena;
+    let spot = arena.right_bottom() - vec2(30.0, 30.0);
+    click_at(&mut h, &mut watch, spot);
+    click_at(&mut h, &mut watch, spot);
+    watch.rest(&mut h);
+    assert_eq!(h.state().world.bodies().len(), 10);
+}
+
+#[test]
+fn dragging_a_widget_through_the_others() {
+    let (mut h, mut watch) = sandbox();
+    let (first, last) = {
+        let bodies = h.state().world.bodies();
+        (bodies[0].id, bodies[4].id)
+    };
+    let (from, to) = (center(&h, last), center(&h, first));
+    let others_before: Vec<_> = h.state().world.bodies()[1..4]
+        .iter()
+        .map(|b| b.rect)
+        .collect();
+
+    // Onto the first widget and on to the arena's top left corner.
+    drag(&mut h, &mut watch, from, to, 40);
+    assert!(h.state().world.body(last).is_some_and(|b| !b.dragged));
+    watch.rest(&mut h);
+
+    let world = &h.state().world;
+    assert!(world.bodies().iter().all(|b| !b.lifted && !b.dragged));
+    assert!(world.max_gap_violation() < 0.5);
+    assert_inside_arena(&h);
+    assert_eq!(
+        h.state().selected,
+        Some(last),
+        "the dragged widget is selected"
+    );
+    // It was dropped on the first widget's place: that is where it now is, near enough.
+    let dropped = center(&h, last);
+    assert!(
+        (dropped - to).length() < 160.0,
+        "dropped at {to:?}, rests at {dropped:?}"
+    );
+    // Widgets that were not in the way are where they were.
+    let stayed = h.state().world.bodies()[1..4]
+        .iter()
+        .zip(&others_before)
+        .filter(|(b, before)| (b.rect.min - before.min).max_abs() < 2.0)
+        .count();
+    assert!(stayed >= 2, "only {stayed} of 3 bystanders stayed put");
+}
+
+#[test]
+fn resizing_the_window_keeps_everything_inside() {
+    let (mut h, mut watch) = sandbox();
+    for size in [vec2(820.0, 560.0), vec2(700.0, 480.0), vec2(1300.0, 800.0)] {
+        h.set_size(size);
+        watch.rest(&mut h);
+        assert_inside_arena(&h);
+        assert!(h.state().world.bodies().iter().all(|b| !b.lifted));
+    }
+}
+
+#[test]
+fn growing_and_shrinking_content_pushes_and_lets_go() {
+    let (mut h, mut watch) = sandbox();
+    let id = h.state().world.bodies()[0].id;
+    let at = center(&h, id);
+    click_at(&mut h, &mut watch, at);
+    assert_eq!(h.state().selected, Some(id));
+    watch.rest(&mut h);
+    let before = h.state().world.body(id).unwrap().rect.size();
+
+    for _ in 0..8 {
+        click_button(&mut h, &mut watch, "Grow");
+    }
+    watch.rest(&mut h);
+    let grown = h.state().world.body(id).unwrap().rect.size();
+    assert!(grown.y > before.y + 60.0, "{before:?} → {grown:?}");
+
+    for _ in 0..8 {
+        click_button(&mut h, &mut watch, "Shrink");
+    }
+    watch.rest(&mut h);
+    let back = h.state().world.body(id).unwrap().rect.size();
+    assert!((back - before).max_abs() < 1.0, "{before:?} → {back:?}");
+}
+
+#[test]
+fn the_corner_handle_sets_a_size_by_hand() {
+    let (mut h, mut watch) = sandbox();
+    let id = h.state().world.bodies()[1].id;
+    let rect = h.state().world.body(id).unwrap().rect;
+    let corner = pos2(rect.max.x - 5.0, rect.max.y - 5.0);
+    drag(&mut h, &mut watch, corner, corner + vec2(70.0, 50.0), 20);
+    watch.rest(&mut h);
+    let size = h.state().world.body(id).unwrap().rect.size();
+    assert!(
+        (size.x - (rect.size().x + 70.0)).abs() < 8.0
+            && (size.y - (rect.size().y + 50.0)).abs() < 8.0,
+        "{:?} → {size:?}",
+        rect.size()
+    );
+    click_button(&mut h, &mut watch, "Auto size");
+    watch.rest(&mut h);
+    let size = h.state().world.body(id).unwrap().rect.size();
+    assert!(
+        (size - rect.size()).max_abs() < 1.0,
+        "back to the content's size: {size:?}"
+    );
+}
+
+#[test]
+fn removing_the_selected_widget() {
+    let (mut h, mut watch) = sandbox();
+    let id = h.state().world.bodies()[2].id;
+    let at = center(&h, id);
+    click_at(&mut h, &mut watch, at);
+    click_button(&mut h, &mut watch, "Remove selected");
+    watch.rest(&mut h);
+    assert_eq!(h.state().world.bodies().len(), 4);
+    assert!(h.state().world.body(id).is_none());
+    assert_eq!(h.state().selected, None);
+}
+
+#[test]
+fn pause_stops_the_world_and_step_runs_one_step() {
+    let (mut h, mut watch) = sandbox();
+    click_button(&mut h, &mut watch, "Pause");
+    click_button(&mut h, &mut watch, "Add widget");
+    let steps = h.state().world.steps();
+    for _ in 0..10 {
+        watch.frame(&mut h);
+    }
+    assert_eq!(h.state().world.steps(), steps, "paused: no steps");
+    for n in 1..=3 {
+        click_button(&mut h, &mut watch, "Step");
+        assert_eq!(h.state().world.steps(), steps + n);
+    }
+    click_button(&mut h, &mut watch, "Resume");
+    watch.rest(&mut h);
+    assert!(h.state().world.steps() > steps + 3);
+}
+
+#[test]
+fn content_changing_by_itself_never_overlaps_or_jumps() {
+    let (mut h, mut watch) = sandbox();
+    let amounts = |h: &App| h.state().items.iter().map(|i| i.amount).collect::<Vec<_>>();
+    let (steps, before) = (h.state().world.steps(), amounts(&h));
+    click_button(&mut h, &mut watch, "Content changes by itself");
+    for _ in 0..900 {
+        watch.frame(&mut h);
+    }
+    assert_ne!(amounts(&h), before, "content changed");
+    assert!(
+        h.state().world.steps() > steps + 100,
+        "the world kept working"
+    );
+    click_button(&mut h, &mut watch, "Content changes by itself");
+    watch.rest(&mut h);
+    println!("worst move in one frame: {:.2} points", watch.worst_move);
+}

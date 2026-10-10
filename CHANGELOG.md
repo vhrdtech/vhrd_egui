@@ -5,6 +5,15 @@ versions follow [Semantic Versioning](https://semver.org/). Feature IDs refer to
 
 ## [Unreleased]
 
+### Added
+
+- ve_settle: new crate, a physics layout prototype with no dependencies: `World` of rectangular bodies (wanted,
+  minimum and maximum size) with gravity toward a side, home springs, walls, contacts without overlap, squeeze
+  with a tension coefficient, damping, rest and fixed deterministic steps; `Params` holds every knob (SETL-1).
+- ve_settle: the `sandbox` example (`cargo run -p ve_settle --example sandbox`): widgets with growing and
+  shrinking content, a slider on every parameter, debug overlay (bodies, forces, tension, home spots), drag,
+  resize, add and remove, pause and single-step (SETL-2), with egui_kittest tests driving it (SETL-3).
+
 ## [0.15.0] - 2026-10-10
 
 ### Added

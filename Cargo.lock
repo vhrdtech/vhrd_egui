@@ -3663,6 +3663,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "ve_settle"
+version = "0.15.0"
+dependencies = [
+ "eframe",
+ "egui",
+ "egui_kittest",
+ "ve_theme",
+]
+
+[[package]]
 name = "ve_template"
 version = "0.15.0"
 dependencies = [

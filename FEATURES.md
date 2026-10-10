@@ -37,6 +37,7 @@ in tpm (P2605). Statuses were checked against the code.
 | `ve_theme` | The design system: brand tokens, dark and light egui styles, fonts and type scale, `UiExt` helpers, gallery. |
 | `ve_app` | The application shell: menu bar, tiles of widgets, About / Settings / Debug windows, persisted layout, quit dialog. |
 | `ve_dash` | btop-style dashboard building blocks: theme, sparkline, meter, status light, stat tile, titled panel. |
+| `ve_settle` | Physics layout prototype: bodies that settle under gravity, home springs, walls and contacts; no egui dependency. |
 | `ve_template` | The app template as a command: `new`, `check-answers`, `compare`, `version` (`egui_app_skill/`). |
 
 ## Platform (`PLT`)
@@ -261,6 +262,43 @@ on every background (unit-tested), status colors always come with a text label.
   apart from brand red, warning apart from power orange, the copy equal to the sibling export.
 - 💡 **THM-6 Hot reload of tokens**: in debug builds, read the tokens from a RON file and re-apply on change, as
   re_ui's `hot_reload_design_tokens` does, so tuning doesn't need a rebuild. Needs serde on the token types.
+
+## Physics layout (`SETL`)
+
+Dash panels laid out by a small physics sim instead of a grid, crate `ve_settle`: a prototype (user, 10 Oct 2026;
+background in tpm P2620 `notes.md` "Physics dash layout"). Built fresh; tpm_mesh_dash's `masonry.rs` (APP-29) was
+read only for its lessons (panels must not wander, no re-plan jumps). The UX to match is Gridstack.js with gravity
+up and Packery's "others flow around the dragged one". No app uses it yet.
+
+- ✅ **SETL-1 Settle core**: `World` of axis-aligned bodies with a wanted, minimum and maximum size; gravity
+  toward a side, a home spring per body (optionally drifting homes), walls per side, contacts that never let two
+  solid bodies overlap, squeeze when there is no room (`tension` against `restore`), damping, rest (a world at
+  rest runs no steps until something changes) and fixed deterministic steps. Nothing jumps: sizes follow at
+  `grow_speed`, a body added or dropped onto others is *lifted* and they part at `glide_speed`, as do bodies left
+  outside walls that moved; a dragged body floats and the others flow around it. Debug readouts per body (pulls,
+  velocity, squeeze, pressure) and the step's contacts. No dependencies. `ve_settle/src/` (`world.rs`,
+  `params.rs`, `geom.rs`), 16 tests in `ve_settle/tests/core.rs`, doc example in `lib.rs`.
+- ✅ **SETL-2 Sandbox**: `cargo run -p ve_settle --example sandbox` (eframe): widgets of four kinds whose
+  content grows in different directions (measured from the real egui content a frame late, as a dash would), a
+  slider with a tooltip on every parameter, overlay layers (bodies with minimum size and id, force and velocity
+  arrows with contact dots, tension tint and percent, home spots), drag to move, corner handle to resize,
+  add (button or double-click), remove, grow / shrink content by hand or by itself, pause and single-step.
+  `ve_settle/examples/sandbox/`.
+- ✅ **SETL-3 Sandbox UI tests**: egui_kittest drives the sandbox like a person (add widgets, drag one through
+  the others, resize the window, grow and shrink content, corner resize, remove, pause and step, content changing
+  by itself for 15 s) and checks on every frame that no two solid bodies overlap and nothing moves more than
+  32 points, and that it rests within 300 frames (5 s) of the last change. `ve_settle/tests/sandbox.rs`.
+- 🐛 **SETL-6 Pile sticks out though there is room beside it**: contacts part two bodies along the axis of least
+  overlap only, so rigid bodies piled on one spot (8 of them added on a diagonal, say) part along one axis into a
+  column longer than the world and stick out past the walls, instead of spilling sideways. Bodies that can be
+  squeezed hide it. Needs a sideways escape for bodies held against a wall, or a packing pass that picks homes.
+- 📋 **SETL-7 egui adapter**: a `ve_dash` (or `ve_settle` feature) helper that owns a `World`, puts each panel's
+  `Ui` on its body, learns the content sizes a frame late and handles drag and resize, i.e. the sandbox's
+  `body_ui` as a reusable piece; then port tpm_mesh_dash from `masonry.rs` to it (P2605#7oct-1717).
+- 📋 **SETL-4 Polygon bodies**: hexagons and half hexagons on the edges mixed with rectangles
+  (P2620#9oct-1721): polygon contacts (parry2d is pure Rust), drawing and clipping to the shape, own hit test.
+- 📋 **SETL-5 Sizes chosen by the layout**: a body offers several sizes (auto / compact / normal / wide,
+  P2605#8oct-1205) and the layout picks the one that fits best, instead of only squeezing.
 
 ## Extracted from apps (`EXT`)
 

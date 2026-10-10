@@ -11,6 +11,7 @@ members = [
     "ve_macro",
     "ve_widget",
     "ve_dash",
+    "ve_settle",
     "ve_basics",
     "ve_theme",
     "ve_template",

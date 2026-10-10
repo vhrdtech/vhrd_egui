@@ -1,0 +1,21 @@
+[package]
+name = "ve_settle"
+description = "Physics layout: rectangles that settle under gravity, home springs, walls and contacts, no egui dependency"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+repository.workspace = true
+
+# The core has no dependencies at all; egui is only for the sandbox example and its tests.
+[dependencies]
+
+[dev-dependencies]
+egui.workspace = true
+eframe = { workspace = true, features = ["wgpu"] }
+egui_kittest = { workspace = true, features = ["wgpu", "eframe"] }
+ve_theme = { path = "../ve_theme", version = "0.15" }
+
+[[example]]
+name = "sandbox"
+path = "examples/sandbox/main.rs"
