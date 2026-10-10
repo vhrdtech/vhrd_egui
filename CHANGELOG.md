@@ -5,6 +5,8 @@ versions follow [Semantic Versioning](https://semver.org/). Feature IDs refer to
 
 ## [Unreleased]
 
+## [0.15.0] - 2026-10-10
+
 ### Added
 
 - ve_theme: `Palette::status` (`Status` of `Ramp`s: error, warning, ok, info, neutral, each solid, soft, line,
