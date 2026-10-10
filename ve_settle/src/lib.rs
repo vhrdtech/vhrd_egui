@@ -32,8 +32,9 @@
 //!
 //! How a step works, in order:
 //!
-//! 1. sizes follow the wanted size at [`Params::grow_speed`], and squeeze
-//!    is let go at [`Params::restore`];
+//! 1. sizes follow the wanted size at [`Params::grow_speed`], squeeze is
+//!    let go at [`Params::restore`], and vertex attraction moves edges
+//!    toward what they line up with;
 //! 2. gravity, the home spring and corner snapping (a corner within
 //!    [`Params::snap_range`] of another body's or the walls' corner is
 //!    pulled onto it) change the velocity, damping takes some of it, the
@@ -56,6 +57,13 @@
 //! (the [`Body::yielding`] one) slides out into the next row or column
 //! instead of all of them being crushed. The UI draws the plain rectangle.
 //!
+//! Vertex attraction ([`Params::attract_range`], [`World::pulls`]) resizes
+//! bodies a little so their edges line up: an edge within range of a
+//! neighbour's edge that ends at one of its corners goes into one line
+//! with it (two panels side by side, 5 points apart in height, end
+//! equal), and an edge just short of what it faces grows flush against
+//! it. [`Body::stretch`] is how much that added to the size.
+//!
 //! Limits: bodies are rectangles (other shapes, SETL-4), sizes are given,
 //! not chosen by the layout (SETL-5), and every pair is tested (fine for a
 //! dashboard's worth of bodies).
@@ -66,4 +74,4 @@ mod world;
 
 pub use geom::{Axis, Hit, MAX_VERTICES, Poly, Rect, Side, Vec2, sat};
 pub use params::{Params, Walls};
-pub use world::{Body, BodyDesc, BodyId, Contact, Snap, World};
+pub use world::{Body, BodyDesc, BodyId, Contact, Pull, Snap, World};

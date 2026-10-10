@@ -84,6 +84,15 @@ pub struct Params {
     /// What is left of a misalignment at rest is about the other pulls
     /// over this: gravity 600 against 1500 leaves 0.4 points.
     pub snap_stiffness: f32,
+    /// How near a vertex has to be to a vertex or an edge of another body,
+    /// or to a wall, to be pulled to line up with it, points (SETL-12). The
+    /// pull resizes the body. 0 turns vertex attraction off.
+    pub attract_range: f32,
+    /// How fast an edge closes in on what its vertices are pulled to, 1/s:
+    /// the share of the distance per second (the world stays awake until
+    /// about a hundredth of a point is left). 0 turns vertex attraction
+    /// off.
+    pub attract_strength: f32,
     /// Bulge of a body's pillow with no pressure on it, points: how far
     /// the middle of each edge stands out of the rectangle in the solver's
     /// eyes. 0 (the default) keeps a calm row lined up exactly.
@@ -157,6 +166,8 @@ impl Default for Params {
             glide_speed: 900.0,
             snap_range: 20.0,
             snap_stiffness: 1500.0,
+            attract_range: 16.0,
+            attract_strength: 12.0,
             bulge_rest: 0.0,
             bulge_from: 2.0,
             bulge_gain: 1.0,

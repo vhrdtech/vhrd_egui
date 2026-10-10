@@ -286,7 +286,7 @@ up and Packery's "others flow around the dragged one". No app uses it yet.
   usage, machine, grid) the size of real dash panels (250-450 wide, 120-400 tall), whose content grows in
   different directions (measured from the real egui content a frame late, as a dash would), a
   slider with a tooltip on every parameter, overlay layers (bodies with minimum size and id, force and velocity
-  arrows with contact dots, tension tint and percent, home spots, corner snaps, collision shapes, grid pitch), drag to move, corner handle to resize,
+  arrows with contact dots, tension tint and percent, home spots, corner snaps, collision shapes, grid pitch, vertex pulls), drag to move, corner handle to resize,
   add (button or double-click), remove, grow / shrink content by hand or by itself, pause and single-step.
   Scenes (user, 10 Oct 2026): *full*, the default, drops enough widgets to fill 1.8 windows, seeded a little
   tighter than they fit, with the bottom wall open, so the layout is tried under real pressure and runs past the
@@ -371,6 +371,36 @@ up and Packery's "others flow around the dragged one". No app uses it yet.
   not packed tight (10 rows where 8 would do): holes beside a panel that has another under it stay. Tests:
   `a_packed_field_gives_way_row_by_row_without_crushing` in `tests/pillow.rs`, the full-scene kittest checks no
   squeeze.
+- ✅ **SETL-12 Vertex attraction aligns sizes** (user, 10 Oct 2026, P2605#10oct-1727): a widget very close in size or
+  position to its neighbours resizes so their edges line up. Vertices pull on what is within `attract_range` (16),
+  and the pull moves the edges that meet at the vertex, not the body (`World::attract_pass`): the body is resized
+  within its minimum and maximum size (`Body::stretch_lo`, `stretch_hi`), at `attract_strength` (12, the share of
+  the distance per second). Two kinds of pull: *into line* with a neighbour's edge that ends near one of the edge's
+  vertices (panels side by side: their bottoms; stacked: their sides), and *flush* against an edge or a wall it
+  faces, which only grows into free room. Edges never go more than half the way per step, so two bodies meet in the
+  middle and one at its limit leaves the whole way to the other. Settled on the way:
+  (1) *it only fits a size between two things*: an axis is resized when both of its edges have something to line up
+  with; with one side free, moving would do, which is corner snapping's part, and what both edges want alike is a
+  move too (otherwise stretch and position are two answers to one question and leftovers of every transient stay).
+  (2) *the edge on gravity's side holds no stretch*: the body rests on it or hangs from its home by it, resizing
+  there only moves the body; it is what the edge across is fitted against. A body that hangs does not grow into
+  what lies under it (it would push itself up).
+  (3) *range is decided without the stretch* (`Body::rest_rect`), so a pull does not keep itself alive: when the
+  content changes and the sizes are 60 apart, the edges let go. An edge that is pulled stays so to 1.1 × the range
+  (no flicker at its edge).
+  (4) *pressure wins*: a body under load does not grow and gives growth back; growth flush against something that
+  pushes back is given back; bulged, lifted and dragged bodies neither pull nor are pulled to.
+  (5) *the pull is proportional only*: with a least speed the edges of a packed field hunted for ever (each one's
+  last points move its neighbours); the world stays awake until an edge moves less than a fifth of `rest_eps`, so
+  about 0.01 points are left.
+  Corner snapping now looks at the corners without stretch, so where a body goes does not depend on what it
+  stretched. Result in the full scene: rows end on one bottom line, the field still rests within
+  the old tests' limits, SETL-9/10/11 tests unchanged. Tests in `tests/attract.rs` (5 apart end equal,
+  60 apart stay, limits, column widths, wall and neighbour, letting go, off at 0, three in a row), kittest
+  `widgets_of_nearly_the_same_height_end_with_one_bottom_line`. Sandbox: "Vertex attraction" sliders, "Vertex
+  pulls" layer. Not done: pulling while dragging; a body with nothing on one side is not resized on that axis
+  (a lone panel 10 short of a wall stays); the top edge under gravity up never lines up by itself (the row above
+  does it with its bottoms).
 - ✅ **SETL-6 Pile sticks out though there is room beside it**: contacts parted two bodies along the axis of least
   overlap only, so rigid bodies piled on one spot (8 of them added on a diagonal) parted into a column longer than
   the world and stuck out past the walls. Fixed by the pillow (SETL-9): the jammed bodies bulge and spill sideways;

@@ -43,6 +43,19 @@ const YIELD_BULGE: f32 = 0.5;
 /// apart at least: off the tips, slanted edges let them come closer than
 /// the gap, never into each other.
 const RECT_FLOOR: f32 = 0.25;
+/// A stretch being let go that is down to this (points) is dropped
+/// (SETL-12): the pull is a share of the distance per second, which alone
+/// would never arrive.
+const ATTRACT_LANDS: f32 = 0.02;
+/// An edge that is pulled stays so up to this many times
+/// [`Params::attract_range`] (SETL-12).
+const ATTRACT_KEEPS: f32 = 1.1;
+/// An edge moved by vertex attraction keeps the world awake down to this
+/// share of [`Params::rest_eps`] per step (SETL-12).
+const ATTRACT_AWAKE: f32 = 0.2;
+/// A body whose edge on gravity's side is within the gap and this much
+/// (points) of a wall or a body rests on it (SETL-12).
+const RESTS_SLACK: f32 = 0.25;
 
 /// Names a body for as long as it lives; never reused within a world.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord)]
@@ -158,6 +171,24 @@ pub struct Body {
     /// (rigid, or at its minimum size), points; let go at
     /// [`Params::restore`] like squeeze.
     pub jam: Vec2,
+    /// How far vertex attraction (SETL-12) has moved the left and the top
+    /// edge outward, points (negative: inward): the body is that much
+    /// larger or smaller than its content wants, so its edges line up with
+    /// its neighbours'.
+    pub stretch_lo: Vec2,
+    /// The same for the right and the bottom edge.
+    pub stretch_hi: Vec2,
+    /// How far vertex attraction moved the middle in the last step: not
+    /// motion, so it gives no speed.
+    attract_shift: Vec2,
+    /// Which edges vertex attraction pulled in the last step, per axis:
+    /// [low, high].
+    caught: [[bool; 2]; 2],
+    /// How deep contacts found the left and the top edge in something
+    /// since the last attraction pass, points.
+    pressed_lo: Vec2,
+    /// The same for the right and the bottom edge.
+    pressed_hi: Vec2,
     drag_target: Vec2,
     /// How far slopes moved it sideways this step, points.
     slid: f32,
@@ -188,6 +219,21 @@ impl Body {
     /// UI draws the plain rectangle.
     pub fn shape(&self) -> Poly {
         Poly::pillow(&self.rect, self.bulge)
+    }
+
+    /// How much vertex attraction adds to the size on each axis (negative:
+    /// takes off), points (SETL-12).
+    pub fn stretch(&self) -> Vec2 {
+        self.stretch_lo + self.stretch_hi
+    }
+
+    /// Where it would be without vertex attraction: what captures are
+    /// decided on, so a pull never keeps itself alive.
+    fn rest_rect(&self) -> Rect {
+        Rect {
+            min: self.rect.min + self.stretch_lo,
+            max: self.rect.max - self.stretch_hi,
+        }
     }
 
     /// How much more it can be squeezed on `axis`.
@@ -232,6 +278,22 @@ pub struct Snap {
     pub grip: f32,
 }
 
+/// A vertex being pulled toward a vertex or an edge of another body, or a
+/// wall, in the last step (SETL-12, debug overlay). The pull moves the
+/// edges that meet at the vertex: it resizes the body.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct Pull {
+    /// The body whose vertex it is.
+    pub body: BodyId,
+    /// Where the vertex is.
+    pub from: Vec2,
+    /// Where it is pulled to; on an axis nothing pulls on, where it is.
+    pub to: Vec2,
+    /// How firmly: 1 (kept for the overlay, which draws snaps and pulls
+    /// alike).
+    pub grip: f32,
+}
+
 /// Bodies in a rectangle, stepped with a fixed time step.
 ///
 /// The same calls in the same order always give the same result, bit for
@@ -243,6 +305,7 @@ pub struct World {
     bodies: Vec<Body>,
     contacts: Vec<Contact>,
     snaps: Vec<Snap>,
+    pulls: Vec<Pull>,
     yielder: Option<BodyId>,
     /// How far the field ahead of the yielder may still shift this step.
     band_budget: f32,
@@ -263,6 +326,7 @@ impl World {
             bodies: Vec::new(),
             contacts: Vec::new(),
             snaps: Vec::new(),
+            pulls: Vec::new(),
             yielder: None,
             band_budget: 0.0,
             next_id: 1,
@@ -315,6 +379,12 @@ impl World {
         &self.snaps
     }
 
+    /// The vertices that were pulled toward a neighbour's vertex or edge,
+    /// or a wall, in the last step (SETL-12).
+    pub fn pulls(&self) -> &[Pull] {
+        &self.pulls
+    }
+
     /// The contacts of the last step.
     pub fn contacts(&self) -> &[Contact] {
         &self.contacts
@@ -347,6 +417,12 @@ impl World {
             slide_pull: Vec2::ZERO,
             bulge: Vec2::ZERO,
             jam: Vec2::ZERO,
+            stretch_lo: Vec2::ZERO,
+            stretch_hi: Vec2::ZERO,
+            attract_shift: Vec2::ZERO,
+            caught: [[false; 2]; 2],
+            pressed_lo: Vec2::ZERO,
+            pressed_hi: Vec2::ZERO,
             yielding: false,
             drag_target: desc.center,
             slid: 0.0,
@@ -551,6 +627,12 @@ impl World {
             home_moved = home_moved.max(resize(b, &p, dt));
         }
         self.pick_yielder();
+        // An edge still closing in keeps the world awake, and for longer
+        // than a moving body: the pull is a share of what is left, so the
+        // last tenth of a point is slow, and rest would freeze it there.
+        if self.attract_pass(dt) > p.rest_eps * ATTRACT_AWAKE {
+            home_moved = home_moved.max(p.rest_eps * 2.0);
+        }
         self.snap_pass();
         self.grid_pass();
         for b in &mut self.bodies {
@@ -602,7 +684,8 @@ impl World {
                 } else {
                     p.max_speed
                 };
-                b.vel = ((b.rect.center() - b.prev.center()) * (1.0 / dt)).clamp_length(limit);
+                let travelled = b.rect.center() - b.prev.center() - b.attract_shift;
+                b.vel = (travelled * (1.0 / dt)).clamp_length(limit);
             }
         }
         self.last_move = moved_free;
@@ -712,6 +795,10 @@ impl World {
             max: self.bounds.max - Vec2::splat(p.gap),
         };
         let damping = 2.0 * p.snap_stiffness.sqrt();
+        // Corners as they would be without vertex attraction (SETL-12):
+        // that one only resizes, and where a body goes must not depend on
+        // which of its edges it has stretched.
+        let rest: Vec<Rect> = self.bodies.iter().map(Body::rest_rect).collect();
         let hold: Vec<f32> = self
             .bodies
             .iter()
@@ -724,7 +811,7 @@ impl World {
             }
             let mut winner: Option<(Snap, Vec2)> = None;
             for ca in CORNERS {
-                let from = corner(&a.rect, ca);
+                let from = corner(&rest[i], ca);
                 // (distance, error, the other side's velocity, its hold)
                 let mut best: Option<(f32, Vec2, Vec2, f32)> = None;
                 let mut consider = |error: Vec2, vel: Vec2, hold: f32| {
@@ -746,7 +833,7 @@ impl World {
                         if cb == ca {
                             continue;
                         }
-                        let mut error = corner(&o.rect, cb) - from;
+                        let mut error = corner(&rest[j], cb) - from;
                         if cb.0 != ca.0 {
                             error.x -= if ca.0 { p.gap } else { -p.gap };
                         }
@@ -760,10 +847,11 @@ impl World {
                     let grip = (1.0 - dist / p.snap_range) * hold[i] * other_hold;
                     if winner.is_none_or(|(w, _)| grip > w.grip) {
                         let pull = (error * p.snap_stiffness + (vel - a.vel) * damping) * grip;
+                        let at = corner(&a.rect, ca);
                         let snap = Snap {
                             body: a.id,
-                            from,
-                            to: from + error,
+                            from: at,
+                            to: at + error,
                             grip,
                         };
                         winner = Some((snap, pull));
@@ -775,6 +863,299 @@ impl World {
                 self.bodies[i].snap_pull = pull;
             }
         }
+    }
+
+    /// Vertex attraction (SETL-12): the vertices of a free body pull on
+    /// what is within [`Params::attract_range`], and the pull moves the
+    /// edges that meet at the vertex, not the body: the body is resized,
+    /// within its minimum and maximum size, at
+    /// [`Params::attract_strength`]. An edge is pulled
+    ///
+    /// - into one line with a neighbour's edge that ends near one of its
+    ///   vertices (two panels side by side: their bottoms), following the
+    ///   mean of its two vertices' pulls, or else
+    /// - flush against what it faces (a body's edge or a wall, the gap
+    ///   kept), which only ever grows it into free room.
+    ///
+    /// An edge never goes more than half the way in a step, so two bodies
+    /// pulling on each other meet in the middle and one that cannot give
+    /// leaves the whole way to the other.
+    ///
+    /// It only fits a size between two things: an axis is resized when
+    /// both of its edges have something to line up with. With one side
+    /// free, moving the body would line it up, which is corner snapping's
+    /// part (SETL-8); and what both edges want alike is a move too. The
+    /// edge on gravity's side is what the body rests on (or hangs from its
+    /// home by): it holds no stretch and is what the edge across from it
+    /// is fitted against.
+    ///
+    /// What is in range is decided on where the bodies would be without
+    /// any stretch, so a pull does not keep itself alive: when the content
+    /// changes and the sizes are far apart again, the edges let go and
+    /// return. An edge under pressure does not grow, and gives back what
+    /// it grew.
+    ///
+    /// Returns the farthest it moved an edge.
+    fn attract_pass(&mut self, dt: f32) -> f32 {
+        let mut most_moved = 0.0f32;
+        self.pulls.clear();
+        let p = self.params;
+        let range = p.attract_range;
+        let on = range > 0.0 && p.attract_strength > 0.0;
+        let now: Vec<Rect> = self.bodies.iter().map(|b| b.rect).collect();
+        let rest: Vec<Rect> = self.bodies.iter().map(Body::rest_rect).collect();
+        // Dragged, lifted and pressed (bulged) bodies are on their way
+        // somewhere: they neither pull nor are pulled to.
+        let free: Vec<bool> = self
+            .bodies
+            .iter()
+            .map(|b| !b.dragged && !b.lifted && b.bulge.max_abs() <= YIELD_BULGE)
+            .collect();
+        let inner = Rect {
+            min: self.bounds.min + Vec2::splat(p.gap),
+            max: self.bounds.max - Vec2::splat(p.gap),
+        };
+        let toward = p.gravity_side.filter(|_| p.gravity > 0.0);
+        // How far an edge of body `i` is from the wall it faces and from
+        // the nearest body it faces (the gap kept), outward.
+        let room = |rects: &[Rect], i: usize, axis: Axis, high: bool| {
+            let (r, t) = (&rects[i], axis.other());
+            let wall = if !p.walls.has(axis_side(axis, high)) {
+                f32::INFINITY
+            } else if high {
+                inner.max[axis] - r.max[axis]
+            } else {
+                r.min[axis] - inner.min[axis]
+            };
+            let mut body = f32::INFINITY;
+            for (j, o) in rects.iter().enumerate() {
+                if j == i || !free[j] || o.min[t] >= r.max[t] || o.max[t] <= r.min[t] {
+                    continue;
+                }
+                if high && o.center()[axis] > r.center()[axis] {
+                    body = body.min(o.min[axis] - p.gap - r.max[axis]);
+                } else if !high && o.center()[axis] < r.center()[axis] {
+                    body = body.min(r.min[axis] - o.max[axis] - p.gap);
+                }
+            }
+            (wall, body)
+        };
+        for i in 0..self.bodies.len() {
+            // Per edge (axis, high end): how far it is pulled along the
+            // axis and how firmly, and whether that is into line with a
+            // neighbour's edge.
+            let mut edges: [[Option<(f32, f32)>; 2]; 2] = [[None; 2]; 2];
+            let mut lined = [[false; 2]; 2];
+            let mut held = [[false; 2]; 2];
+            if on && free[i] {
+                // Whether nothing on gravity's side holds the body up.
+                let mut hangs = false;
+                if let Some(side) = toward {
+                    let (axis, high) = (side.axis(), !side.is_low());
+                    held[axis as usize][high as usize] = true;
+                    let (wall, body) = room(&now, i, axis, high);
+                    hangs = wall.min(body) > RESTS_SLACK;
+                }
+                for axis in Axis::BOTH {
+                    for high in [false, true] {
+                        if held[axis as usize][high as usize] {
+                            continue;
+                        }
+                        // An edge that is pulled stays so a little beyond
+                        // the range, so one at its very edge does not
+                        // flicker.
+                        let reach = if self.bodies[i].caught[axis as usize][high as usize] {
+                            range * ATTRACT_KEEPS
+                        } else {
+                            range
+                        };
+                        let outward = if high { 1.0 } else { -1.0 };
+                        let (wall, body) = room(&now, i, axis, high);
+                        // Into line with a neighbour's edge on the same
+                        // side that ends where this one does, across the
+                        // gap: (errors, grips, vertices pulled).
+                        let mut line = (0.0f32, 0.0f32, 0u32);
+                        for t_high in [false, true] {
+                            let ca = corner_of(axis, high, t_high);
+                            let cb = corner_of(axis, high, !t_high);
+                            let v_rest = corner(&rest[i], ca);
+                            let mut best: Option<(f32, f32)> = None;
+                            for j in 0..self.bodies.len() {
+                                if j == i || !free[j] {
+                                    continue;
+                                }
+                                let to = gapped(corner(&rest[j], cb), ca, cb, p.gap);
+                                let dist = (to - v_rest).length();
+                                if dist < reach && best.is_none_or(|b| dist < b.0) {
+                                    let to = gapped(corner(&now[j], cb), ca, cb, p.gap);
+                                    best = Some((dist, (to - corner(&now[i], ca))[axis]));
+                                }
+                            }
+                            if let Some((_, error)) = best {
+                                line = (line.0 + error, line.1 + 1.0, line.2 + 1);
+                            }
+                        }
+                        let edge = &mut edges[axis as usize][high as usize];
+                        if line.2 > 0 {
+                            let n = line.2 as f32;
+                            // A wall does not give way; nor, for a body
+                            // that hangs from its home, does what lies
+                            // under it: growing into that would only push
+                            // the body itself back.
+                            let mut most = wall.max(0.0);
+                            if hangs && toward == Some(axis_side(axis, !high)) {
+                                most = most.min(body.max(0.0));
+                            }
+                            let out = (line.0 / n * outward).min(most);
+                            *edge = Some((out * outward, line.1 / n));
+                            lined[axis as usize][high as usize] = true;
+                            continue;
+                        }
+                        // Flush against what it faces: only ever grows the
+                        // body into free room. Where it is in the way,
+                        // contacts move it, and the pull just gives back
+                        // what it grew.
+                        let (wall_rest, body_rest) = room(&rest, i, axis, high);
+                        let dist = wall_rest.min(body_rest).abs();
+                        if dist < reach {
+                            let b = &self.bodies[i];
+                            let grown = if high {
+                                b.stretch_hi[axis]
+                            } else {
+                                b.stretch_lo[axis]
+                            };
+                            let out = wall.min(body).max(-grown.max(0.0));
+                            *edge = Some((out * outward, 1.0));
+                        }
+                    }
+                }
+                for ca in CORNERS {
+                    let from = corner(&now[i], ca);
+                    let mut pull = Pull {
+                        body: self.bodies[i].id,
+                        from,
+                        to: from,
+                        grip: 0.0,
+                    };
+                    for axis in Axis::BOTH {
+                        if let Some((error, grip)) =
+                            edges[axis as usize][corner_high(ca, axis) as usize]
+                        {
+                            pull.to[axis] += error;
+                            pull.grip = pull.grip.max(grip);
+                        }
+                    }
+                    if pull.grip > 0.0 {
+                        self.pulls.push(pull);
+                    }
+                }
+            }
+            let b = &mut self.bodies[i];
+            b.caught = edges.map(|axis| axis.map(|edge| edge.is_some()));
+            let mut shift = Vec2::ZERO;
+            for axis in Axis::BOTH {
+                // Pressed along this axis there is no room to grow into.
+                let load = if p.free_axis() == Some(axis) {
+                    0.0
+                } else {
+                    b.load()[axis]
+                };
+                let calm = if load <= 0.0 {
+                    1.0
+                } else {
+                    (1.0 - load / p.bulge_from.max(1e-3)).clamp(0.0, 1.0)
+                };
+                // A pull is a share of the distance per second and nothing
+                // else: at a steady speed the edges of a packed field
+                // would hunt for ever, each one's last points moving its
+                // neighbours. Never more than half the distance in a step,
+                // so two edges closing in on each other meet.
+                let pace = |d: f32| d * (p.attract_strength * dt).min(0.5);
+                let held = held[axis as usize];
+                let stretch = [b.stretch_lo[axis], b.stretch_hi[axis]];
+                // Where the stretch has each edge, along the axis.
+                let at = [-stretch[0], stretch[1]];
+                let mut pulls = edges[axis as usize].map(|e| e.unwrap_or((0.0, 0.0)));
+                // A size is fitted between two things: with one side free,
+                // moving the body would do.
+                let anchored = |e: usize| held[e] || pulls[e].1 > 0.0;
+                if !(anchored(0) && anchored(1)) {
+                    pulls = [(0.0, 0.0); 2];
+                }
+                // What both edges want alike is a move too.
+                let both = common(pulls.map(|(want, grip)| want * grip));
+                // How far each edge is to go along the axis ([low, high]):
+                // to where it is pulled as far as the pull grips, and back
+                // to no stretch as far as it does not.
+                let mut go = [0.0f32; 2];
+                for e in 0..2 {
+                    let (want, grip) = pulls[e];
+                    go[e] = pace(want * grip - both - (1.0 - grip) * at[e]);
+                    // Letting go lands on 0 once it is nearly there.
+                    if grip == 0.0 && (at[e] + go[e]).abs() < ATTRACT_LANDS {
+                        go[e] = -at[e];
+                    }
+                }
+                // One edge grown and the other shrunk by as much is the body
+                // moved, not resized: given back.
+                let back = pace(common(at));
+                for (e, go) in go.iter_mut().enumerate() {
+                    let outward = if e == 0 { -1.0 } else { 1.0 };
+                    let s = stretch[e];
+                    let mut d = (*go - back) * outward;
+                    if d > 0.0 {
+                        d *= calm;
+                    }
+                    if s + d > 0.0 && calm < 1.0 {
+                        d -= ((1.0 - calm) * pace(s).abs()).min(s + d);
+                    }
+                    // Grown flush against something that now pushes back
+                    // (it moved, or the body was pressed onto it): the room
+                    // is gone, the growth is given back by as much.
+                    if !lined[axis as usize][e] {
+                        let pushed = if e == 0 {
+                            b.pressed_lo[axis]
+                        } else {
+                            b.pressed_hi[axis]
+                        };
+                        d -= pushed.min((s + d).max(0.0));
+                    }
+                    let limit = range.max(s.abs());
+                    let size = b.rect.size()[axis];
+                    let smallest = b.min_size[axis].min(size);
+                    let largest = b.max_size[axis].max(size);
+                    // Exact where no limit binds, so a stretch let go ends at 0.
+                    let mut to = (s + d).clamp(-limit, limit);
+                    if size + (to - s) < smallest {
+                        to = s + (smallest - size);
+                    } else if size + (to - s) > largest {
+                        to = s + (largest - size);
+                    }
+                    let d = to - s;
+                    if d == 0.0 {
+                        continue;
+                    }
+                    most_moved = most_moved.max(d.abs());
+                    if e == 0 {
+                        b.stretch_lo[axis] = to;
+                        b.rect.min[axis] -= d;
+                    } else {
+                        b.stretch_hi[axis] = to;
+                        b.rect.max[axis] += d;
+                    }
+                    shift[axis] += d * 0.5 * outward;
+                }
+            }
+            // The home is of the middle: it goes along, so the other edges
+            // stay where they are.
+            b.attract_shift = shift;
+            b.pressed_lo = Vec2::ZERO;
+            b.pressed_hi = Vec2::ZERO;
+            if let Some(home) = &mut b.home {
+                *home += shift;
+            }
+        }
+        most_moved
     }
 
     /// The grid (SETL-10): along every contact, the two bodies' edges are
@@ -897,6 +1278,11 @@ impl World {
                 }
                 worst = worst.max(depth);
                 b.pressure += depth;
+                if side.is_low() {
+                    b.pressed_lo[axis] += depth;
+                } else {
+                    b.pressed_hi[axis] += depth;
+                }
                 if record {
                     self.contacts.push(Contact {
                         a: b.id,
@@ -1004,6 +1390,8 @@ impl World {
                 }
                 let a_low = hit.normal[axis] > 0.0;
                 let (lo, hi) = if a_low { (a, b) } else { (b, a) };
+                lo.pressed_hi[axis] += depth;
+                hi.pressed_lo[axis] += depth;
                 let (mut s_lo, mut s_hi) = (0.0, 0.0);
                 if let Some(share) = squeeze.filter(|_| Some(axis) != free_axis) {
                     let w_lo = if lo.give(axis) > 0.0 { share } else { 0.0 };
@@ -1136,12 +1524,33 @@ fn resize(b: &mut Body, p: &Params, dt: f32) -> f32 {
         if squeeze < 1e-4 {
             squeeze = 0.0;
         }
-        b.squeeze[axis] = squeeze.min((b.natural[axis] - b.min_size[axis]).max(0.0));
+        // Squeezed and stretched at once: the squeeze takes back what
+        // vertex attraction added first.
+        for stretch in [&mut b.stretch_lo, &mut b.stretch_hi] {
+            let back = stretch[axis].clamp(0.0, squeeze);
+            stretch[axis] -= back;
+            squeeze -= back;
+        }
+        let room = b.natural[axis] + b.stretch()[axis] - b.min_size[axis];
+        b.squeeze[axis] = squeeze.min(room.max(0.0));
+        // The content changed size: the stretch stays within the limits.
+        let fitted = (b.natural[axis] - b.squeeze[axis] + b.stretch()[axis])
+            .clamp(b.min_size[axis], b.max_size[axis].max(b.min_size[axis]));
+        let mut excess = b.natural[axis] - b.squeeze[axis] + b.stretch()[axis] - fitted;
+        for stretch in [&mut b.stretch_lo, &mut b.stretch_hi] {
+            let take = if excess > 0.0 {
+                stretch[axis].clamp(0.0, excess)
+            } else {
+                stretch[axis].clamp(excess, 0.0)
+            };
+            stretch[axis] -= take;
+            excess -= take;
+        }
         b.jam[axis] *= keep;
         if b.jam[axis] < 1e-4 {
             b.jam[axis] = 0.0;
         }
-        let size = (b.natural[axis] - b.squeeze[axis]).max(0.0);
+        let size = (b.natural[axis] - b.squeeze[axis] + b.stretch()[axis]).max(0.0);
         let d = size - b.rect.size()[axis];
         // Below this the size is left alone, so a body at rest stays bit
         // for bit where it is.
@@ -1328,6 +1737,57 @@ fn corner(r: &Rect, (high_x, high_y): (bool, bool)) -> Vec2 {
         if high_x { r.max.x } else { r.min.x },
         if high_y { r.max.y } else { r.min.y },
     )
+}
+
+/// The corner at the `high` end of `axis` and the `t_high` end of the
+/// other axis.
+fn corner_of(axis: Axis, high: bool, t_high: bool) -> (bool, bool) {
+    match axis {
+        Axis::X => (high, t_high),
+        Axis::Y => (t_high, high),
+    }
+}
+
+/// What two moves along an axis have in common: the smaller one when they
+/// go the same way, nothing otherwise.
+fn common([a, b]: [f32; 2]) -> f32 {
+    if a * b > 0.0 {
+        a.signum() * a.abs().min(b.abs())
+    } else {
+        0.0
+    }
+}
+
+/// Whether a corner is at the high end of `axis`.
+fn corner_high((high_x, high_y): (bool, bool), axis: Axis) -> bool {
+    match axis {
+        Axis::X => high_x,
+        Axis::Y => high_y,
+    }
+}
+
+/// The side at one end of `axis`.
+fn axis_side(axis: Axis, high: bool) -> Side {
+    match (axis, high) {
+        (Axis::X, false) => Side::Left,
+        (Axis::X, true) => Side::Right,
+        (Axis::Y, false) => Side::Top,
+        (Axis::Y, true) => Side::Bottom,
+    }
+}
+
+/// Where corner `ca` of a body lines up with corner `cb` (at `at`) of
+/// another: on it, but the gap away on each axis the two bodies face each
+/// other on.
+fn gapped(at: Vec2, ca: (bool, bool), cb: (bool, bool), gap: f32) -> Vec2 {
+    let mut to = at;
+    if cb.0 != ca.0 {
+        to.x -= if ca.0 { gap } else { -gap };
+    }
+    if cb.1 != ca.1 {
+        to.y -= if ca.1 { gap } else { -gap };
+    }
+    to
 }
 
 /// The two walls that meet at a corner.

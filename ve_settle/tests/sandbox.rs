@@ -502,6 +502,84 @@ fn a_row_overfilled_by_the_window_sends_one_widget_to_the_next_row() {
 }
 
 #[test]
+fn widgets_of_nearly_the_same_height_end_with_one_bottom_line() {
+    let (mut h, mut watch) = sandbox();
+    // Two widgets side by side under the top wall, 5 points apart in height.
+    let ids: Vec<_> = h.state().world.bodies().iter().map(|b| b.id).collect();
+    for id in ids {
+        let at = center(&h, id);
+        click_at(&mut h, &mut watch, at);
+        click_button(&mut h, &mut watch, "Remove selected");
+    }
+    let arena = h.state().arena;
+    let gap = h.state().world.params().gap;
+    let mut pair = Vec::new();
+    for (i, height) in [180.0, 185.0].into_iter().enumerate() {
+        let size = vec2(280.0, height);
+        let at = arena.min
+            + vec2(
+                gap + size.x / 2.0 + i as f32 * (size.x + gap),
+                gap + height / 2.0,
+            );
+        let id = h.state_mut().add_widget(Some(at));
+        let item = h.state_mut().items.iter_mut().find(|item| item.id == id);
+        item.expect("just added").user_size = Some(size);
+        pair.push(id);
+    }
+    watch.rest(&mut h);
+    let rects = |h: &App| {
+        let world = &h.state().world;
+        [
+            world.body(pair[0]).unwrap().rect,
+            world.body(pair[1]).unwrap().rect,
+        ]
+    };
+    let [a, b] = rects(&h);
+    assert!((a.min.y - b.min.y).abs() < 0.1, "one row: {a:?} {b:?}");
+    assert!(
+        (a.max.y - b.max.y).abs() < 0.1,
+        "bottoms flush: {a:?} {b:?}"
+    );
+    assert!(
+        (a.size().y - 182.5).abs() < 1.0,
+        "they met in the middle: {a:?}"
+    );
+    assert!(
+        !h.state().world.pulls().is_empty(),
+        "the overlay has pulls to show"
+    );
+
+    // 60 points apart they are left as they are.
+    let item = h
+        .state_mut()
+        .items
+        .iter_mut()
+        .find(|item| item.id == pair[1]);
+    item.expect("there").user_size = Some(vec2(280.0, 240.0));
+    watch.rest(&mut h);
+    let [a, b] = rects(&h);
+    assert!((a.size().y - 180.0).abs() < 0.1, "{a:?}");
+    assert!((b.size().y - 240.0).abs() < 0.1, "{b:?}");
+
+    // Range 0 (the slider's left end) turns it off, and the layer can be switched.
+    let item = h
+        .state_mut()
+        .items
+        .iter_mut()
+        .find(|item| item.id == pair[1]);
+    item.expect("there").user_size = Some(vec2(280.0, 185.0));
+    let mut params = *h.state().world.params();
+    params.attract_range = 0.0;
+    h.state_mut().world.set_params(params);
+    watch.rest(&mut h);
+    let [a, b] = rects(&h);
+    assert!((b.max.y - a.max.y - 5.0).abs() < 0.1, "{a:?} {b:?}");
+    h.get_by_label("Vertex pulls").click();
+    watch.frame(&mut h);
+    assert!(!h.state().overlay.pulls);
+}
+
+#[test]
 fn the_default_scene_fills_the_width_and_runs_past_the_bottom() {
     let h: App = Harness::builder().build_eframe(|cc| Sandbox::new(cc));
     assert_eq!(

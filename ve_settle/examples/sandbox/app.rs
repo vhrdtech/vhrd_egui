@@ -213,6 +213,9 @@ pub struct Overlay {
     pub shapes: bool,
     /// Pitch marks along every edge and the walls (SETL-10).
     pub grid: bool,
+    /// Vertices pulled to line up with a neighbour or a wall, and the
+    /// edges that pull has moved (SETL-12).
+    pub pulls: bool,
 }
 
 /// The sandbox app state.
@@ -283,6 +286,7 @@ impl Sandbox {
                 snaps: true,
                 shapes: true,
                 grid: true,
+                pulls: true,
             },
             auto: false,
             rehome_on_drop: true,
@@ -610,6 +614,8 @@ impl Sandbox {
             .on_hover_text("The shape the solver sees where it differs from the rectangle: a pressed widget's edges bulge in the middle (a pillow), with its bulge in points. The one that gives way and slides out of its row or column is drawn thicker and marked \"yields\". Calm widgets are plain rectangles.");
         ui.checkbox(&mut self.overlay.grid, "Grid pitch")
             .on_hover_text("Ticks every grid pitch along each widget's edges, from its top left corner, and along the walls from their corner. Touching widgets are pulled to line their ticks up (when grid stiffness is above 0).");
+        ui.checkbox(&mut self.overlay.pulls, "Vertex pulls")
+            .on_hover_text("Vertex attraction at work: an arrow from every corner that is pulled to where it is pulled (a square: it is there), and for every edge the pull has moved a line where the edge would be without it, with the points it grew (+) or shrank (-).");
 
         self.param_sliders(ui);
     }
@@ -736,6 +742,25 @@ impl Sandbox {
             &mut p.snap_stiffness,
             0.0..=6000.0,
             "How hard a corner is pulled into line, 1/s² (critically damped). What is left of a misalignment at rest is about the other pulls over this: gravity 600 against 1500 leaves 0.4 points.",
+        );
+
+        ui.section_header(
+            "Vertex attraction",
+            "Corners pull on nearby corners and edges of other widgets and on the walls, and the pull resizes the widget: panels of nearly the same size end with flush edges, small gaps are filled.",
+        );
+        knob(
+            ui,
+            "attract range",
+            &mut p.attract_range,
+            0.0..=80.0,
+            "How near an edge has to be to what it could line up with (a neighbour's edge that ends at one of its corners, an edge or a wall it faces) to be pulled there, points. Also the most an edge is moved. 0 turns vertex attraction off.",
+        );
+        knob(
+            ui,
+            "attract strength",
+            &mut p.attract_strength,
+            0.0..=60.0,
+            "How fast an edge closes in on what it is pulled to: the share of the distance per second, 1/s. 0 turns vertex attraction off.",
         );
 
         ui.section_header(
@@ -1128,6 +1153,9 @@ impl Sandbox {
         if self.overlay.grid {
             self.paint_pitch(&painter, tokens);
         }
+        if self.overlay.pulls {
+            self.paint_pulls(&painter, tokens, &font);
+        }
         if self.overlay.snaps {
             let color = c.cat[3];
             for snap in self.world.snaps() {
@@ -1172,6 +1200,65 @@ impl Sandbox {
                 font.clone(),
                 color,
             );
+        }
+    }
+
+    /// Vertex attraction (SETL-12): where each pulled corner is going, and
+    /// where the edges it has moved would be without it.
+    fn paint_pulls(&self, painter: &egui::Painter, tokens: &Tokens, font: &FontId) {
+        let color = tokens.colors.status.ok.solid;
+        let stroke = Stroke::new(tokens.stroke.medium, color);
+        for pull in self.world.pulls() {
+            let (from, to) = (self.screen_pos(pull.from), self.screen_pos(pull.to));
+            if (to - from).length() > 0.5 {
+                painter.arrow(from, to - from, stroke);
+            } else {
+                painter.rect_filled(
+                    egui::Rect::from_center_size(from, vec2(5.0, 5.0)),
+                    0.0,
+                    color,
+                );
+            }
+        }
+        let thin = Stroke::new(tokens.stroke.thin, color);
+        for body in self.world.bodies() {
+            let r = self.screen_rect(body.rect);
+            // (how far the edge was moved outward, the edge without it, where the number goes)
+            let edges = [
+                (
+                    body.stretch_lo.x,
+                    [r.left_top(), r.left_bottom()],
+                    vec2(1.0, 0.0),
+                    Align2::LEFT_CENTER,
+                ),
+                (
+                    body.stretch_hi.x,
+                    [r.right_top(), r.right_bottom()],
+                    vec2(-1.0, 0.0),
+                    Align2::RIGHT_CENTER,
+                ),
+                (
+                    body.stretch_lo.y,
+                    [r.left_top(), r.right_top()],
+                    vec2(0.0, 1.0),
+                    Align2::CENTER_TOP,
+                ),
+                (
+                    body.stretch_hi.y,
+                    [r.left_bottom(), r.right_bottom()],
+                    vec2(0.0, -1.0),
+                    Align2::CENTER_BOTTOM,
+                ),
+            ];
+            for (moved, [a, b], inward, align) in edges {
+                if moved.abs() < 0.3 {
+                    continue;
+                }
+                let back = inward * moved;
+                painter.line_segment([a + back, b + back], thin);
+                let middle = a + (b - a) * 0.5 + inward * 3.0;
+                painter.text(middle, align, format!("{moved:+.0}"), font.clone(), color);
+            }
         }
     }
 

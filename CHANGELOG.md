@@ -5,6 +5,22 @@ versions follow [Semantic Versioning](https://semver.org/). Feature IDs refer to
 
 ## [Unreleased]
 
+### Added
+
+- ve_settle: vertex attraction: a body's vertices pull on nearby vertices and edges of other bodies and on the
+  walls, and the pull resizes the body (within its minimum and maximum size) instead of moving it, so panels of
+  nearly the same size end with flush edges and small gaps are filled: two panels side by side 5 points apart in
+  height end equal, 60 apart stay as they are. `Params::attract_range` (16) and `attract_strength` (12), on by
+  default; `Body::stretch_lo`, `stretch_hi`, `stretch()`, `World::pulls()`, `Pull` (SETL-12).
+- ve_settle sandbox: a "Vertex attraction" slider section (range, strength) and a "Vertex pulls" overlay layer
+  (arrows from pulled corners, the edge without its stretch, the points it grew or shrank) (SETL-12).
+
+### Changed
+
+- ve_settle: with the defaults, panels now rest up to `attract_range` larger or smaller than their content wants
+  where that lines them up; `attract_range` 0 gives the old sizes. Corner snapping (SETL-8) acts on the corners a
+  body would have without that stretch (SETL-12).
+
 ## [0.17.0] - 2026-10-10
 
 ### Added
