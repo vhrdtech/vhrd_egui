@@ -102,7 +102,8 @@ fn sandbox_with(scene: Scene) -> (App, Watch) {
     h.step();
     let mut watch = Watch::new(&h);
     // The full scene drops 30 widgets at once, packed tighter than they
-    // fit; a dense field rests in about 6 s (SETL-11).
+    // fit; the field gives way row by row and rests in about 6.5 s
+    // (SETL-11).
     let limit = match scene {
         Scene::Few => SETTLE_FRAMES,
         Scene::Full => SETTLE_FRAMES * 2,
@@ -520,6 +521,14 @@ fn the_default_scene_fills_the_width_and_runs_past_the_bottom() {
     );
     assert!(world.bodies().iter().all(|b| !b.lifted));
     assert!(!world.params().walls.bottom, "the bottom is open");
+    // The packed field gives way row by row: nobody stays squeezed (SETL-11).
+    for b in world.bodies() {
+        assert!(
+            b.tension() < 0.01,
+            "squeezed {:.0} %: {b:?}",
+            b.tension() * 100.0
+        );
+    }
     // Past the bottom of the window, and across the whole width.
     let lowest = world
         .bodies()
@@ -581,4 +590,59 @@ fn the_default_scene_fills_the_width_and_runs_past_the_bottom() {
     assert!(arena.contains(at), "on screen after scrolling: {at:?}");
     click_at(&mut h, &mut watch, at);
     assert_eq!(h.state().selected, Some(low));
+}
+
+#[test]
+fn the_full_scene_is_full_from_the_first_frame_and_after_the_window_grows() {
+    let full = |h: &App| {
+        let (arena, world) = (h.state().arena, &h.state().world);
+        let lowest = world
+            .bodies()
+            .iter()
+            .map(|b| b.rect.max.y)
+            .fold(0.0, f32::max);
+        let right = world
+            .bodies()
+            .iter()
+            .map(|b| b.rect.max.x)
+            .fold(0.0, f32::max);
+        (
+            lowest > arena.max.y,
+            right > arena.max.x - 300.0,
+            world.bodies().len(),
+        )
+    };
+    // The first frame already shows the screen filled, running past the bottom.
+    let mut h: App = Harness::builder()
+        .with_size(vec2(1600.0, 1000.0))
+        .with_step_dt(1.0 / FPS)
+        .build_eframe(|cc| Sandbox::new(cc));
+    h.step();
+    let (past_bottom, across, n) = full(&h);
+    assert!(past_bottom && across && n >= 20, "frame 1: {n} widgets");
+
+    // A window that starts tiny and is then sized up (a tiling window
+    // manager does that) ends up just as full.
+    let mut h: App = Harness::builder()
+        .with_size(vec2(400.0, 200.0))
+        .with_step_dt(1.0 / FPS)
+        .build_eframe(|cc| Sandbox::new(cc));
+    h.step();
+    assert_eq!(h.state().world.bodies().len(), 0, "not seeded while tiny");
+    h.set_size(vec2(1600.0, 1000.0));
+    h.step();
+    h.step();
+    let (past_bottom, across, n) = full(&h);
+    assert!(
+        past_bottom && across && n >= 20,
+        "after sizing up: {n} widgets"
+    );
+    h.set_size(vec2(2400.0, 1400.0));
+    h.step();
+    h.step();
+    let (past_bottom, across, more) = full(&h);
+    assert!(
+        past_bottom && across && more > n,
+        "a bigger window gets more: {more}"
+    );
 }

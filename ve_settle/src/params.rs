@@ -125,6 +125,23 @@ pub struct Params {
     pub dt: f32,
 }
 
+impl Params {
+    /// Gravity's axis when the wall across from gravity's side is open (a
+    /// dash running past the bottom): nothing holds the bodies on that
+    /// axis, so what the solver leaves of a tall stack there is neither
+    /// squeezed nor felt as pressure; the stack settles by moving.
+    pub fn free_axis(&self) -> Option<crate::geom::Axis> {
+        let side = self.gravity_side?;
+        let behind = match side {
+            Side::Top => Side::Bottom,
+            Side::Bottom => Side::Top,
+            Side::Left => Side::Right,
+            Side::Right => Side::Left,
+        };
+        (!self.walls.has(behind)).then(|| side.axis())
+    }
+}
+
 impl Default for Params {
     fn default() -> Self {
         Self {

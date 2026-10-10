@@ -31,6 +31,12 @@ const SLIDE_STIFFNESS: f32 = 400.0;
 /// gravity's default): with the default damping it slides off at about
 /// 250 points/s, a glide, not a jump.
 const SLIDE_MAX: f32 = 2400.0;
+/// Bodies whose leading edge is within this share of the row's body size
+/// behind it belong to the row the yielder runs into (SETL-11).
+const ROW_SLACK: f32 = 0.25;
+/// Bodies whose middles are this close along gravity count as level when
+/// picking the yielder, points.
+const YIELD_ROW: f32 = 40.0;
 /// A body bulged more than this (points) can be the one that gives way.
 const YIELD_BULGE: f32 = 0.5;
 /// The share of [`Params::gap`] two bulged bodies' rectangles are kept
@@ -238,6 +244,8 @@ pub struct World {
     contacts: Vec<Contact>,
     snaps: Vec<Snap>,
     yielder: Option<BodyId>,
+    /// How far the field ahead of the yielder may still shift this step.
+    band_budget: f32,
     next_id: u64,
     at_rest: bool,
     calm: u32,
@@ -256,6 +264,7 @@ impl World {
             contacts: Vec::new(),
             snaps: Vec::new(),
             yielder: None,
+            band_budget: 0.0,
             next_id: 1,
             at_rest: false,
             calm: 0,
@@ -529,6 +538,7 @@ impl World {
         let p = self.params;
         let dt = p.dt.max(1e-4);
         self.contacts.clear();
+        self.band_budget = p.glide_speed * dt * 0.5;
         let mut home_moved = 0.0f32;
 
         for b in &mut self.bodies {
@@ -621,14 +631,29 @@ impl World {
                 b.bulge.x.max(b.bulge.y)
             }
         };
-        // The most bulged, the newest on a tie.
+        let most = self
+            .bodies
+            .iter()
+            .map(bulge)
+            .filter(|&b| b > YIELD_BULGE)
+            .fold(0.0, f32::max);
+        // Of those bulged near the most, the one nearest the side gravity
+        // pulls to goes first (the newest on a tie): a full field gives way
+        // from the top down, so each row's overflow drops into the row
+        // after it and the rows below make room, instead of a lower row's
+        // overflow being carried down again by the rows above.
+        let toward = self.params.gravity_side.map_or(Vec2::ZERO, |s| s.dir());
         let mut best: Option<&Body> = None;
-        for b in self.bodies.iter().filter(|b| bulge(b) > YIELD_BULGE) {
-            if best.is_none_or(|w| bulge(b) >= bulge(w)) {
+        for b in self
+            .bodies
+            .iter()
+            .filter(|b| bulge(b) > YIELD_BULGE && bulge(b) * 2.0 >= most)
+        {
+            let ahead = |b: &Body| (b.rect.center().dot(toward) / YIELD_ROW).round();
+            if best.is_none_or(|w| ahead(b) >= ahead(w)) {
                 best = Some(b);
             }
         }
-        let most = best.map_or(0.0, bulge);
         // The one already giving way keeps at it while it is bulged and
         // not far less than the most bulged one.
         let keep = self.yielder.filter(|&id| {
@@ -882,7 +907,7 @@ impl World {
                     });
                 }
                 let mut squeezed = 0.0;
-                if let Some(share) = squeeze {
+                if let Some(share) = squeeze.filter(|_| Some(axis) != self.params.free_axis()) {
                     squeezed = (depth * share / (1.0 + share)).min(b.give(axis));
                     let felt = share.max(JAM_SHARE);
                     b.jam[axis] += (depth * felt / (1.0 + felt) - squeezed).max(0.0);
@@ -912,6 +937,13 @@ impl World {
         let gap = self.params.gap;
         let glide = self.params.glide_speed * dt;
         let prefer = self.yield_dir();
+        let free_axis = self.params.free_axis();
+        let away_axis = prefer.main_axis();
+        let mut away = Vec2::ZERO;
+        away[away_axis] = prefer[away_axis].signum();
+        // The field ahead of the yielder: how deep it is in it, and where
+        // the row it runs into begins.
+        let mut band: Option<(f32, f32)> = None;
         let mut worst = 0.0f32;
         for i in 0..self.bodies.len() {
             for j in i + 1..self.bodies.len() {
@@ -933,6 +965,25 @@ impl World {
                 worst = worst.max(depth);
                 a.pressure += depth;
                 b.pressure += depth;
+                // The yielder, pressed out of a full row, runs into the row
+                // ahead: that row and everything beyond it shift on
+                // together, instead of the yielder wedging into a row that
+                // is full as well (SETL-11).
+                if self.band_budget > 0.0 && axis == away_axis && a.yielding != b.yielding {
+                    let (y, o, ahead) = if a.yielding {
+                        (&*a, &*b, hit.normal)
+                    } else {
+                        (&*b, &*a, -hit.normal)
+                    };
+                    if ahead.dot(away) > 0.5 && y.bulge[away_axis.other()] > YIELD_BULGE {
+                        let front =
+                            leading_edge(&o.rect, away) - ROW_SLACK * o.rect.size()[away_axis];
+                        band = Some(
+                            band.map_or((depth, front), |(d, f)| (d.max(depth), f.min(front))),
+                        );
+                        continue;
+                    }
+                }
                 if record {
                     self.contacts.push(Contact {
                         a: a.id,
@@ -954,7 +1005,7 @@ impl World {
                 let a_low = hit.normal[axis] > 0.0;
                 let (lo, hi) = if a_low { (a, b) } else { (b, a) };
                 let (mut s_lo, mut s_hi) = (0.0, 0.0);
-                if let Some(share) = squeeze {
+                if let Some(share) = squeeze.filter(|_| Some(axis) != free_axis) {
                     let w_lo = if lo.give(axis) > 0.0 { share } else { 0.0 };
                     let w_hi = if hi.give(axis) > 0.0 { share } else { 0.0 };
                     let total = 2.0 + w_lo + w_hi;
@@ -985,6 +1036,17 @@ impl World {
                 b.shift(straight + slide_b);
             }
         }
+        if let Some((depth, front)) = band {
+            let d = depth.min(self.band_budget);
+            self.band_budget -= d;
+            for o in &mut self.bodies {
+                if !o.dragged && !o.yielding && leading_edge(&o.rect, away) >= front {
+                    o.shift(away * d);
+                    // Moved along by the field: a glide, no speed kept.
+                    o.slid += d;
+                }
+            }
+        }
         worst
     }
 
@@ -1005,6 +1067,16 @@ impl World {
                 self.bodies[i].lifted = false;
             }
         }
+    }
+}
+
+/// How far along `away` (a unit axis vector) a rectangle's edge facing
+/// back from it lies, signed so that farther along is larger.
+fn leading_edge(r: &Rect, away: Vec2) -> f32 {
+    if away.x + away.y > 0.0 {
+        r.min.dot(away)
+    } else {
+        r.max.dot(away)
     }
 }
 
@@ -1080,7 +1152,14 @@ fn resize(b: &mut Body, p: &Params, dt: f32) -> f32 {
         // The edges across `axis` bulge: they are the ones pressed.
         let edge = b.rect.size()[axis.other()];
         let cap = p.bulge_max.min(edge * 0.25).max(0.0);
-        let load = (b.load()[axis] - p.bulge_from).max(0.0);
+        // With the wall across from gravity's side open, nothing holds the
+        // field on gravity's axis: what the solver leaves of a tall stack
+        // there is no pressure.
+        let load = if p.free_axis() == Some(axis) {
+            0.0
+        } else {
+            (b.load()[axis] - p.bulge_from).max(0.0)
+        };
         let want = (p.bulge_rest + p.bulge_gain * load).clamp(0.0, cap);
         let step = p.bulge_speed.max(0.0) * dt;
         let bulge = b.bulge[axis] + (want - b.bulge[axis]).clamp(-step, step);
@@ -1130,7 +1209,19 @@ fn integrate(b: &mut Body, p: &Params, dt: f32) -> f32 {
 /// `yield_dir` from [`World::yield_dir`].
 fn touch(a: &Body, b: &Body, gap: f32, yield_dir: Vec2) -> Option<Hit> {
     let (ab, bb) = pair_bulges(a, b);
-    touch_at(&a.rect, ab, &b.rect, bb, gap, tie_dir(a, b, yield_dir))
+    let mut hit = touch_at(&a.rect, ab, &b.rect, bb, gap, tie_dir(a, b, yield_dir))?;
+    // A slope sends the yielder out on the side away from gravity, never
+    // back toward it: it may have been pulled a little that way before the
+    // pressure built, and would wedge into the full row behind it.
+    if a.yielding != b.yielding {
+        let away_axis = yield_dir.main_axis();
+        let across = hit.normal.main_axis();
+        let pushes_yielder = if a.yielding { -hit.normal } else { hit.normal };
+        if across != away_axis && pushes_yielder[away_axis] * yield_dir[away_axis] < 0.0 {
+            hit.normal[away_axis] = -hit.normal[away_axis];
+        }
+    }
+    Some(hit)
 }
 
 /// The bulges a pair meets with: their own when one of them is the

@@ -191,6 +191,8 @@ impl Scene {
 /// How much of the arena's area the full scene fills with widgets: more
 /// than one window, so it runs past the bottom.
 const FULL_FILL: f32 = 1.8;
+/// The arena has at least this size before the scene is seeded.
+const SEED_SIZE: egui::Vec2 = vec2(480.0, 320.0);
 /// The area of an average sandbox widget, points², for the full scene's count.
 const AVERAGE_AREA: f32 = 330.0 * 230.0;
 
@@ -239,6 +241,9 @@ pub struct Sandbox {
     /// past the bottom of the window).
     pub scroll: f32,
     seeded: bool,
+    /// The arena area (points²) the full scene was filled for; when the
+    /// window grows past it, more widgets are added.
+    filled_for: f32,
     seq: u32,
     rng: u32,
     auto_clock: f32,
@@ -285,6 +290,7 @@ impl Sandbox {
             scene,
             scroll: 0.0,
             seeded: false,
+            filled_for: 0.0,
             seq: 0,
             rng: 0x2545_f491,
             auto_clock: 0.0,
@@ -384,6 +390,7 @@ impl Sandbox {
         self.selected = None;
         self.seq = 0;
         self.seeded = false;
+        self.filled_for = 0.0;
     }
 
     /// The first widgets of the scene.
@@ -407,24 +414,60 @@ impl Sandbox {
         self.selected = None;
     }
 
+    /// How many widgets fill [`FULL_FILL`] arenas of this size.
+    fn full_count(arena: egui::Rect) -> usize {
+        ((arena.width() * arena.height() * FULL_FILL) / AVERAGE_AREA)
+            .ceil()
+            .clamp(8.0, 120.0) as usize
+    }
+
     /// Enough widgets to fill [`FULL_FILL`] windows, seeded on a grid a
     /// little tighter than they fit (a little offset per row so they are
     /// not lined up from the start): they land lifted and push each other
     /// apart until the arena is packed.
     fn seed_full(&mut self) {
         let a = self.arena;
-        let count = ((a.width() * a.height() * FULL_FILL) / AVERAGE_AREA)
-            .ceil()
-            .clamp(8.0, 80.0) as usize;
+        self.filled_for = a.width() * a.height();
+        self.add_rows(Self::full_count(a), a.min.y);
+        self.selected = None;
+    }
+
+    /// The window grew (a tiling window manager sizes it after the first
+    /// frame, or the user did): add widgets below the lowest one until the
+    /// full scene fills [`FULL_FILL`] of the new arena again.
+    fn top_up(&mut self) {
+        let a = self.arena;
+        let area = a.width() * a.height();
+        if self.scene != Scene::Full || area <= self.filled_for * 1.05 {
+            return;
+        }
+        self.filled_for = area;
+        let missing = Self::full_count(a).saturating_sub(self.items.len());
+        let lowest = self
+            .world
+            .bodies()
+            .iter()
+            .map(|b| b.rect.max.y)
+            .fold(a.min.y, f32::max);
+        let keep = self.selected;
+        self.add_rows(missing, lowest);
+        self.selected = keep;
+    }
+
+    /// `count` widgets in rows across the arena from `top` down.
+    fn add_rows(&mut self, count: usize, top: f32) {
+        let a = self.arena;
         let cols = (a.width() / 290.0).ceil().max(1.0) as usize;
         let (dx, dy) = (a.width() / cols as f32, 190.0);
         for i in 0..count {
             let (row, col) = (i / cols, i % cols);
             let shift = if row % 2 == 1 { dx * 0.2 } else { 0.0 };
-            let at = a.min + vec2(dx * (col as f32 + 0.5) + shift, dy * (row as f32 + 0.5));
+            let at = pos2(
+                a.min.x + dx * (col as f32 + 0.5) + shift,
+                top + dy * (row as f32 + 0.5),
+            );
             self.add_widget(Some(pos2(at.x.min(a.max.x - 60.0), at.y)));
         }
-        self.selected = None;
     }
 
     /// Content that lives by itself: now and then one widget gets more or
@@ -826,8 +869,13 @@ impl Sandbox {
             self.scroll -= ui.input(|i| i.smooth_scroll_delta.y);
         }
         self.world.set_bounds(from_rect(arena));
-        if !self.seeded {
+        // Not before the window has a real size: on the first frame it can
+        // still be tiny, and the scene would start with a few widgets.
+        if !self.seeded && arena.width() >= SEED_SIZE.x && arena.height() >= SEED_SIZE.y {
             self.seed();
+        }
+        if self.seeded {
+            self.top_up();
         }
         if !self.paused {
             let dt = ui.input(|i| i.stable_dt).min(1.0 / 30.0);

@@ -292,7 +292,9 @@ up and Packery's "others flow around the dragged one". No app uses it yet.
   tighter than they fit, with the bottom wall open, so the layout is tried under real pressure and runs past the
   bottom of the window; the arena scrolls (wheel over it, a thin bar on the right shows where you are). *Few* is
   the old five floating widgets in a closed box; the kittests mostly use it.
-  `ve_settle/examples/sandbox/`.
+  `ve_settle/examples/sandbox/`. The full scene is seeded only once the arena has a real size, and topped up below
+  the lowest widget when the window grows (a tiling window manager sizes it after the first frame), so it is full
+  from the first frame it can be.
 - ✅ **SETL-3 Sandbox UI tests**: egui_kittest drives the sandbox like a person (add widgets, drag one through
   the others, resize the window, grow and shrink content, corner resize, remove, pause and step, content changing
   by itself for 15 s) and checks on every frame that no two solid bodies overlap and nothing moves more than
@@ -351,12 +353,24 @@ up and Packery's "others flow around the dragged one". No app uses it yet.
   (released off the grid, both axes, off when 0). Sandbox: a "Grid" slider section (pitch, stiffness), a "Grid
   pitch" overlay layer (ticks every pitch along each panel's edges from its top left corner, and along the walls),
   the grid pull as a force arrow.
-- 🐛 **SETL-11 A packed field stays squeezed** (found with the full sandbox scene, 10 Oct 2026): when every row is
-  overfilled (30 widgets, rows of five where 4.5 fit), the pillow sends one widget out, but moving it down only
-  overfills the full row below, so the field rests with widgets squeezed 18 % (23 % with the pillow off) after
-  about 6 s (2 s with it off). Handing the yielder role on when it stalls made it worse (24 %, 24 s) and was
-  reverted. Needs the field below to make room as a whole (rows shifting down together, or a packing pass that
-  re-picks homes when pressure stays high); maybe one yielder per row instead of per world.
+- ✅ **SETL-11 A packed field stays squeezed** (found with the full sandbox scene, 10 Oct 2026; fix chosen by the
+  user: rows shift down together, fewer jumps than re-picking homes): when every row was overfilled (30 widgets,
+  rows of five where 4.5 fit), the pillow sent one widget out, but it only overfilled the full row below, so the
+  field rested squeezed 18 %. Now (`World::pairs_pass`): when the yielder, pressed out along its row, runs into the
+  row ahead, that row and everything beyond it shift on together by the depth (at most half a glide per step,
+  carrying no speed), so a slot opens instead of the yielder wedging in; panels of that row then rise beside it.
+  Four things it needed: the field gives way from gravity's side outward (of the bodies bulged near the most, the
+  one nearest the top yields first; bottom-up, a lower row's overflow was carried down again by every row above);
+  a slope always sends the yielder away from gravity (pulled a little up before the pressure built, it wedged into
+  the row above); and with the wall across from gravity open (`Params::free_axis`, a dash running past the bottom)
+  nothing on gravity's axis is squeezed or felt as pressure, because a tall stack's leftovers there are the solver's
+  and not a squeeze (they crushed rows by 8 % and made row 1 bulge sideways). Result: the field rests with nobody
+  squeezed (0.3 % in the sandbox, after about 6.5 s) and no panel ends more than one row past a panel that started
+  below it. (Ending at most one row from where it started cannot hold: rows of five becoming rows of four put the
+  last panels two rows lower; what the eye sees as a jump is a panel diving past others.) The rows it leaves are
+  not packed tight (10 rows where 8 would do): holes beside a panel that has another under it stay. Tests:
+  `a_packed_field_gives_way_row_by_row_without_crushing` in `tests/pillow.rs`, the full-scene kittest checks no
+  squeeze.
 - ✅ **SETL-6 Pile sticks out though there is room beside it**: contacts parted two bodies along the axis of least
   overlap only, so rigid bodies piled on one spot (8 of them added on a diagonal) parted into a column longer than
   the world and stuck out past the walls. Fixed by the pillow (SETL-9): the jammed bodies bulge and spill sideways;

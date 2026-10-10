@@ -236,3 +236,62 @@ fn a_rigid_pile_spills_sideways_and_stays_inside_the_walls() {
         );
     }
 }
+
+/// Rows of the bodies by their tops: a new row starts where a top is more
+/// than half a row below the first top of the row before.
+fn rows_of(w: &World, half_row: f32) -> Vec<usize> {
+    let mut tops: Vec<(f32, usize)> = w
+        .bodies()
+        .iter()
+        .enumerate()
+        .map(|(i, b)| (b.rect.min.y, i))
+        .collect();
+    tops.sort_by(|a, b| a.0.total_cmp(&b.0));
+    let mut row_of = vec![0; tops.len()];
+    let (mut row, mut first) = (0, tops[0].0);
+    for (top, i) in tops {
+        if top > first + half_row {
+            row += 1;
+            first = top;
+        }
+        row_of[i] = row;
+    }
+    row_of
+}
+
+#[test]
+fn a_packed_field_gives_way_row_by_row_without_crushing() {
+    // SETL-11: six rows of five where four and a half fit, the bottom
+    // open, as a full dash. Every row overflows; the rows after each
+    // overflow shift on together, so nobody stays squeezed and nobody
+    // dives past the panels that started below it.
+    let mut p = Params::default();
+    p.walls.bottom = false;
+    let (width, size) = (4.5 * 306.0 + 6.0, v(300.0, 180.0));
+    let mut w = world(width, 900.0, p);
+    let dx = width / 5.0;
+    for i in 0..30 {
+        let (row, col) = (i / 5, i % 5);
+        let at = v(dx * (col as f32 + 0.5), 6.0 + 186.0 * (row as f32 + 0.5));
+        w.add(BodyDesc::new(at, size).min_size(v(200.0, 120.0)));
+    }
+    settle_checked(&mut w, 3_000, glide(&p));
+    for b in w.bodies() {
+        assert!(b.tension() < 0.01, "not squeezed: {b:?}");
+        assert!(b.rect.min.x >= 5.5 && b.rect.max.x <= width - 5.5, "{b:?}");
+    }
+    // A panel that started in a row above another ends at most one row
+    // below it.
+    let row = rows_of(&w, 90.0);
+    for a in 0..30 {
+        for b in 0..30 {
+            if a / 5 < b / 5 {
+                assert!(
+                    row[a] <= row[b] + 1,
+                    "#{a} passed #{b} by {} rows",
+                    row[a] - row[b]
+                );
+            }
+        }
+    }
+}

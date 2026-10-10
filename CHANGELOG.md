@@ -26,6 +26,12 @@ versions follow [Semantic Versioning](https://semver.org/). Feature IDs refer to
 
 ### Fixed
 
+- ve_settle: a packed field of overfilled rows no longer rests squeezed: when the yielding body runs into the row
+  ahead, that row and all beyond it shift on together; the field gives way from gravity's side outward; with the
+  wall across from gravity open nothing is squeezed along gravity (`Params::free_axis`) (SETL-11).
+- ve_settle sandbox: the full scene starts full: it is seeded once the window has a real size and topped up when
+  the window grows (SETL-2).
+
 - ve_settle: rigid bodies piled on one spot no longer part into a column that sticks out past the walls; they spill
   sideways (SETL-6).
 
