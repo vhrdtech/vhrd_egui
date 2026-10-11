@@ -968,6 +968,7 @@ impl Sandbox {
                 widest = widest.max(size.x);
             }
             self.selected = None;
+            self.frames.hold_picks();
             return;
         }
         let room = a.width() - 2.0 * gap;
@@ -1019,6 +1020,8 @@ impl Sandbox {
             }
         }
         self.selected = None;
+        // decided for the scene as a whole: the layout widens nothing until something changes
+        self.frames.hold_picks();
     }
 
     /// Content that lives by itself: now and then one widget gets more or
@@ -1147,14 +1150,6 @@ impl Sandbox {
                 self.clear();
             }
             if ui
-                .button("Default parameters")
-                .on_hover_text("Put every parameter back to the scene's defaults (the walls and gravity it started with); the widgets stay. The change comes in over a quarter second and no widget keeps more speed than a glide, so nothing is thrown about.")
-                .clicked()
-            {
-                let defaults = self.defaults();
-                self.world.set_params(defaults);
-            }
-            if ui
                 .danger_button(
                     "Reset",
                     "Remove every widget, put the parameters back to the scene's defaults and seed the scene's widgets again.",
@@ -1164,6 +1159,14 @@ impl Sandbox {
                 self.reset();
             }
         });
+        if ui
+            .button("Default parameters")
+            .on_hover_text("Put every parameter back to the scene's defaults (the walls and gravity it started with); the widgets stay. The change comes in over a quarter second and no widget keeps more speed than a glide, so nothing is thrown about.")
+            .clicked()
+        {
+            let defaults = self.defaults();
+            self.world.set_params(defaults);
+        }
         ui.horizontal(|ui| {
             ui.label("Scene").on_hover_text("The widgets the sandbox starts with; picking one resets it.");
             let mut scene = self.scene;

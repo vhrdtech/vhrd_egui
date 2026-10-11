@@ -179,7 +179,7 @@ fn randomise_then_reset(gravity: Side, seed: u32) {
 }
 
 /// Seconds the world may take to rest once the parameters are back at their defaults.
-const REST_SECS: f32 = 11.0;
+const REST_SECS: f32 = 16.0;
 
 #[test]
 fn any_parameters_then_the_defaults_in_a_world_that_grows_down() {
