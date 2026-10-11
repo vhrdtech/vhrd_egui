@@ -186,6 +186,9 @@ pub struct Elevation {
     pub popup: Shadow,
     /// Floating windows.
     pub window: Shadow,
+    /// A widget lifted out of its grid and floating over it: larger and softer than `window`, so it reads as
+    /// above the layout, not as a part of it that slipped.
+    pub floating: Shadow,
 }
 
 /// The design system in one value. Start from [`Tokens::dark`] / [`Tokens::light`] and override fields.
@@ -262,6 +265,7 @@ impl Tokens {
             shadow: Elevation {
                 popup: shadow(4, 12, 110),
                 window: shadow(8, 24, 140),
+                floating: shadow(10, 40, 200),
             },
             type_scale: TypeScale::new(),
         }
@@ -301,6 +305,7 @@ impl Tokens {
             shadow: Elevation {
                 popup: shadow(4, 12, 28),
                 window: shadow(8, 24, 36),
+                floating: shadow(10, 40, 64),
             },
             type_scale: TypeScale::new(),
         }

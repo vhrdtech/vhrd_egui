@@ -43,6 +43,7 @@
 
 mod dock;
 mod frame;
+mod ghost;
 pub mod hex;
 mod menu;
 mod remote;
@@ -51,15 +52,17 @@ mod state;
 
 pub use dock::{Applied, Dock, Slot, SlotId};
 pub use frame::{
-    BodyArea, FrameResponse, Shape, WidgetFrame, header_fill, menu_open_look, outer_width,
-    quiet_fill,
+    BodyArea, FloatLook, FrameResponse, Shape, WidgetFrame, header_fill, menu_open_look,
+    outer_width, quiet_fill,
 };
+pub use ghost::ghost_slot;
 pub use hex::{HexFace, SideItem, Wing};
 pub use menu::{Moves, NO_REMOTE};
 pub use remote::{Machine, Parcel, Remote};
 pub use size::{AUTO_HYSTERESIS, Size, SizeHints, SizeMode, auto_size};
 pub use state::{
-    FrameAction, FrameState, GLOW_SECS, PLUCK_SECS, Placement, ViewportSlot, ViewportTarget,
+    FOLD_SECS, FrameAction, FrameState, GLOW_SECS, PLUCK_SECS, Placement, ViewportSlot,
+    ViewportTarget,
 };
 
 /// The status an LED shows, from `ve_dash`.

@@ -17,8 +17,9 @@ use egui::{Align, Layout, RichText, Ui};
 use serde::{Deserialize, Serialize};
 use ve_dash::{Meter, Sparkline, StatusLight, Theme};
 use ve_frame::{
-    Applied, Dock, FrameAction, FrameState, HexFace, Machine, Moves, Parcel, Remote, Shape,
-    SideItem, Size, SizeHints, Slot, SlotId, Status, ViewportSlot, WidgetFrame, Wing, outer_width,
+    Applied, Dock, FloatLook, FrameAction, FrameState, HexFace, Machine, Moves, Parcel, Remote,
+    Shape, SideItem, Size, SizeHints, Slot, SlotId, Status, ViewportSlot, WidgetFrame, Wing,
+    outer_width,
 };
 
 #[allow(dead_code)] // the UI tests include this file as a module and start their own harness
@@ -424,7 +425,7 @@ impl Demo {
 pub fn draw_at(
     ui: &mut Ui,
     slot: &mut Slot<Demo>,
-    moves: &Moves,
+    (moves, look): (&Moves, FloatLook),
 ) -> (Option<FrameAction>, egui::Rect) {
     let Slot { id, widget, frame } = slot;
     let opts = widget.opts;
@@ -433,7 +434,9 @@ pub fn draw_at(
     let mut reset = false;
     let mut bump = 0_i32;
 
-    let mut f = WidgetFrame::new(widget.title()).id_salt(id.0);
+    let mut f = WidgetFrame::new(widget.title())
+        .id_salt(id.0)
+        .float_look(look);
     if opts.led {
         let (status, why) = widget.status();
         f = f.led(status, why);
@@ -580,6 +583,11 @@ pub struct Playground {
     pub show_scale: [bool; 3],
     /// Which list the grid shows; `None` shows both shapes (a hand-made set of widgets).
     pub tab: Option<Tab>,
+    /// How floating widgets set themselves off: lifted (raised fill, stronger border, large soft shadow), and
+    /// the accent border on the one on top.
+    pub look: FloatLook,
+    /// Whether the grid keeps the place of a widget that floats, as a dashed ghost that puts it back.
+    pub ghosts: bool,
     /// The last thing that happened, shown in the bar.
     pub message: String,
     /// Where the main grid's frames were drawn last frame, and the room they had (for the tests).
@@ -603,6 +611,8 @@ impl Playground {
             auto_room: 240.0,
             show_scale: [true; 3],
             tab: None,
+            look: FloatLook::default(),
+            ghosts: true,
             message: String::new(),
             drawn: Vec::new(),
             room: egui::Rect::NOTHING,
@@ -648,6 +658,8 @@ impl Playground {
         let remote = self.transport.then_some(&self.loopback as &dyn Remote);
         let moves = self.dock.moves(remote);
         let room = self.auto_room;
+        let look = self.look;
+        let ghosts = self.ghosts;
         let hidden: Vec<SlotId> = self
             .dock
             .iter()
@@ -666,7 +678,7 @@ impl Playground {
                         &mut self.dock,
                         ViewportSlot::MAIN,
                         &hidden,
-                        (&moves, room),
+                        (&moves, room, look, ghosts),
                         (&mut picked, &mut drawn),
                     );
                 });
@@ -674,7 +686,7 @@ impl Playground {
         self.drawn = drawn;
         let mut floated = Vec::new();
         let mut float = |ui: &mut Ui, slot: &mut Slot<Demo>| {
-            let (action, rect) = draw_at(ui, slot, &moves);
+            let (action, rect) = draw_at(ui, slot, (&moves, look));
             floated.push((slot.id, rect));
             action
         };
@@ -686,7 +698,7 @@ impl Playground {
                     dock,
                     viewport,
                     &hidden,
-                    (&moves, room),
+                    (&moves, room, look, ghosts),
                     (&mut picked, &mut Vec::new()),
                 );
                 picked.extend(dock.show_windows(ui, viewport, &mut float));
@@ -770,6 +782,21 @@ impl Playground {
                     .on_hover_text(format!("Show the {} widgets", scale.label()));
             }
             ui.separator();
+            ui.checkbox(&mut self.look.elevation, "elevation")
+                .on_hover_text(
+                    "Floating widgets are lifted off the page: raised fill, stronger border, a large soft \
+                     shadow. Off: the fill and border of a grid frame with a plain shadow, to compare",
+                );
+            ui.checkbox(&mut self.look.focus, "focus border")
+                .on_hover_text(
+                    "The floating widget on top has its border in the accent colour, the others stay neutral",
+                );
+            ui.checkbox(&mut self.ghosts, "ghost slots")
+                .on_hover_text(
+                    "The grid keeps the place of a widget that floats, as a dashed outline with its title; \
+                     click it to put the widget back. Off: the rows close up behind it",
+                );
+            ui.separator();
             ui.checkbox(&mut self.transport, "transport")
                 .on_hover_text(
                     "Whether this app can send widgets to other machines. Off: the menu entry stays, \
@@ -803,20 +830,35 @@ fn grid(
     dock: &mut Dock<Demo>,
     viewport: ViewportSlot,
     hidden: &[SlotId],
-    (moves, auto_room): (&Moves, f32),
+    (moves, auto_room, look, ghosts): (&Moves, f32, FloatLook, bool),
     (picked, drawn): (&mut Vec<(SlotId, FrameAction)>, &mut Vec<egui::Rect>),
 ) {
     let rows = Layout::left_to_right(Align::Min).with_main_wrap(true);
     let row = ui.available_width();
     ui.with_layout(rows, |ui| {
         ui.spacing_mut().item_spacing = egui::vec2(8.0, 8.0);
-        for id in dock.ids(viewport, false) {
+        for (id, floating) in dock.ids_in(viewport) {
             if hidden.contains(&id) {
                 continue;
             }
             let Some(slot) = dock.get_mut(id) else {
                 continue;
             };
+            if floating {
+                // its place stays, as a ghost: the rows don't close up behind a widget that floats
+                if let (true, Some(left)) = (ghosts, slot.frame.left_slot) {
+                    let shape = if slot.widget.opts.hex {
+                        Shape::Hex
+                    } else {
+                        Shape::Rect
+                    };
+                    if ve_frame::ghost_slot(ui, &slot.widget.title(), left.into(), shape).clicked()
+                    {
+                        picked.push((id, FrameAction::DockBack));
+                    }
+                }
+                continue;
+            }
             let body = slot
                 .widget
                 .scale
@@ -830,7 +872,7 @@ fn grid(
             let (action, rect) = ui
                 .allocate_ui_with_layout(size, Layout::top_down(Align::Min), |ui| {
                     ui.set_max_width(cell);
-                    draw_at(ui, slot, moves)
+                    draw_at(ui, slot, (moves, look))
                 })
                 .inner;
             drawn.push(rect);

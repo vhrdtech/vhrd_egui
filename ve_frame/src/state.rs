@@ -74,6 +74,12 @@ pub struct FrameState {
     /// [`crate::Dock`] sets it when the widget pops out (where it sat in the grid) and follows the user's
     /// drags.
     pub window_pos: Option<[f32; 2]>,
+    /// Whether the floating window is folded down to its header. The size it had stays in `window_size` and
+    /// comes back when it is unfolded.
+    pub collapsed: bool,
+    /// The size of the place in the grid the widget floated out of, for a ghost of it there
+    /// ([`crate::ghost_slot`]); `None` while it sits in a grid.
+    pub left_slot: Option<[f32; 2]>,
     /// The size shown last frame: auto's memory for its hysteresis. Not saved.
     #[serde(skip)]
     pub(crate) last_size: Option<Size>,
@@ -92,6 +98,15 @@ pub struct FrameState {
     /// The frame drawn last was still learning what its sides and footer take: its size is not one to keep.
     #[serde(skip)]
     pub(crate) settling: bool,
+    /// Whether this is the floating window on top of the others (set by [`crate::Dock::show_windows`]).
+    #[serde(skip)]
+    pub(crate) focused: bool,
+    /// How far the frame is unfolded, 0 (header only) to 1, and whether it is short of fully open: then the
+    /// size it is drawn with is not its own.
+    #[serde(skip)]
+    pub(crate) fold: f32,
+    #[serde(skip)]
+    pub(crate) folding: bool,
     /// Where the frame was drawn last, in screen points: a pop-out opens there.
     #[serde(skip)]
     pub(crate) drawn: Option<egui::Rect>,
@@ -121,6 +136,9 @@ pub struct FrameState {
 
 /// How long the glow around a frame that just landed takes to fade, in seconds.
 pub const GLOW_SECS: f64 = 0.6;
+
+/// How long folding a floating window down to its header, or unfolding it, takes, in seconds.
+pub const FOLD_SECS: f32 = 0.2;
 
 /// How long the lift of a widget that was just plucked out of the grid takes, in seconds.
 pub const PLUCK_SECS: f64 = 0.3;
@@ -157,6 +175,7 @@ impl FrameState {
     /// this on a pop-out. With animations off it just sits there.
     pub fn pluck_out(&mut self) {
         if let Some(rect) = self.drawn {
+            self.left_slot = Some(rect.size().into());
             self.window_pos = Some(rect.min.into());
             if self.window_size.is_none() {
                 self.window_size = Some(rect.size().into());
@@ -168,6 +187,16 @@ impl FrameState {
     /// How far the pop-out animation is: 1 right after the widget was plucked out, 0 when it rests.
     pub fn pluck(&self) -> f32 {
         self.pluck
+    }
+
+    /// Whether this floating window is the one on top: its border takes the accent colour.
+    pub fn is_focused(&self) -> bool {
+        self.focused
+    }
+
+    /// How far the frame is unfolded: 1 open, 0 folded down to its header, between the two while it moves.
+    pub fn openness(&self) -> f32 {
+        if self.folding { self.fold } else { 1.0 }
     }
 
     /// Where the frame was drawn last, in screen points.

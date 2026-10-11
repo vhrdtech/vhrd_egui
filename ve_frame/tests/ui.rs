@@ -1057,3 +1057,327 @@ fn the_menu_button_shows_that_its_menu_is_open() {
         "released: {again:?}"
     );
 }
+
+/// Two floating rectangles without sides, placed apart; returns their ids.
+fn two_floating(h: &mut Harness<'_, Playground>) -> [ve_frame::SlotId; 2] {
+    let ids: Vec<_> = h.state().dock.iter().map(|s| s.id).collect();
+    for (id, pos) in [(ids[0], [80.0, 260.0]), (ids[1], [520.0, 260.0])] {
+        h.state_mut().apply(id, ve_frame::FrameAction::PopOut);
+        h.state_mut()
+            .dock
+            .get_mut(id)
+            .expect("there")
+            .frame
+            .window_pos = Some(pos);
+    }
+    h.state_mut().message.clear();
+    h.run();
+    [ids[0], ids[1]]
+}
+
+/// A floating frame is lifted off the grid (raised fill, a border, a shadow under it), and the one on top has
+/// its border in the accent colour; each can be turned off to compare.
+#[test]
+fn a_floating_window_stands_out_and_the_one_on_top_is_marked() {
+    let opts = Opts {
+        sides: false,
+        ..Opts::ALL
+    };
+    let widgets = [
+        Demo::new(opts, Scale::Medium),
+        Demo::new(opts, Scale::Medium),
+    ];
+    let mut h = harness(Playground::with(widgets), vec2(1100.0, 700.0));
+    let [a, b] = two_floating(&mut h);
+    let frame = |h: &Harness<'_, Playground>, id| h.state().dock.get(id).expect("there").frame;
+    let tokens = ve_theme::Tokens::dark();
+    let flat = ve_dash::Theme::dark();
+    let mut lifted = flat.clone();
+    lifted.panel_bg = tokens.colors.surface_raised;
+    assert_ne!(ve_frame::header_fill(&lifted), ve_frame::header_fill(&flat));
+    let near = |x: egui::Color32, y: egui::Color32| ve_theme::hue::delta_e(x, y) < 0.02;
+    // the header band above the title, the left border, and a few points under the bottom edge
+    let look = |h: &mut Harness<'_, Playground>, id| {
+        let rect = frame(h, id).drawn_rect().expect("drawn");
+        let image = h.render().expect("rendered");
+        let header = pixel(&image, egui::pos2(rect.center().x, rect.top() + 3.0));
+        let border = pixel(&image, egui::pos2(rect.left() + 0.2, rect.center().y));
+        let under = pixel(&image, egui::pos2(rect.center().x, rect.bottom() + 5.0));
+        let page = pixel(&image, egui::pos2(1050.0, 650.0));
+        (header, border, under.r() < page.r())
+    };
+
+    // exactly one is on top; it has the accent border, the other the neutral one
+    let (top, other) = if frame(&h, a).is_focused() {
+        (a, b)
+    } else {
+        (b, a)
+    };
+    assert!(frame(&h, top).is_focused() && !frame(&h, other).is_focused());
+    let (header, border, shadow) = look(&mut h, top);
+    assert!(
+        near(header, ve_frame::header_fill(&lifted)),
+        "raised fill: {header:?}"
+    );
+    assert!(
+        near(border, flat.accent),
+        "accent border on top: {border:?}"
+    );
+    assert!(shadow, "a shadow under it");
+    let (header, border, shadow) = look(&mut h, other);
+    assert!(near(header, ve_frame::header_fill(&lifted)));
+    assert!(
+        near(border, tokens.colors.line_strong),
+        "neutral border: {border:?}"
+    );
+    assert!(shadow);
+
+    // a click on the other one brings it to the top, and the border follows
+    let at = frame(&h, other).drawn_rect().expect("drawn").center_top() + vec2(0.0, 12.0);
+    h.drag_at(at);
+    h.step();
+    h.drop_at(at);
+    h.step();
+    h.run();
+    assert!(frame(&h, other).is_focused() && !frame(&h, top).is_focused());
+    assert!(near(look(&mut h, other).1, flat.accent));
+
+    // without the focus border nobody is marked; without elevation the frame looks like one in the grid
+    h.state_mut().look.focus = false;
+    h.run();
+    assert!(near(look(&mut h, other).1, tokens.colors.line_strong));
+    h.state_mut().look.elevation = false;
+    h.run();
+    let (header, border, _) = look(&mut h, other);
+    assert!(
+        near(header, ve_frame::header_fill(&flat)),
+        "the grid's fill: {header:?}"
+    );
+    assert!(near(border, flat.border));
+}
+
+/// The grid keeps the place of a widget that floats, as a ghost with its title; a click on the ghost puts the
+/// widget back. Without ghosts the rows close up behind it.
+#[test]
+fn a_ghost_keeps_the_slot_and_puts_the_widget_back() {
+    let widgets = [
+        Demo::new(Opts::ALL, Scale::Medium),
+        Demo::new(Opts::ALL, Scale::Tiny),
+    ];
+    let mut h = harness(Playground::with(widgets), vec2(1100.0, 700.0));
+    let ids: Vec<_> = h.state().dock.iter().map(|s| s.id).collect();
+    let neighbour = h.state().drawn[1];
+    let slot_size = h.state().drawn[0].size();
+    h.state_mut().apply(ids[0], ve_frame::FrameAction::PopOut);
+    // the window opens right on its slot: move it aside to see the ghost
+    h.state_mut()
+        .dock
+        .get_mut(ids[0])
+        .expect("there")
+        .frame
+        .window_pos = Some([400.0, 350.0]);
+    h.run();
+    assert_eq!(h.state().drawn.len(), 1, "one widget left in the grid");
+    assert_eq!(
+        h.state().drawn[0],
+        neighbour,
+        "the neighbour stays where it was"
+    );
+    let ghost = h.get_by_label("put back medium LISMFX").rect();
+    assert!(
+        (ghost.size() - slot_size).length() < 1.0,
+        "{ghost:?} for a slot of {slot_size:?}"
+    );
+
+    // without ghosts the neighbour moves into the gap
+    h.state_mut().ghosts = false;
+    h.run();
+    assert!(h.query_by_label("put back medium LISMFX").is_none());
+    assert!(h.state().drawn[0].left() < neighbour.left());
+    h.state_mut().ghosts = true;
+    h.run();
+
+    click(&mut h, "put back medium LISMFX");
+    h.run();
+    assert_eq!(h.state().dock.ids(ViewportSlot::MAIN, false).len(), 2);
+    assert!(h.query_by_label("put back medium LISMFX").is_none());
+    assert_eq!(h.state().drawn[1], neighbour);
+}
+
+/// A floating window folds down to its header and back: the header stays where it is with everything on it
+/// working, and unfolding gives the size it had. Rectangles and hexagons.
+#[test]
+fn a_floating_window_folds_down_to_its_header() {
+    let hex = Opts {
+        hex: true,
+        ..Opts::ALL
+    };
+    for opts in [Opts::ALL, hex] {
+        let mut h = harness(
+            Playground::with([Demo::new(opts, Scale::Medium)]),
+            vec2(1100.0, 700.0),
+        );
+        click(&mut h, "+1");
+        pick(&mut h, &["Pop out as a window"]);
+        h.state_mut()
+            .dock
+            .iter_mut()
+            .for_each(|s| s.frame.window_pos = Some([300.0, 200.0]));
+        h.run();
+        let open = slot(&h).frame;
+        let open_rect = open.drawn_rect().expect("drawn");
+        let chip = switch_at(&h);
+        let led = h.get_by_label("status: counting: 1 clicks").rect();
+
+        click(&mut h, "collapse");
+        h.run();
+        let folded = slot(&h).frame;
+        let rect = folded.drawn_rect().expect("drawn");
+        assert!(folded.collapsed && folded.openness() == 0.0);
+        assert!(
+            rect.height() < 30.0,
+            "{opts:?}: only the header is left: {rect:?}"
+        );
+        assert!(
+            (rect.min - open_rect.min).length() < 0.5
+                && (rect.width() - open_rect.width()).abs() < 0.5,
+            "the header didn't move: {open_rect:?} -> {rect:?}"
+        );
+        assert_eq!(
+            folded.window_size, open.window_size,
+            "the size it had is kept"
+        );
+        // the header's parts are where they were and work
+        assert!((switch_at(&h) - chip).length() < 0.5);
+        assert_eq!(h.get_by_label("status: counting: 1 clicks").rect(), led);
+        hover(&mut h, "info");
+        assert!(h.query_by_label("clicks: 1").is_some(), "the ⓘ answers");
+        click(&mut h, "☰");
+        h.get_by_label("Back into the grid");
+        h.key_press(egui::Key::Escape);
+        h.run();
+        click(&mut h, "auto");
+        assert_eq!(slot(&h).frame.size, SizeMode::Min, "the size switch works");
+        click(&mut h, "min");
+        click(&mut h, "nom");
+        click(&mut h, "wide");
+        assert_eq!(slot(&h).frame.size, SizeMode::Auto);
+        // folded is saved with the layout
+        let saved = serde_json::to_string(&slot(&h).frame).expect("serializable");
+        assert!(saved.contains("\"collapsed\":true"), "{saved}");
+
+        click(&mut h, "expand");
+        h.run();
+        let again = slot(&h).frame;
+        assert!(!again.collapsed && again.openness() == 1.0);
+        let rect = again.drawn_rect().expect("drawn");
+        assert!(
+            (rect.size() - open_rect.size()).length() < 1.0,
+            "{opts:?}: {open_rect:?} -> {rect:?}"
+        );
+        assert!((rect.min - open_rect.min).length() < 0.5);
+    }
+}
+
+/// A double click on the bare header folds and unfolds, like the fold control.
+#[test]
+fn a_double_click_on_the_header_folds() {
+    let mut h = Harness::builder()
+        .with_size(vec2(1100.0, 700.0))
+        .with_step_dt(0.05)
+        .build_ui_state(|ui, pg: &mut Playground| pg.ui(ui), one(Scale::Medium));
+    h.run();
+    pick(&mut h, &["Pop out as a window"]);
+    h.state_mut()
+        .dock
+        .iter_mut()
+        .for_each(|s| s.frame.window_pos = Some([300.0, 200.0]));
+    h.run();
+    let rect = slot(&h).frame.drawn_rect().expect("drawn");
+    // between the title and the ⓘ
+    let title = h.get_by_label("medium LISMFX").rect();
+    let bare = egui::pos2(title.right() + 14.0, rect.top() + 13.0);
+    for folded in [true, false] {
+        // let the clicks before this one age: a third click soon after two is a triple click
+        for _ in 0..16 {
+            h.step();
+        }
+        // press and release twice, the pointer staying where it is
+        for _ in 0..2 {
+            for pressed in [true, false] {
+                h.event(egui::Event::PointerButton {
+                    pos: bare,
+                    button: egui::PointerButton::Primary,
+                    pressed,
+                    modifiers: egui::Modifiers::NONE,
+                });
+                h.step();
+            }
+        }
+        h.run();
+        assert_eq!(slot(&h).frame.collapsed, folded);
+    }
+    let after = slot(&h).frame.drawn_rect().expect("drawn");
+    assert!(
+        (after.min - rect.min).length() < 1.0,
+        "it wasn't dragged away: {rect:?} -> {after:?}"
+    );
+}
+
+/// Folding is animated by cutting the frame off, never by rescaling it: half way the body has the size and
+/// place it always has, only less of it shows. With animations off it snaps.
+#[test]
+fn folding_cuts_the_frame_off_without_rescaling_it() {
+    let mut h = Harness::builder()
+        .with_size(vec2(1100.0, 700.0))
+        .with_step_dt(0.05)
+        .build_ui_state(|ui, pg: &mut Playground| pg.ui(ui), one(Scale::Big));
+    h.run();
+    h.state_mut()
+        .dock
+        .iter_mut()
+        .for_each(|s| s.frame.size = SizeMode::Nom);
+    h.run();
+    pick(&mut h, &["Pop out as a window"]);
+    h.state_mut()
+        .dock
+        .iter_mut()
+        .for_each(|s| s.frame.window_pos = Some([300.0, 150.0]));
+    h.run();
+    h.ctx.all_styles_mut(|s| s.animation_time = 1.0 / 12.0);
+    h.run();
+    let full = slot(&h).frame.drawn_rect().expect("drawn");
+    let button = h.get_by_label("+1").rect();
+
+    h.get_by_label("collapse").click();
+    h.step();
+    h.step();
+    let mid = slot(&h).frame;
+    let cut = mid.drawn_rect().expect("drawn");
+    assert!(
+        mid.openness() > 0.0 && mid.openness() < 1.0,
+        "on its way: {}",
+        mid.openness()
+    );
+    assert!(
+        cut.height() < full.height() - 10.0 && cut.height() > 40.0,
+        "{full:?} -> {cut:?}"
+    );
+    assert!((cut.width() - full.width()).abs() < 0.5 && (cut.min - full.min).length() < 0.5);
+    assert_eq!(
+        h.get_by_label("+1").rect(),
+        button,
+        "the body is laid out as ever, just cut off"
+    );
+    for _ in 0..6 {
+        h.step();
+    }
+    assert_eq!(slot(&h).frame.openness(), 0.0);
+
+    // reduced motion: no way between
+    h.ctx.all_styles_mut(|s| s.animation_time = 0.0);
+    h.get_by_label("expand").click();
+    h.step();
+    h.step();
+    assert_eq!(slot(&h).frame.openness(), 1.0);
+}

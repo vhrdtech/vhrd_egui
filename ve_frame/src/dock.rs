@@ -123,6 +123,16 @@ impl<W> Dock<W> {
             .collect()
     }
 
+    /// Every widget of one OS window in the order they were added, docked or floating (`true`): a host that
+    /// draws a [`crate::ghost_slot`] for the floating ones walks its grid with this.
+    pub fn ids_in(&self, viewport: ViewportSlot) -> Vec<(SlotId, bool)> {
+        self.slots
+            .iter()
+            .filter(|s| s.frame.placement.viewport == viewport)
+            .map(|s| (s.id, s.frame.placement.floating))
+            .collect()
+    }
+
     /// Every OS window: the main one, then each extra one that holds a widget. An extra window exists as
     /// long as something is in it.
     pub fn viewports(&self) -> Vec<ViewportSlot> {
@@ -151,8 +161,12 @@ impl<W> Dock<W> {
                 place.floating = true;
                 slot.frame.pluck_out();
             }
-            FrameAction::DockBack => place.floating = false,
+            FrameAction::DockBack => {
+                place.floating = false;
+                slot.frame.left_slot = None;
+            }
             FrameAction::SendToViewport(target) => {
+                slot.frame.left_slot = None;
                 *place = Placement {
                     viewport: match target {
                         ViewportTarget::New => fresh,
@@ -239,6 +253,8 @@ impl<W> Dock<W> {
                 None => window.default_pos(origin + egui::vec2(48.0 + step, 48.0 + step)),
             };
             pluck(&ctx, &mut slot.frame, window_id);
+            let layer = egui::LayerId::new(egui::Order::Middle, window_id);
+            slot.frame.focused = ctx.top_layer_id() == Some(layer);
             let shown = window.show(&ctx, |ui| {
                 let wanted = slot.frame.window_size;
                 if let Some([w, h]) = wanted {
@@ -248,8 +264,16 @@ impl<W> Dock<W> {
                 let action = add(ui, slot);
                 let frame = &mut slot.frame;
                 let drawn = frame.drawn.unwrap_or(ui.min_rect());
-                let dragged = resize_handles(ui, drawn, window_id, frame.hex);
-                frame.window_size = if frame.anchor_fresh {
+                // folded down, or on its way: the size drawn is not its own, and there is nothing to resize
+                let folded = frame.collapsed || frame.folding;
+                let dragged = if folded {
+                    None
+                } else {
+                    resize_handles(ui, drawn, window_id, frame.hex)
+                };
+                frame.window_size = if folded {
+                    wanted
+                } else if frame.anchor_fresh {
                     // the size switch was clicked: next pass the frame takes the size of that form
                     None
                 } else if frame.settling && wanted.is_some() {

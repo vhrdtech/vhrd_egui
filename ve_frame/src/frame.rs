@@ -10,7 +10,7 @@ use ve_theme::Tokens;
 use crate::hex::{self, HexFace, SideItem, Wing};
 use crate::menu::{self, Moves};
 use crate::size::{Size, SizeHints, SizeMode};
-use crate::state::{FrameAction, FrameState, GLOW_SECS, Landing};
+use crate::state::{FOLD_SECS, FrameAction, FrameState, GLOW_SECS, Landing};
 
 /// Height of the header row.
 pub(crate) const HEADER_H: f32 = 26.0;
@@ -36,6 +36,27 @@ pub enum Shape {
 }
 
 type UiFn<'a> = Box<dyn FnOnce(&mut Ui) + 'a>;
+
+/// How a floating frame sets itself off from the grid under it ([`WidgetFrame::float_look`]). Both are on by
+/// default; a frame in a grid is not touched by either.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct FloatLook {
+    /// Lifted off the page: the theme's raised surface as its fill (`Tokens::colors.surface_raised`), a
+    /// stronger 1 px border (`line_strong`) and the large soft shadow `Tokens::shadow.floating`. Off: the fill
+    /// and border of a grid frame with the plain window shadow.
+    pub elevation: bool,
+    /// The floating window on top of the others has its border in the accent colour; the others stay neutral.
+    pub focus: bool,
+}
+
+impl Default for FloatLook {
+    fn default() -> Self {
+        Self {
+            elevation: true,
+            focus: true,
+        }
+    }
+}
 
 /// What a body is given to lay itself out ([`WidgetFrame::show_area`]).
 #[derive(Clone, Debug, PartialEq)]
@@ -125,6 +146,12 @@ pub struct WidgetFrame<'a> {
     title_shown: bool,
     hex_wings: bool,
     hex_bar: f32,
+    float_look: FloatLook,
+    /// Worked out when the frame is drawn: its border, its shadow, and whether the header has the fold
+    /// control (a floating frame).
+    edge: Stroke,
+    shadow: Option<egui::Shadow>,
+    foldable: bool,
 }
 
 impl<'a> WidgetFrame<'a> {
@@ -149,6 +176,10 @@ impl<'a> WidgetFrame<'a> {
             title_shown: true,
             hex_wings: false,
             hex_bar: hex::BAR_THICKNESS,
+            float_look: FloatLook::default(),
+            edge: Stroke::NONE,
+            shadow: None,
+            foldable: false,
         }
     }
 
@@ -249,6 +280,12 @@ impl<'a> WidgetFrame<'a> {
         self
     }
 
+    /// How the frame sets itself off while it floats; see [`FloatLook`].
+    pub fn float_look(mut self, look: FloatLook) -> Self {
+        self.float_look = look;
+        self
+    }
+
     /// How thick the side bars of a hexagon are, in points (18 by default, at least 10). The body moves in
     /// to make room.
     pub fn hex_bar_thickness(mut self, thickness: f32) -> Self {
@@ -283,7 +320,28 @@ impl<'a> WidgetFrame<'a> {
         state: &mut FrameState,
         body: impl FnOnce(&mut Ui, &BodyArea) -> R,
     ) -> FrameResponse<R> {
-        let theme = Theme::from_tokens(&Tokens::of_ui(ui));
+        let tokens = Tokens::of_ui(ui);
+        let mut theme = Theme::from_tokens(&tokens);
+        let floats = state.placement.floating && !self.bare;
+        let lifted = floats && self.float_look.elevation;
+        if lifted {
+            // everything of the frame is built on its fill: header, sides and footer follow
+            theme.panel_bg = tokens.colors.surface_raised;
+        }
+        let edge = if floats && self.float_look.focus && state.focused {
+            theme.accent
+        } else if lifted {
+            tokens.colors.line_strong
+        } else {
+            theme.border
+        };
+        self.edge = Stroke::new(1.0, edge);
+        self.shadow = floats.then_some(if lifted {
+            tokens.shadow.floating
+        } else {
+            tokens.shadow.window
+        });
+        self.foldable = state.placement.floating;
         let salt = self.id_salt.unwrap_or_else(|| Id::new(&self.title));
         let mem = ui.id().with(("ve_frame::learned", salt));
         // What this frame took the last time it was drawn here; in a new place (just popped out, just put
@@ -337,15 +395,66 @@ impl<'a> WidgetFrame<'a> {
             None => Size::Nom,
         };
         state.last_size = Some(size);
-        let r = ui
-            .push_id(("ve_frame", salt), |ui| match shape {
+        // Folding: a floating frame folds down to its header. The frame is always laid out in full, with its
+        // real size; while it is folded or on its way, only the top of it is given room and shown, the rest
+        // is cut off. Nothing is ever rescaled.
+        let open = if floating {
+            let secs = if ui.style().animation_time > 0.0 {
+                FOLD_SECS
+            } else {
+                0.0
+            };
+            let fold_id = Id::new(("ve_frame::fold", salt));
+            ui.ctx()
+                .animate_bool_with_time(fold_id, !state.collapsed, secs)
+        } else {
+            1.0
+        };
+        state.fold = open;
+        state.folding = open < 1.0;
+        let full = state.window_size.filter(|_| state.folding).map(Vec2::from);
+        let edge = self.edge;
+        let draw = |ui: &mut Ui, state: &mut FrameState| {
+            ui.push_id(("ve_frame", salt), |ui| match shape {
                 Shape::Rect => {
                     let mem = (mem, last_place);
                     self.show_rect(ui, &theme, state, (size, room, avail), (mem, learned), body)
                 }
                 Shape::Hex => self.show_hex(ui, &theme, state, size, body),
             })
-            .inner;
+            .inner
+        };
+        let r = match full {
+            None => draw(ui, state),
+            Some(full) => {
+                let closed = HEADER_H + 2.0 * border;
+                let shown = vec2(full.x, closed + (full.y - closed).max(0.0) * open);
+                let (cut, response) = ui.allocate_exact_size(shown, Sense::hover());
+                let whole = Rect::from_min_size(cut.min, full);
+                let mut child = ui.new_child(
+                    UiBuilder::new()
+                        .max_rect(whole)
+                        .layout(Layout::top_down(Align::Min)),
+                );
+                // room for the shadow at the sides and above; below, the cut
+                let window =
+                    Rect::from_min_max(cut.min - vec2(64.0, 64.0), cut.max + vec2(64.0, 0.0));
+                child.set_clip_rect(window.intersect(ui.clip_rect()));
+                let mut r = draw(&mut child, state);
+                r.response = response;
+                // close the cut edge
+                let y = cut.bottom() - 0.5;
+                let across = match shape {
+                    Shape::Rect => cut.x_range(),
+                    Shape::Hex => hex::span_at(whole, y),
+                };
+                ui.painter().hline(across, y, edge);
+                if open > 0.0 {
+                    ui.ctx().request_repaint();
+                }
+                r
+            }
+        };
         landing_glow(ui, &theme, state, r.response.rect, shape);
         state.drawn = Some(r.response.rect);
         if !floating && state.anchor_due {
@@ -450,10 +559,10 @@ impl<'a> WidgetFrame<'a> {
         if !self.bare {
             frame = frame
                 .fill(theme.panel_bg)
-                .stroke(Stroke::new(1.0, theme.border))
+                .stroke(self.edge)
                 .corner_radius(CornerRadius::same(6));
-            if state.placement.floating {
-                frame = frame.shadow(Tokens::of_ui(ui).shadow.window);
+            if let Some(shadow) = self.shadow {
+                frame = frame.shadow(shadow);
             }
         }
         let spacing = ui.spacing().item_spacing;
@@ -640,13 +749,21 @@ impl<'a> WidgetFrame<'a> {
         };
         let outline = hex::points(rect).to_vec();
         let painter = ui.painter();
-        if state.placement.floating && !self.bare {
-            // a soft shadow, as the window of a rectangle has
-            for (grow, alpha) in [(6.0, 18), (3.0, 34), (1.0, 50)] {
-                let under = rect.expand(grow).translate(vec2(0.0, 4.0));
+        if let Some(shadow) = self.shadow {
+            // the theme's shadow, as the window of a rectangle has: its blur as a stack of faint outlines
+            let steps = 8;
+            let alpha = f32::from(shadow.color.a()) / 255.0;
+            for i in (0..steps).rev() {
+                let t = i as f32 / (steps - 1) as f32;
+                let grow = f32::from(shadow.blur) * 0.5 * t;
+                let under = rect.expand(grow).translate(vec2(
+                    f32::from(shadow.offset[0]),
+                    f32::from(shadow.offset[1]),
+                ));
+                let a = alpha * (1.0 - t).powi(2) * 0.45;
                 painter.add(egui::Shape::convex_polygon(
                     hex::points(under).to_vec(),
-                    Color32::from_black_alpha(alpha),
+                    Color32::from_black_alpha((a * 255.0) as u8),
                     Stroke::NONE,
                 ));
             }
@@ -690,7 +807,7 @@ impl<'a> WidgetFrame<'a> {
             }
         }
         let painter = ui.painter();
-        painter.add(egui::Shape::closed_line(outline, line));
+        painter.add(egui::Shape::closed_line(outline, self.edge));
         let y = header_rect.bottom();
         painter.hline(hex::span_at(rect, y), y, line);
 
@@ -780,6 +897,9 @@ impl<'a> WidgetFrame<'a> {
         if self.has_menu() {
             width += MENU_W + GAP;
         }
+        if self.foldable {
+            width += FOLD + GAP;
+        }
         width
     }
 
@@ -801,6 +921,14 @@ impl<'a> WidgetFrame<'a> {
         );
         h.shrink_clip_rect(rect);
         h.spacing_mut().item_spacing.x = GAP;
+        if self.foldable {
+            // under the controls, so they keep their clicks: a double click on the bare header folds
+            let bar = ui.interact(rect, ui.id().with("header"), Sense::click());
+            let chevron = fold_chevron(&mut h, theme, state.collapsed);
+            if chevron.clicked() || bar.double_clicked() {
+                state.collapsed = !state.collapsed;
+            }
+        }
         if let Some((status, why)) = self.led {
             let r = h.add(
                 StatusLight::dot_only(status)
@@ -911,6 +1039,47 @@ impl<'a> WidgetFrame<'a> {
         });
         action
     }
+}
+
+/// Size of the fold control in a floating frame's header.
+const FOLD: f32 = 12.0;
+
+/// The fold control: a small triangle, pointing down while the frame is open and right while it is folded.
+fn fold_chevron(ui: &mut Ui, theme: &Theme, collapsed: bool) -> Response {
+    let (rect, response) = ui.allocate_exact_size(vec2(FOLD, FOLD), Sense::click());
+    let label = if collapsed { "expand" } else { "collapse" };
+    response.widget_info(|| egui::WidgetInfo::labeled(egui::WidgetType::Button, true, label));
+    if ui.is_rect_visible(rect) {
+        let color = if response.hovered() || response.has_focus() {
+            theme.text
+        } else {
+            theme.text_muted
+        };
+        let (c, r) = (rect.center(), FOLD * 0.3);
+        let points = if collapsed {
+            vec![
+                c + vec2(-r * 0.7, -r),
+                c + vec2(r, 0.0),
+                c + vec2(-r * 0.7, r),
+            ]
+        } else {
+            vec![
+                c + vec2(-r, -r * 0.7),
+                c + vec2(r, -r * 0.7),
+                c + vec2(0.0, r),
+            ]
+        };
+        ui.painter()
+            .add(egui::Shape::convex_polygon(points, color, Stroke::NONE));
+    }
+    let tip = if collapsed {
+        "Unfold the window to the size it had (or double-click the header)"
+    } else {
+        "Fold the window down to its header; the controls here keep working (or double-click the header)"
+    };
+    response
+        .on_hover_cursor(egui::CursorIcon::PointingHand)
+        .on_hover_text(tip)
 }
 
 /// The fill of the header band: the strongest of the frame's bands, so the eye lands on the title first.
