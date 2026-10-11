@@ -1,14 +1,27 @@
 //! The sandbox app: a `ve_settle::World` with widgets of different sizes
 //! on its bodies, a slider on every parameter and a debug overlay (SETL-2).
 //!
-//! The headless tests in `tests/sandbox.rs` include this file and drive it
-//! like a person, so everything they read is `pub`.
+//! The *frames* scene puts real `ve_frame` widgets on the bodies
+//! (`ve_settle::frames`, SETL-7): the frame playground's demo widgets,
+//! rectangles and hexagons, on the `ve_backdrop` grid.
+//!
+//! The headless tests in `tests/sandbox.rs` and `tests/frames.rs` include
+//! this file and drive it like a person, so everything they read is `pub`.
+
+// The frame playground's demo widgets: one widget, every option of the frame.
+#[path = "../../../ve_frame/examples/playground/main.rs"]
+#[allow(dead_code)]
+pub mod playground;
 
 use eframe::egui;
 use egui::{
     Align2, Button, CentralPanel, Color32, FontId, Frame, Id, Panel, Pos2, RichText, ScrollArea,
     Sense, Slider, Stroke, StrokeKind, TextWrapMode, Ui, UiBuilder, pos2, vec2,
 };
+use playground::{Demo, Opts, Scale};
+use ve_backdrop::{Backdrop, Lit};
+use ve_frame::{Applied, FloatLook, FrameAction, LandMode, Shape, Slot, SlotId};
+use ve_settle::frames::{Frames, LandAt, Seat, View};
 use ve_settle::{Axis, BodyDesc, BodyId, MAX_VERTICES, Params, Poly, Rect, Side, Vec2, World};
 use ve_theme::{Tokens, UiExt as _};
 
@@ -234,16 +247,41 @@ pub enum Scene {
     /// The same pieces seeded pressed into each other, a tight honeycomb:
     /// the scene SETL-14 (a tile dropped on it jumps) was found in.
     Tight,
+    /// Real `ve_frame` widgets on the bodies (SETL-7): the frame
+    /// playground's demo widgets, rectangles and hexagons mixed, enough to
+    /// run past the bottom of the window, on the `ve_backdrop` grid.
+    Frames,
 }
 
 impl Scene {
     /// The parameters the scene starts with.
     pub fn params(self) -> Params {
         let mut p = Params::default();
-        if self == Scene::Full {
+        if matches!(self, Scene::Full | Scene::Frames) {
             p.walls.bottom = false;
         }
+        if self == Scene::Frames {
+            // gravity packs the frames; a home would hold each where it was seeded
+            p.home_stiffness = 0.0;
+            // without a home to brake it, what a landing widget pushes away must not fly on
+            p.max_speed = p.glide_speed;
+        }
         p
+    }
+
+    /// Whether the scene fills more than the window and is topped up when
+    /// the window grows.
+    fn fills(self) -> bool {
+        matches!(self, Scene::Full | Scene::Frames)
+    }
+
+    /// How the scene is seeded: the width of a column and the height of a
+    /// row of the seeding grid, and the area of an average widget, points².
+    fn pitch(self) -> (f32, f32, f32) {
+        match self {
+            Scene::Frames => (250.0, 150.0, FRAME_AREA),
+            _ => (290.0, 190.0, AVERAGE_AREA),
+        }
     }
 }
 
@@ -254,6 +292,61 @@ const FULL_FILL: f32 = 1.8;
 const SEED_SIZE: egui::Vec2 = vec2(480.0, 320.0);
 /// The area of an average sandbox widget, points², for the full scene's count.
 const AVERAGE_AREA: f32 = 330.0 * 230.0;
+
+/// Room a frame is seeded with on top of the guess of its size: sides, a
+/// footer and the header's controls are only known once it was drawn.
+const FRAME_SPARE: egui::Vec2 = vec2(70.0, 30.0);
+/// The area of an average demo frame, points², for the frames scene's count.
+const FRAME_AREA: f32 = 300.0 * 200.0;
+
+/// The demo widget the frames scene adds as its `n`-th: rectangles and
+/// hexagons of the three scales, with and without sides, side bars, wings,
+/// footer and size switch, mixed so that neighbours differ.
+pub fn mixed(n: u32) -> Demo {
+    const L: u8 = 1; // LED
+    const I: u8 = 2; // info
+    const S: u8 = 4; // size switch
+    const M: u8 = 8; // menu
+    const F: u8 = 16; // footer
+    const X: u8 = 32; // sides
+    const ALL: u8 = L | I | S | M | F | X;
+    let kinds = [
+        (ALL, false, Scale::Medium, false),
+        (L | I | S | M, false, Scale::Tiny, false),
+        (ALL, true, Scale::Medium, false),
+        (L | I | S | M | F, false, Scale::Big, false),
+        (L | I | S | M, true, Scale::Tiny, false),
+        (I | S | M | X, false, Scale::Medium, false),
+        (L | I | S | M | F, true, Scale::Medium, true),
+        (L | I | M, false, Scale::Medium, false),
+        (ALL, false, Scale::Tiny, false),
+        (L | I | S | M, true, Scale::Medium, false),
+        (S | M | F, false, Scale::Medium, false),
+        (ALL, true, Scale::Big, false),
+    ];
+    let (bits, hex, scale, wings) = kinds[n as usize % kinds.len()];
+    let demo = Demo::new(Opts::from_bits(bits, hex), scale);
+    if wings { demo.with_wings() } else { demo }
+}
+
+/// What the layout has to know about a demo widget.
+pub fn seat(demo: &Demo) -> Seat {
+    let shape = if demo.opts.hex {
+        Shape::Hex
+    } else {
+        Shape::Rect
+    };
+    let hints = demo.scale.hints();
+    // without a size switch: the room the playground's rows give it
+    let seat = Seat::new(demo.title())
+        .shape(shape)
+        .room(ve_frame::outer_width(hints.nom.x));
+    if demo.opts.sizes {
+        seat.hints(hints)
+    } else {
+        seat
+    }
+}
 
 /// Which layers of the debug overlay are drawn.
 pub struct Overlay {
@@ -277,12 +370,41 @@ pub struct Overlay {
     pub pulls: bool,
 }
 
+impl Overlay {
+    /// Every layer on, or every layer off.
+    fn all(on: bool) -> Self {
+        Self {
+            bodies: on,
+            forces: on,
+            tension: on,
+            homes: on,
+            snaps: on,
+            shapes: on,
+            grid: on,
+            pulls: on,
+        }
+    }
+}
+
 /// The sandbox app state.
 pub struct Sandbox {
     /// The simulation.
     pub world: World,
     /// The widgets on its bodies.
     pub items: Vec<Item>,
+    /// The framed widgets on its bodies (the frames scene).
+    pub frames: Frames<Demo>,
+    /// How a floating frame sets itself off, and what happens when one is
+    /// put back out of view.
+    pub look: FloatLook,
+    pub land: LandMode,
+    /// The background of the frames scene, and whether it is drawn.
+    pub backdrop: Backdrop,
+    pub backdrop_on: bool,
+    /// What the frames fed the backdrop last frame.
+    pub lit: Vec<Lit>,
+    /// The last thing a frame's menu did.
+    pub message: String,
     /// Stepping is stopped; "Step" runs single steps.
     pub paused: bool,
     /// The widget the buttons act on.
@@ -337,21 +459,25 @@ impl Sandbox {
         ve_theme::setup(&cc.egui_ctx);
         cc.egui_ctx
             .all_styles_mut(|style| style.interaction.selectable_labels = false);
+        // the shader when eframe runs on wgpu, the CPU painter otherwise
+        let backdrop = match &cc.wgpu_render_state {
+            Some(render_state) => Backdrop::with_wgpu(render_state),
+            None => Backdrop::new(),
+        };
         Self {
             world: World::new(Rect::default(), scene.params()),
             items: Vec::new(),
+            frames: Frames::new(),
+            look: FloatLook::default(),
+            land: LandMode::default(),
+            backdrop,
+            backdrop_on: true,
+            lit: Vec::new(),
+            message: String::new(),
             paused: false,
             selected: None,
-            overlay: Overlay {
-                bodies: true,
-                forces: true,
-                tension: true,
-                homes: true,
-                snaps: true,
-                shapes: true,
-                grid: true,
-                pulls: true,
-            },
+            // the frames are the picture there; the layers are a click away
+            overlay: Overlay::all(scene != Scene::Frames),
             auto: false,
             rehome_on_drop: true,
             arena: egui::Rect::NOTHING,
@@ -413,6 +539,9 @@ impl Sandbox {
     /// Add a widget of the next kind with its middle at the world point
     /// `at` (or at a spot picked inside the walls).
     pub fn add_widget(&mut self, at: Option<Pos2>) -> BodyId {
+        if self.scene == Scene::Frames {
+            return self.add_frame(at);
+        }
         let kind = Kind::ALL[self.seq as usize % Kind::ALL.len()];
         self.seq += 1;
         let at = at.unwrap_or_else(|| {
@@ -439,6 +568,54 @@ impl Sandbox {
         });
         self.selected = Some(id);
         id
+    }
+
+    /// Add the next demo widget in its frame with its middle at the world
+    /// point `at` (or at a spot picked inside the walls).
+    pub fn add_frame(&mut self, at: Option<Pos2>) -> BodyId {
+        let at = at.unwrap_or_else(|| {
+            let (rx, ry) = (self.random() % 1000, self.random() % 1000);
+            let inner = to_rect(self.world.bounds()).shrink(60.0);
+            pos2(
+                inner.min.x + inner.width().max(0.0) * rx as f32 / 1000.0,
+                inner.min.y + inner.height().max(0.0) * ry as f32 / 1000.0,
+            )
+        });
+        let demo = mixed(self.seq);
+        self.seq += 1;
+        let seat = seat(&demo);
+        let slot = self.frames.add(&mut self.world, demo, seat, from_pos(at));
+        let id = self.frames.body(slot).unwrap_or(BodyId(0));
+        self.selected = Some(id);
+        id
+    }
+
+    /// How many widgets the scene holds, floating frames included.
+    pub fn count(&self) -> usize {
+        self.items.len() + self.frames.dock.len()
+    }
+
+    /// Forget every framed widget and keep the switches of the layout.
+    fn drop_frames(&mut self) {
+        let old = std::mem::take(&mut self.frames);
+        self.frames.auto_pick = old.auto_pick;
+        self.frames.ghosts = old.ghosts;
+        self.frames.land_at = old.land_at;
+    }
+
+    /// Carry out what a frame's menu picked.
+    pub fn apply(&mut self, id: SlotId, action: FrameAction) {
+        let title = self.frames.dock.get(id).map(|s| s.widget.title());
+        let title = title.unwrap_or_default();
+        self.message = match self.frames.apply(id, action.clone()) {
+            Applied::Moved => format!("{title}: {action:?}"),
+            Applied::Gone => return,
+            Applied::Close => {
+                self.frames.remove(&mut self.world, id);
+                format!("{title}: closed")
+            }
+            Applied::Send(machine) => format!("{title}: not sent, no way to {machine} here"),
+        };
     }
 
     /// Add a tile with `outline` with its middle at the world point `at`
@@ -492,6 +669,9 @@ impl Sandbox {
 
     fn remove_selected(&mut self) {
         if let Some(id) = self.selected.take() {
+            if let Some(slot) = self.frames.slot(id) {
+                self.frames.remove(&mut self.world, slot);
+            }
             self.world.remove(id);
             self.items.retain(|item| item.id != id);
         }
@@ -503,6 +683,7 @@ impl Sandbox {
         self.world = World::new(from_rect(self.arena), *self.world.params());
         self.scroll = 0.0;
         self.items.clear();
+        self.drop_frames();
         self.selected = None;
         self.vertex_drag = None;
         // Nothing is seeded or topped up again until Reset.
@@ -519,6 +700,7 @@ impl Sandbox {
         self.world = World::new(from_rect(self.arena), self.scene.params());
         self.scroll = 0.0;
         self.items.clear();
+        self.drop_frames();
         self.selected = None;
         self.seq = 0;
         self.seeded = false;
@@ -528,7 +710,7 @@ impl Sandbox {
     /// The first widgets of the scene.
     fn seed(&mut self) {
         self.seeded = true;
-        if self.scene == Scene::Full {
+        if self.scene.fills() {
             self.seed_full();
             return;
         }
@@ -600,8 +782,8 @@ impl Sandbox {
     }
 
     /// How many widgets fill [`FULL_FILL`] arenas of this size.
-    fn full_count(arena: egui::Rect) -> usize {
-        ((arena.width() * arena.height() * FULL_FILL) / AVERAGE_AREA)
+    fn full_count(&self, arena: egui::Rect) -> usize {
+        ((arena.width() * arena.height() * FULL_FILL) / self.scene.pitch().2)
             .ceil()
             .clamp(8.0, 120.0) as usize
     }
@@ -613,7 +795,7 @@ impl Sandbox {
     fn seed_full(&mut self) {
         let a = self.arena;
         self.filled_for = a.width() * a.height();
-        self.add_rows(Self::full_count(a), a.min.y);
+        self.add_rows(self.full_count(a), a.min.y);
         self.selected = None;
     }
 
@@ -623,11 +805,11 @@ impl Sandbox {
     fn top_up(&mut self) {
         let a = self.arena;
         let area = a.width() * a.height();
-        if self.scene != Scene::Full || area <= self.filled_for * 1.05 {
+        if !self.scene.fills() || area <= self.filled_for * 1.05 {
             return;
         }
         self.filled_for = area;
-        let missing = Self::full_count(a).saturating_sub(self.items.len());
+        let missing = self.full_count(a).saturating_sub(self.count());
         let lowest = self
             .world
             .bodies()
@@ -641,9 +823,14 @@ impl Sandbox {
 
     /// `count` widgets in rows across the arena from `top` down.
     fn add_rows(&mut self, count: usize, top: f32) {
+        if self.scene == Scene::Frames {
+            self.add_shelves(count, top);
+            return;
+        }
         let a = self.arena;
-        let cols = (a.width() / 290.0).ceil().max(1.0) as usize;
-        let (dx, dy) = (a.width() / cols as f32, 190.0);
+        let (column, dy, _) = self.scene.pitch();
+        let cols = (a.width() / column).ceil().max(1.0) as usize;
+        let dx = a.width() / cols as f32;
         for i in 0..count {
             let (row, col) = (i / cols, i % cols);
             let shift = if row % 2 == 1 { dx * 0.2 } else { 0.0 };
@@ -652,6 +839,26 @@ impl Sandbox {
                 top + dy * (row as f32 + 0.5),
             );
             self.add_widget(Some(pos2(at.x.min(a.max.x - 60.0), at.y)));
+        }
+    }
+
+    /// `count` framed widgets in rows that fit, from `top` down, each with
+    /// the room its frame is guessed to take and some to spare. Not seeded
+    /// tighter than they fit, as the full scene is: a pile with hexagons
+    /// in it does not come apart (SETL-16).
+    fn add_shelves(&mut self, count: usize, top: f32) {
+        let a = self.arena;
+        let gap = self.world.params().gap;
+        let left = a.min.x + gap;
+        let (mut x, mut y, mut row) = (left, top + gap, 0.0f32);
+        for _ in 0..count {
+            let size = seat(&mixed(self.seq)).guess() + Vec2::new(FRAME_SPARE.x, FRAME_SPARE.y);
+            if x > left && x + size.x + gap > a.max.x {
+                (x, y, row) = (left, y + row + gap, 0.0);
+            }
+            self.add_frame(Some(pos2(x + size.x / 2.0, y + size.y / 2.0)));
+            x += size.x + gap;
+            row = row.max(size.y);
         }
     }
 
@@ -705,6 +912,13 @@ impl Sandbox {
             }
             let chosen = self.selected.is_some();
             let none = "Not available: no widget is selected. Click one first.";
+            let framed = self.scene == Scene::Frames;
+            let content = chosen && !framed;
+            let none_or_frame = if framed {
+                "Not available in the frames scene: a frame's size comes from its size switch and its sizes, not from an amount of content."
+            } else {
+                none
+            };
             if ui
                 .add_enabled(chosen, Button::new("Remove selected"))
                 .on_hover_text("Remove the selected widget; the others close the hole.")
@@ -714,27 +928,27 @@ impl Sandbox {
                 self.remove_selected();
             }
             if ui
-                .add_enabled(chosen, Button::new("Grow"))
+                .add_enabled(content, Button::new("Grow"))
                 .on_hover_text("Give the selected widget one more line, bar or cell, so it wants more room.")
-                .on_disabled_hover_text(none)
+                .on_disabled_hover_text(none_or_frame)
                 .clicked()
                 && let Some(item) = self.selected_item()
             {
                 item.amount = (item.amount + 1).min(MAX_AMOUNT);
             }
             if ui
-                .add_enabled(chosen, Button::new("Shrink"))
+                .add_enabled(content, Button::new("Shrink"))
                 .on_hover_text("Take one line, bar or cell from the selected widget.")
-                .on_disabled_hover_text(none)
+                .on_disabled_hover_text(none_or_frame)
                 .clicked()
                 && let Some(item) = self.selected_item()
             {
                 item.amount = item.amount.saturating_sub(1).max(1);
             }
             if ui
-                .add_enabled(chosen, Button::new("Auto size"))
+                .add_enabled(content, Button::new("Auto size"))
                 .on_hover_text("Forget the size set by hand: the selected widget wants the size of its content again.")
-                .on_disabled_hover_text(none)
+                .on_disabled_hover_text(none_or_frame)
                 .clicked()
                 && let Some(item) = self.selected_item()
             {
@@ -794,11 +1008,15 @@ impl Sandbox {
                 .on_hover_text("Hexagons, half hexagons, triangles and two panels in a closed box: bodies with convex outlines; triangles fill the notches between hexagons. Select one to edit its outline: drag a square to move a vertex, drag or click a + to put a new one on an edge.");
             ui.selectable_value(&mut scene, Scene::Tight, "tight")
                 .on_hover_text("The shapes scene seeded pressed together: a tight honeycomb. Known bug SETL-14 was found here: \"Add half hexagon\" drops a tile on the pack, and in the headless test it moved 43 points in one frame (a jump; a glide is under 32). Watch the new tile right after the click.");
+            ui.selectable_value(&mut scene, Scene::Frames, "frames")
+                .on_hover_text("Real ve_frame widgets on the bodies: the frame playground's demo widgets, rectangles and hexagons mixed, enough to run past the bottom, on the ve_backdrop grid. Use their size switch, their ☰ menu (pop out, back), fold them by the ▾, drag them. The overlay layers start off here.");
             if scene != self.scene {
                 self.scene = scene;
+                self.overlay = Overlay::all(scene != Scene::Frames);
                 self.reset();
             }
         });
+        self.frame_controls(ui);
         ui.checkbox(&mut self.auto, "Content changes by itself")
             .on_hover_text("Now and then a widget gets one more or one less line, bar or cell, like live data.");
         ui.checkbox(&mut self.rehome_on_drop, "Drop sets home")
@@ -827,6 +1045,43 @@ impl Sandbox {
             .on_hover_text("Vertex attraction at work. Pulling: a ring on the corner and an arrow to where it is pulled (green). Locked: a filled square (accent colour), the corner is there and held until the two are pulled clearly apart. For every edge the pull has moved, a line where the edge would be without it, with the points it grew (+) or shrank (-).");
 
         self.param_sliders(ui);
+    }
+
+    /// The switches of the frames scene.
+    fn frame_controls(&mut self, ui: &mut Ui) {
+        ui.section_header(
+            "Frames",
+            "The frames scene: ve_frame widgets on the bodies of the world.",
+        );
+        let on = self.scene == Scene::Frames;
+        let off =
+            "Not available: only the frames scene has framed widgets. Pick \"frames\" under Scene.";
+        ui.add_enabled_ui(on, |ui| {
+            ui.checkbox(&mut self.frames.auto_pick, "Layout picks sizes")
+                .on_hover_text("A frame whose size switch is on auto is shown in the size the layout picks: one step wider (min, nom, wide) when its row has the room for it, one step down when it is pressed. One frame changes at a time. Off: frames on auto keep the size they have.")
+                .on_disabled_hover_text(off);
+            ui.checkbox(&mut self.frames.ghosts, "Ghost slots")
+                .on_hover_text("A widget popped out as a window keeps its body in the world, drawn as a dashed ghost; click it to put the widget back. Off: its body leaves the world and the others close up.")
+                .on_disabled_hover_text(off);
+            let mut window = self.frames.land_at == LandAt::Window;
+            ui.checkbox(&mut window, "Land where the window is")
+                .on_hover_text("A floating widget put back into the layout lands where its window was, like a drop. Off: it returns to the place it left.")
+                .on_disabled_hover_text(off);
+            self.frames.land_at = if window { LandAt::Window } else { LandAt::Home };
+            let mut follow = self.land == LandMode::Follow;
+            ui.checkbox(&mut follow, "Follow")
+                .on_hover_text("When a widget is put back at a place that is scrolled out of view. On: the view scrolls there. Off: the view stays and a marker on its edge points at the widget; click the marker to go there.")
+                .on_disabled_hover_text(off);
+            self.land = if follow { LandMode::Follow } else { LandMode::Stay };
+            ui.checkbox(&mut self.backdrop_on, "Backdrop")
+                .on_hover_text("The ve_backdrop grid behind the frames: light gathers around them, more around the floating ones and the one on top.")
+                .on_disabled_hover_text(off);
+            ui.checkbox(&mut self.backdrop.settings.glass, "Glass")
+                .on_hover_text("The backdrop's emulated transparency: a dimmed copy of the desktop wallpaper under the grid.")
+                .on_disabled_hover_text(off);
+            ui.weak(&self.message)
+                .on_hover_text("The last thing a frame's menu did.");
+        });
     }
 
     fn status(&mut self, ui: &mut Ui) {
@@ -1100,6 +1355,9 @@ impl Sandbox {
         let tokens = ui.tokens();
         let arena = ui.available_rect_before_wrap();
         self.arena = arena;
+        let framed = self.scene == Scene::Frames;
+        // first, so everything else is drawn on top; filled once the frames are laid out
+        let backdrop = (framed && self.backdrop_on).then(|| self.backdrop.reserve(ui.painter()));
         let background = ui
             .allocate_rect(arena, Sense::click())
             .on_hover_text("The arena. Drag a widget to move it, drag its lower right corner to resize it, double-click empty space to add one. Scroll when the widgets run past the bottom.");
@@ -1111,7 +1369,8 @@ impl Sandbox {
         } else if background.clicked() {
             self.selected = None;
         }
-        if ui.rect_contains_pointer(arena) {
+        // the frames scene scrolls in an egui scroll area, which takes the wheel itself
+        if !framed && ui.rect_contains_pointer(arena) {
             self.scroll -= ui.input(|i| i.smooth_scroll_delta.y);
         }
         self.world.set_bounds(from_rect(arena));
@@ -1131,19 +1390,105 @@ impl Sandbox {
             }
         }
 
+        self.scroll = self.scroll.clamp(0.0, self.max_scroll());
+        // before the bodies are counted: a frame that pops out takes its body along
+        if framed {
+            self.frames_ui(ui);
+        }
         // Solid bodies first, lifted ones above them, the dragged one on top.
         let mut order: Vec<usize> = (0..self.world.bodies().len()).collect();
         order.sort_by_key(|&i| {
             let b = &self.world.bodies()[i];
             (b.dragged, b.lifted)
         });
-        self.scroll = self.scroll.clamp(0.0, self.max_scroll());
         for i in order {
             self.body_ui(ui, i, &tokens);
         }
         self.vertex_ui(ui, &tokens);
         self.paint_overlay(ui, &tokens);
-        self.paint_scrollbar(ui, &tokens);
+        if !framed {
+            self.paint_scrollbar(ui, &tokens);
+        }
+        if let Some(slot) = backdrop {
+            self.backdrop.fill(ui.painter(), slot, arena, &self.lit);
+        }
+    }
+
+    /// The framed widgets on their bodies, in a scroll area as tall as the
+    /// world's content, then the floating ones and the other OS windows.
+    fn frames_ui(&mut self, ui: &mut Ui) {
+        let arena = self.arena;
+        let height = self.content_height();
+        let moves = self.frames.dock.moves(None).close(Ok(()));
+        let (look, land) = (self.look, self.land);
+        let mut draw = |ui: &mut Ui, slot: &mut Slot<Demo>| {
+            playground::draw_at(ui, slot, (&moves, look, land, true)).0
+        };
+        let mut picked = Vec::new();
+        let mut clicked = None;
+        let mut area = ui.new_child(UiBuilder::new().id_salt("settle_frames").max_rect(arena));
+        ScrollArea::vertical()
+            .id_salt("settle_frames_scroll")
+            .auto_shrink(false)
+            .show(&mut area, |ui| {
+                ui.set_min_height(height);
+                // the world is in screen points with the view scrolled to the top
+                self.scroll = arena.min.y - ui.max_rect().min.y;
+                let view = View {
+                    offset: vec2(0.0, -self.scroll),
+                    clip: arena.intersect(ui.clip_rect()),
+                };
+                let shown = self.frames.show(ui, &mut self.world, view, &mut draw);
+                picked.extend(shown.picked);
+                clicked = shown.clicked;
+            });
+        if let Some(body) = clicked.and_then(|slot| self.frames.body(slot)) {
+            self.selected = Some(body);
+        }
+        picked.extend(self.frames.show_windows(ui, &mut draw));
+        // Another OS window has no world of its own here: its widgets sit in plain rows.
+        self.frames
+            .dock
+            .show_viewports(ui.ctx(), "ve_settle sandbox", |dock, ui, viewport| {
+                ui.horizontal_wrapped(|ui| {
+                    for id in dock.ids(viewport, false) {
+                        if let Some(slot) = dock.get_mut(id) {
+                            slot.frame.set_auto_pick(None);
+                            let action = ui.vertical(|ui| draw(ui, slot)).inner;
+                            picked.extend(action.map(|a| (id, a)));
+                        }
+                    }
+                });
+                picked.extend(dock.show_windows(ui, viewport, &mut draw));
+            });
+        for (id, action) in picked {
+            self.apply(id, action);
+        }
+        self.lit = self.lits(ui.ctx().content_rect());
+        // a glow that fades, a window that hops, a frame that folds: they ask for frames themselves
+    }
+
+    /// What the frames feed the backdrop: the rectangle each was drawn in,
+    /// whether it floats and whether it is the one on top. A hexagon goes
+    /// by its bounding rectangle. The backdrop takes a limited number, so
+    /// the floating ones come first and frames out of view are left out.
+    fn lits(&self, screen: egui::Rect) -> Vec<Lit> {
+        let mut lits: Vec<Lit> = self
+            .frames
+            .placed()
+            .into_iter()
+            .filter(|p| screen.intersects(p.rect) && !self.frames.is_ghost(p.slot) || p.floating)
+            .map(|p| {
+                Lit::new(p.rect)
+                    .corner_radius(if p.hex { 0.0 } else { 6.0 })
+                    .floating(p.floating)
+                    .focused(p.focused)
+                    .id(Id::new(("settle_lit", p.slot.0)))
+            })
+            .collect();
+        lits.sort_by_key(|l| !l.floating);
+        lits.truncate(ve_backdrop::MAX_LIT);
+        lits
     }
 
     /// A thin bar on the right edge: which part of the content is shown.

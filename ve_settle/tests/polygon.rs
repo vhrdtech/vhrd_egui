@@ -353,3 +353,105 @@ fn a_polygon_is_resized_as_a_whole_to_line_up() {
     assert!((ra.size().y - 142.5).abs() < 0.5, "{ra:?}");
     assert_eq!(w.body(a).unwrap().shape(), Poly::unit_hexagon().fit(&ra));
 }
+
+/// A column of rigid tiles with a hexagon in it, open at the bottom, no homes.
+fn column_with_a_hexagon() -> World {
+    let mut params = Params::default();
+    params.walls.bottom = false;
+    params.home_stiffness = 0.0;
+    let bounds = Rect::from_min_size(Vec2::ZERO, Vec2::new(400.0, 600.0));
+    let mut world = World::new(bounds, params);
+    let rigid = |x: f32, y: f32, h: f32| {
+        let size = Vec2::new(300.0, h);
+        BodyDesc::new(Vec2::new(x, y), size)
+            .min_size(size)
+            .max_size(size)
+            .home(None)
+    };
+    world.add(rigid(200.0, 60.0, 100.0));
+    world.add(rigid(200.0, 200.0, 160.0).outline(Poly::unit_hexagon()));
+    world.add(rigid(200.0, 340.0, 100.0));
+    assert!(world.settle(3_000).is_some());
+    world
+}
+
+/// SETL-17: an outline pushed on by a neighbour that is itself being parted from a tile dropped onto it
+/// keeps up with it. Its glide per step used to be counted by the way it went, passes back and forth
+/// included, and was halved on a flat face as on a slope: the neighbour sank 50 points into the hexagon
+/// here. What is left (9 points for a few steps) is the speed the pushed neighbour carries on top of the
+/// push: more than the glide a step the hexagon may give way by.
+#[test]
+fn a_hexagon_keeps_up_with_the_neighbour_that_is_pushed_onto_it() {
+    let mut world = column_with_a_hexagon();
+    // a tile lands on the top one, a little above its middle: the top one is parted from it, downward
+    let size = Vec2::new(300.0, 100.0);
+    world.add(
+        BodyDesc::new(Vec2::new(200.0, 40.0), size)
+            .min_size(size)
+            .max_size(size)
+            .home(None),
+    );
+    let mut deepest = 0.0f32;
+    for _ in 0..3_000 {
+        if !world.step() {
+            break;
+        }
+        deepest = deepest.max(world.max_overlap());
+    }
+    assert!(world.is_at_rest(), "still moving");
+    assert!(deepest < 12.0, "a solid pair overlapped by {deepest}");
+    assert_eq!(world.max_overlap(), 0.0);
+}
+
+/// SETL-16, open: tiles seeded tighter than they fit come apart when they are all rectangles
+/// (`a_packed_field_gives_way_row_by_row_without_crushing`), but not with hexagons among them: outlines
+/// never give way out of a row, so the pile stays, overlapping, with tiles lifted for ever.
+#[test]
+#[ignore = "SETL-16: a pile with outlines in it does not come apart"]
+fn a_pile_seeded_tighter_than_it_fits_comes_apart_with_hexagons_in_it() {
+    let mut params = Params::default();
+    params.walls.bottom = false;
+    let bounds = Rect::from_min_size(Vec2::ZERO, Vec2::new(890.0, 800.0));
+    let mut world = World::new(bounds, params);
+    let sizes = [
+        (281.0, 162.0),
+        (209.0, 88.0),
+        (310.0, 156.0),
+        (338.0, 242.0),
+        (256.0, 86.0),
+        (281.0, 134.0),
+        (306.0, 156.0),
+        (218.0, 104.0),
+        (210.0, 116.0),
+        (292.0, 132.0),
+        (218.0, 162.0),
+        (476.0, 236.0),
+    ];
+    let hexagons = [2, 4, 6, 9, 11];
+    for i in 0..35 {
+        let (w, h) = sizes[i % sizes.len()];
+        let size = Vec2::new(w, h);
+        let at = Vec2::new(
+            890.0 / 4.0 * ((i % 4) as f32 + 0.5),
+            150.0 * ((i / 4) as f32 + 0.5),
+        );
+        let mut desc = BodyDesc::new(at, size).min_size(size).max_size(size);
+        if hexagons.contains(&(i % sizes.len())) {
+            // a hexagon with its faces at 60 degrees, as a frame has them
+            let s = h / (2.0 * 3f32.sqrt()) / w;
+            let outline = [
+                v(s, 0.0),
+                v(1.0 - s, 0.0),
+                v(1.0, 0.5),
+                v(1.0 - s, 1.0),
+                v(s, 1.0),
+                v(0.0, 0.5),
+            ];
+            desc = desc.outline(Poly::new(&outline));
+        }
+        world.add(desc);
+    }
+    assert!(world.settle(6_000).is_some(), "still moving");
+    assert_eq!(world.max_overlap(), 0.0);
+    assert!(world.bodies().iter().all(|b| !b.lifted));
+}

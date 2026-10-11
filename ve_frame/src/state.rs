@@ -135,6 +135,15 @@ pub struct FrameState {
     pub(crate) anchor_fresh: bool,
     #[serde(skip)]
     pub(crate) anchor_due: bool,
+    /// What a layout picked for auto ([`FrameState::set_auto_pick`]).
+    #[serde(skip)]
+    pub(crate) auto_pick: Option<Size>,
+    /// Where the body was laid out last, in screen points.
+    #[serde(skip)]
+    pub(crate) body: Option<egui::Rect>,
+    /// The size the frame was drawn with the last time it was drawn in full (not cut off by folding).
+    #[serde(skip)]
+    pub(crate) open_size: Option<[f32; 2]>,
 }
 
 /// How long the glow around a frame that just landed takes to fade, in seconds.
@@ -228,6 +237,35 @@ impl FrameState {
     /// Where the frame was drawn last, in screen points.
     pub fn drawn_rect(&self) -> Option<egui::Rect> {
         self.drawn
+    }
+
+    /// Where the body was laid out last, in screen points. With [`Self::drawn_rect`] it tells a layout how much
+    /// the frame takes around a body: header, footer, sides, padding.
+    pub fn body_rect(&self) -> Option<egui::Rect> {
+        self.body
+    }
+
+    /// The size the frame had the last time it was drawn in full: what a folded frame unfolds to.
+    pub fn open_size(&self) -> Option<egui::Vec2> {
+        self.open_size.map(Into::into)
+    }
+
+    /// Whether the frame drawn last is a hexagon.
+    pub fn is_hex(&self) -> bool {
+        self.hex
+    }
+
+    /// A layout that chooses sizes itself (a physics layout picks by the room it can make) says which of the
+    /// three a frame on auto shows: with `Some`, auto shows that size and fills the room given instead of
+    /// choosing by the room's width ([`crate::auto_size`]). `None` gives the choice back to the frame. Not
+    /// saved; the pinned sizes of the switch are not touched by it.
+    pub fn set_auto_pick(&mut self, pick: Option<Size>) {
+        self.auto_pick = pick;
+    }
+
+    /// What a layout picked for auto, if it did.
+    pub fn auto_pick(&self) -> Option<Size> {
+        self.auto_pick
     }
 
     /// Whether the ☰ menu was open when the frame was drawn last; its button is drawn pressed then.

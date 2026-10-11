@@ -61,6 +61,10 @@ Cargo workspace, edition 2024, one shared version (`[workspace.package]`).
 - `ve_frame/` — the frame every widget sits in: `WidgetFrame` (header with LED, title, ⓘ, size switch, menu;
   footer; sides; rectangle or hexagon), sizes (`SizeMode`, `SizeHints`, `auto_size`), `Dock` (moves between
   grid, egui window, OS window), `Remote` (send to another machine), the playground example.
+- `ve_settle/` — the physics layout: `World` of bodies (rectangles, convex outlines) that settle under gravity,
+  homes, walls and contacts, no dependencies (`world.rs`, `geom.rs`, `params.rs`); with the feature `frame`,
+  `frames.rs` draws `ve_frame` widgets on the bodies (`Frames`: outline and size from the frame, pop out and back,
+  the size pick for frames on auto). The sandbox example with its scenes; its kittests include the example.
 - `ve_app/` — the application shell apps are built on: `Shell` (an `eframe::App`) with menu bar, egui_tiles of
   widgets opened from the `WidgetInfo` registry, About / Settings / Debug windows, status bar, persisted
   layout, quit dialog for busy widgets; `ve_app::prelude` for widget code, the `shell_demo` example.

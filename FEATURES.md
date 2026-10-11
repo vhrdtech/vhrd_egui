@@ -39,7 +39,7 @@ in tpm (P2605). Statuses were checked against the code.
 | `ve_dash` | btop-style dashboard building blocks: theme, sparkline, meter, status light, stat tile, titled panel. |
 | `ve_backdrop` | Animated app background: a grid of dots or squares reacting to the pointer and to widget frames; wgpu shader with a CPU-painted fallback. |
 | `ve_frame` | The frame every widget sits in: header (LED, title, ⓘ, size switch, menu), footer, sides, hexagon shape, moves between grid, window, OS window and machine. |
-| `ve_settle` | Physics layout prototype: bodies that settle under gravity, home springs, walls and contacts; no egui dependency. |
+| `ve_settle` | Physics layout prototype: bodies that settle under gravity, home springs, walls and contacts; no dependencies. With the feature `frame`: `ve_frame` widgets on the bodies. |
 | `ve_template` | The app template as a command: `new`, `check-answers`, `compare`, `version` (`egui_app_skill/`). |
 
 ## Platform (`PLT`)
@@ -369,6 +369,11 @@ switch (P2605#8oct-1205). ve_settle (SETL-5, SETL-7) later reads the same shapes
   `hints.min`, clipped; nom and wide get at least their hint and grow downward; on auto the body fills the room
   given. `SizeMode: From<ve_dash::PanelSize>`. `ve_frame/src/size.rs` (unit tests), kittest
   `auto_follows_the_room_without_flipping`, `min_body_is_exactly_the_hinted_size`.
+  For a layout that chooses sizes itself (ve_settle, SETL-7): `FrameState::set_auto_pick(Some(size))` says which
+  of the three a frame on auto shows, in place of the choice by the room's width; the frame then fills the room
+  it is given; the pinned sizes are not touched. `FrameState::body_rect()` says where the body was laid out, so
+  with `drawn_rect()` a layout knows what the frame takes around a body; `is_hex()` its shape. kittest
+  `a_layouts_pick_overrules_what_auto_would_choose`.
 - ✅ **FRM-3 Sides and hexagons**: `.left(|ui| ..)` / `.right(|ui| ..)` columns beside a rectangle's body, laid
   out top to bottom; `Shape::Hex`: a flat-topped hexagon (faces at 60°, any width) with header and footer on the
   flat faces, a body of exactly the hinted size, and `.hex_side(HexFace, [SideItem::text(..), SideItem::led(..)])`
@@ -444,6 +449,9 @@ switch (P2605#8oct-1205). ve_settle (SETL-5, SETL-7) later reads the same shapes
     never rescaled (the pop-out hop likewise only moves the window now); reduced motion snaps. kittest
     `a_floating_window_folds_down_to_its_header`, `a_double_click_on_the_header_folds`,
     `folding_cuts_the_frame_off_without_rescaling_it`.
+    In a grid too, when the host asks for it: `WidgetFrame::fold_in_grid(true)` (off by default), for a layout
+    that closes up around a folded frame (ve_settle, SETL-7); it unfolds to `FrameState::open_size()`, the size
+    it had when it was last drawn in full. kittest `a_frame_folds_in_a_grid_when_the_layout_asks_for_it`.
   - Landing out of view (`WidgetFrame::land_mode(LandMode)`): a widget put back at a place that is scrolled
     out of view no longer seems to vanish. `Stay` (default): the view stays and a marker with the title sits on
     the edge of the view toward it, in the corner when it is off along both axes; a click scrolls there; the
@@ -505,8 +513,9 @@ switch (P2605#8oct-1205). ve_settle (SETL-5, SETL-7) later reads the same shapes
   edge; a third click soon after two counts as a triple click in egui and doesn't fold; several markers for
   widgets out of view can overlap; side bar controls have square corners; `ve_app` doesn't offer ghost slots,
   the land mode or the float look as settings yet; a second chrome in the style of `Panel` (title on the border
-  line) if the dash wants to keep that look; ve_settle bodies taking `SizeHints` and `Shape` (SETL-4, SETL-5,
-  SETL-7).
+  line) if the dash wants to keep that look. (ve_settle bodies taking `SizeHints` and `Shape`: done, SETL-7;
+  what is open between the two is SETL-18.) A control added to the playground's control row made 20 of its
+  kittests fail (clicks no longer arrived), so the row's layout is something they depend on: not looked into.
 
 ## Physics layout (`SETL`)
 
@@ -529,7 +538,7 @@ up and Packery's "others flow around the dragged one". No app uses it yet.
   slider with a tooltip on every parameter, overlay layers (bodies with minimum size and id, force and velocity
   arrows with contact dots, tension tint and percent, home spots, corner snaps, collision shapes, grid pitch, vertex pulls), drag to move, corner handle to resize,
   add (button or double-click), remove, grow / shrink content by hand or by itself, pause and single-step.
-  A third scene, *shapes*, is SETL-13.
+  A third scene, *shapes*, is SETL-13; *frames* (real `ve_frame` widgets on the bodies) is SETL-7.
   Scenes (user, 10 Oct 2026): *full*, the default, drops enough widgets to fill 1.8 windows, seeded a little
   tighter than they fit, with the bottom wall open, so the layout is tried under real pressure and runs past the
   bottom of the window; the arena scrolls (wheel over it, a thin bar on the right shows where you are). *Few* is
@@ -659,9 +668,57 @@ up and Packery's "others flow around the dragged one". No app uses it yet.
   overlap only, so rigid bodies piled on one spot (8 of them added on a diagonal) parted into a column longer than
   the world and stuck out past the walls. Fixed by the pillow (SETL-9): the jammed bodies bulge and spill sideways;
   `a_rigid_pile_spills_sideways_and_stays_inside_the_walls` in `tests/pillow.rs`.
-- 📋 **SETL-7 egui adapter**: a `ve_dash` (or `ve_settle` feature) helper that owns a `World`, puts each panel's
-  `Ui` on its body, learns the content sizes a frame late and handles drag and resize, i.e. the sandbox's
-  `body_ui` as a reusable piece; then port tpm_mesh_dash from `masonry.rs` to it (P2605#7oct-1717).
+- ✅ **SETL-7 egui adapter: `ve_frame` widgets on the bodies** (user, 11 Oct 2026, P2605#11oct-2050):
+  `ve_settle::frames` behind the feature `frame` (the core stays without dependencies; the feature pulls in egui
+  and `ve_frame`, not `ve_backdrop`). `Frames<W>` owns the widgets (a `ve_frame::Dock`) and keeps one body per
+  widget that sits in the layout; the `World` stays the host's (it sets the bounds, steps it, may keep other
+  bodies in it). `frames.show(ui, &mut world, View { offset, clip }, draw)` draws each widget's `WidgetFrame` on
+  its body (`draw` is the closure `Dock::show_windows` takes) and tells the world what the frame needs, learned
+  from what was drawn, a frame late, as a dash would:
+  - *Outline from the shape*: a rectangle is a plain body (so it squeezes, bulges and yields as before); a
+    hexagon gets the frame's own outline, flat on top and bottom with the faces at 60° whatever its width
+    (`frames::hex_outline`), so hexagons nest. Sides, side bars and wings lie inside the frame's rectangle or
+    hexagon, so they are in the body as drawn. While a hexagon's body is still growing to a new size its outline
+    is that of the body as it is now, a little slimmer, so it never stands out past its faces between frames.
+  - *Sizes from the hints and the switch*: *min*, *nom*, a hexagon and a frame without a size switch are rigid
+    bodies of the size the frame draws; a rectangle on *wide* or *auto* fills its body: it wants
+    `hints.of(size).x` plus what the frame takes around its body (`drawn_rect − body_rect`, learned when the
+    frame fitted the room given), never less than the header needs, and on auto can be squeezed down to the
+    width of its smallest form. Heights are always what the frame drew.
+  - *The layout picks for auto* (first cut of SETL-5): see there.
+  - *Moves*: `frames.apply(id, action)` carries a menu pick out through the dock; a widget that floats or went to
+    another OS window loses its body with the next `show` and the others close up; put back, a body is added
+    (lifted, so the others part at the glide speed) where it sat, or where its window was
+    (`Frames::land_at`: `LandAt::Home` / `Window`), and the frame glows there; out of view its `LandMode` points
+    at it or scrolls there (the scene scrolls in an egui `ScrollArea`, which the frame's scroll request needs).
+    `Frames::ghosts` keeps the body of a floating widget in the world, drawn as `ve_frame::ghost_slot`; a click
+    puts the widget back. A click on the size switch holds the corner the switch sits in (through the body's
+    home, where homes are on).
+  - *Folding*: with `WidgetFrame::fold_in_grid(true)` a frame folds in the layout; the body becomes as small as
+    the header and the others close up, a hexagon's body the band that still shows (four corners).
+  - *Hands*: dragging a frame by anything that is not a control moves its body (a hexagon is held by its
+    outline, not by the corners of its rectangle); the frame's own controls keep their clicks.
+  - *Backdrop*: `frames.placed()` lists every frame of the window as drawn (rectangle, hexagon or not, floating,
+    on top), which is all a `ve_backdrop::Lit` needs.
+  Sandbox scene *frames* (`cargo run -p ve_settle --example sandbox -- frames`, or pick it under Scene): the
+  frame playground's demo widgets (its `Demo` and `draw_at`, included from `ve_frame/examples/playground`),
+  twelve kinds mixed (rectangles and hexagons, tiny / medium / big, with and without sides, side bars, wings,
+  footer, size switch), enough to fill two windows, so it runs past the bottom, on the `ve_backdrop` grid lit by the frames
+  (floating ones first, at most `MAX_LIT`); switches for the size pick, ghost slots, landing place, follow,
+  backdrop and glass; the sandbox's sliders and overlay layers apply to it (the layers start off).
+  The scene differs from *full* in three ways, each found by trying: it is seeded in rows that fit, not tighter
+  (SETL-16); homes are off (`home_stiffness` 0), since a home holds every frame where it was seeded and gravity
+  then packs nothing; and `max_speed` is the glide speed, since without a home to brake it what a landing
+  widget pushes away flew on (34 points in a frame).
+  `ve_settle/src/frames.rs` (unit tests: outline, folded band, room of a row, size estimates; doc example),
+  `examples/sandbox/app.rs` (`frames_ui`, `mixed`, `seat`), kittests in `tests/frames.rs`: the scene fills the
+  window, runs past the bottom and rests with every frame on its body; the size switch changes the body and the
+  others make room; a hexagon's body and outline follow its size; pop out through the menu and back; ghost;
+  put back out of view (followed) and landing where the window is; folding (rectangle and hexagon); the size
+  pick; dragging. On every frame of those tests no two rectangles overlap, nothing moves more than 32 points,
+  a hexagon is never more than 12 points deep in a neighbour (the most seen is 6.4, SETL-17), and at rest
+  nothing overlaps at all. Not done: porting tpm_mesh_dash from `masonry.rs` (P2605#7oct-1717); the open ends
+  are SETL-18. Not seen in a real window by the user yet: checked headless only.
 - ✅ **SETL-4 Convex polygon bodies** (P2620#9oct-1721, P2605#10oct-1656; user, 10 Oct 2026: convex only for now, a
   dragged vertex is clamped to keep the shape convex): a body can have an *outline*, a convex polygon of up to 12
   vertices in unit coordinates of its rectangle (`Body::outline`, `BodyDesc::outline`, `World::set_outline`), so
@@ -724,8 +781,73 @@ up and Packery's "others flow around the dragged one". No app uses it yet.
   `the_mixed_scenes_come_to_full_rest_and_clear_empties_the_arena` (120 frames with identical bodies and no step
   after settling, in the full, shapes and tight scenes). Sandbox: "friction" slider under "Outlines". Known: on ice
   (friction 0) the tight scene with tiles dropped on it did not come to rest before the sleep rule; not rechecked.
-- 📋 **SETL-5 Sizes chosen by the layout**: a body offers several sizes (auto / compact / normal / wide,
+- 🚧 **SETL-5 Sizes chosen by the layout**: a body offers several sizes (auto / compact / normal / wide,
   P2605#8oct-1205) and the layout picks the one that fits best, instead of only squeezing.
+  First cut, for `ve_frame` widgets (SETL-7), outside the solver: `Frames::pick_pass` in
+  `ve_settle/src/frames.rs`. A frame whose switch is on auto shows what the layout picked (`Frames::pick`,
+  handed to the frame with `FrameState::set_auto_pick`), starting at nom. Four times a second one frame may
+  change, the top left one first, and only where its row stands still: it steps up (min, nom, wide) when its row
+  has the room for the next size with `AUTO_HYSTERESIS` to spare (`frames::row_room`: the width between the
+  walls less every body that shares some of its height, since neighbours move aside), and steps down when it was
+  pressed along the row (`Body::load`) for two looks in a row. One that stepped down stays there until something
+  changes (a widget added or gone, a size switch, a drop, the window), so it cannot go up and down for ever.
+  Switch "Layout picks sizes" in the sandbox; kittest
+  `the_layout_picks_the_size_of_a_frame_on_auto_from_the_room_in_its_row` (two frames alone go wide, the window
+  narrows and they step down and hold, off keeps the picks). Not done: the pick is not part of the solver (a row
+  is judged by rectangles, also for hexagons that nest); it looks at the width only; nothing weighs which frame
+  of a row should get the room (the top left one does); a frame that went wide does not give the room back when
+  a new neighbour would fit beside it at nom, only when it is pressed; the plain sandbox panels have no sizes to
+  pick from.
+- 🐛 **SETL-16 A pile with outlines in it does not come apart** (found with SETL-7, 11 Oct 2026): tiles seeded
+  tighter than they fit, as the *full* scene seeds its panels, come apart when they are all rectangles (SETL-11),
+  also rigid ones, but not with hexagons among them: outlines never bulge or yield (SETL-9), so nothing leaves an
+  overfull row that holds one, and the pile stays, overlapping, with bodies lifted for ever. 35 bodies in rows
+  of four, five of every twelve a hexagon: no rest after 6000 steps, 24 points of overlap. Seeded in rows that
+  fit, the same bodies rest in 170 steps and stay well when one grows, leaves or comes back, which is what the
+  *frames* scene does. Failing test, ignored: `a_pile_seeded_tighter_than_it_fits_comes_apart_with_hexagons_in_it`
+  in `ve_settle/tests/polygon.rs`. To fix it an outline has to be able to give way out of a row.
+- 🚧 **SETL-17 A hexagon dips into a neighbour that is pushed onto it** (found with SETL-7, 11 Oct 2026): all the
+  pushes on an outline together move it no more than a glide per step, so that a tile dropped onto a tight
+  honeycomb does not jump (SETL-14). That budget counted the way the outline went, back and forth over the
+  solver's passes included, so one held between a neighbour and a wall, or between two neighbours, had spent it
+  without getting anywhere and the overlap stayed: folding a frame, dragging one past, a size switch or a widget
+  landing left a hexagon 20 to 50 points deep in its neighbour for about half a second. Fixed in `pairs_pass`
+  (`spend_net`): the budget is the distance it ends up moved by; what a wall takes back counts against it; and
+  on a flat face it is a whole glide, the half being for slopes, where being put back travels twice the depth.
+  Also `World::max_overlap` measured a bulged rectangle against an outline by its pillow, while they meet as
+  rectangle and outline: it reported overlaps that were not there; now it measures them as they meet. Result:
+  the core test went from 50 points to 9, the frames kittests from 39 to 6.4 with nothing above 0 except when a
+  widget lands on a neighbour of a hexagon. All earlier tests unchanged (SETL-14's jump check too).
+  Still open, the 🚧: the 9 points, for a few steps, are the speed the pushed neighbour carries on top of the
+  push, more than the glide the hexagon may give way by; the frames scene holds that speed down
+  (`max_speed` = glide). Test `a_hexagon_keeps_up_with_the_neighbour_that_is_pushed_onto_it` in
+  `ve_settle/tests/polygon.rs` (asserts under 12).
+- 💡 **SETL-18 Frames on bodies: what does not fit yet** (findings of SETL-7, 11 Oct 2026):
+  - *Heights do not stretch.* A frame draws itself as tall as its content, so its body is rigid in height and
+    vertex attraction (SETL-12) cannot put the bottoms of a row on one line; widths of rectangles on auto or
+    wide do stretch. It needs the frame to fill a height it is given without losing the height it wants
+    (`fill` hides that).
+  - *A frame is drawn at its size at once, the body follows at `grow_speed`.* In between the frame is clipped to
+    its body (as the sandbox clips content): a size switch shows the new form cut off for a quarter second
+    rather than growing with the body.
+  - *The size switch does not stay under the pointer* as FRM-1 has it in a grid: the body grows about its
+    middle and the solver places it. With homes on the corner with the switch is held through the home; in the
+    frames scene homes are off, so the switch can move away from the pointer.
+  - *Sizes are learned a frame late* and a widget is seeded by a guess (`Seat::guess`: its normal size plus a
+    plain frame): footers, sides and the header's controls are not in it, so seeding leaves spare room and the
+    first frames shuffle.
+  - *A hexagon is hit and lit by its rectangle*: egui's interaction rectangle covers the corners (a drag that
+    starts there is ignored, but it also takes the click from what nests under it), and a `Lit` is a rounded
+    rectangle (BACK-1).
+  - *Rigid bodies everywhere*: only rectangles on auto or wide can be squeezed, so a row made too full by hand
+    (a frame switched to wide) is sorted out by the size pick stepping others down, by a rectangle yielding
+    (SETL-9), or not at all when only hexagons are left (SETL-16).
+  - *Other OS windows have no world*: a widget sent to one sits in plain rows there; one world per window is
+    not built. Sending to a machine has no transport in the sandbox (the entry is disabled and says why).
+  - *The 32 lights of the backdrop* (`MAX_LIT`) are fewer than the frames of a full window: floating ones go
+    first, the rest in the dock's order, not the nearest to the pointer.
+  - *Speed*: about 15 ms a frame for 22 frames in a debug build (headless, M1), most of it drawing the
+    frames, 11 ms also at rest; release not measured.
 
 ## Backdrop (`BACK`)
 

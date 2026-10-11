@@ -1697,3 +1697,81 @@ fn the_backdrop_is_drawn_and_lit_by_the_frames() {
     h.run();
     h.get_by_label("Backdrop");
 }
+
+/// One bare frame with a size switch in a `Ui` 600 wide, for the hooks a layout uses.
+fn bare_frame(fold: bool) -> Harness<'static, ve_frame::FrameState> {
+    let hints = ve_frame::SizeHints::new([80.0, 30.0], [200.0, 80.0], [360.0, 80.0]);
+    let mut h = Harness::builder()
+        .with_size(vec2(600.0, 300.0))
+        .build_ui_state(
+            move |ui, state: &mut ve_frame::FrameState| {
+                ve_frame::WidgetFrame::new("supply")
+                    .sizes(hints)
+                    .fold_in_grid(fold)
+                    .show(ui, state, |ui, size| {
+                        ui.label(size.label());
+                    });
+            },
+            ve_frame::FrameState::default(),
+        );
+    h.run();
+    h
+}
+
+/// A layout that picks sizes itself tells a frame on auto which one to show; the pinned sizes of the switch
+/// are not touched, and without a pick the frame chooses by its room again.
+#[test]
+fn a_layouts_pick_overrules_what_auto_would_choose() {
+    let mut h = bare_frame(false);
+    assert_eq!(h.state().shown_size(), Some(Size::Wide), "600 pt of room");
+    h.state_mut().set_auto_pick(Some(Size::Min));
+    h.run();
+    assert_eq!(h.state().shown_size(), Some(Size::Min));
+    // the frame says where its body is, so a layout knows what the frame takes around it
+    let (drawn, body) = (h.state().drawn_rect(), h.state().body_rect());
+    let (drawn, body) = (drawn.expect("drawn"), body.expect("a body"));
+    assert_eq!(body.size(), vec2(80.0, 30.0));
+    assert!(drawn.contains_rect(body) && drawn.height() > body.height() + 26.0);
+    h.state_mut().size = SizeMode::Nom;
+    h.run();
+    assert_eq!(
+        h.state().shown_size(),
+        Some(Size::Nom),
+        "a pinned size wins"
+    );
+    h.state_mut().size = SizeMode::Auto;
+    h.state_mut().set_auto_pick(None);
+    h.run();
+    assert_eq!(h.state().shown_size(), Some(Size::Wide));
+}
+
+/// With `fold_in_grid` a frame in a grid folds down to its header and unfolds to the size it had; without
+/// it only floating windows fold.
+#[test]
+fn a_frame_folds_in_a_grid_when_the_layout_asks_for_it() {
+    for fold in [false, true] {
+        let mut h = bare_frame(fold);
+        let open = h.state().drawn_rect().expect("drawn").size();
+        assert_eq!(
+            h.query_by_label("collapse").is_some(),
+            fold,
+            "the fold control"
+        );
+        h.state_mut().collapsed = true;
+        h.run();
+        let folded = h.state().drawn_rect().expect("drawn").size();
+        if fold {
+            assert!(
+                folded.y < 30.0 && folded.x == open.x,
+                "{folded:?} of {open:?}"
+            );
+            assert_eq!(h.state().open_size(), Some(open));
+            assert_eq!(h.state().openness(), 0.0);
+        } else {
+            assert_eq!(folded, open);
+        }
+        h.state_mut().collapsed = false;
+        h.run();
+        assert_eq!(h.state().drawn_rect().expect("drawn").size(), open);
+    }
+}

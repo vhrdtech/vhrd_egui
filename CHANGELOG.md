@@ -5,6 +5,34 @@ versions follow [Semantic Versioning](https://semver.org/). Feature IDs refer to
 
 ## [Unreleased]
 
+### Added
+
+- ve_settle: feature `frame` with `ve_settle::frames`: `ve_frame` widgets on the bodies of a `World`. `Frames<W>`
+  keeps a `Dock` of widgets and one body each; `show` draws every `WidgetFrame` on its body and reads the body
+  from it (a hexagon's outline with faces at 60°, `hex_outline`; rigid sizes for min, nom and hexagons, bodies a
+  rectangle on auto or wide fills; a folded frame as small as its header); a widget that pops out leaves the
+  world, or keeps its place as a ghost (`ghosts`), and comes back where it sat or where its window was
+  (`LandAt`); dragging a frame moves its body; `placed()` lists the frames for a backdrop. `Seat`, `View`,
+  `Shown`, `Placed`. The core stays without dependencies (SETL-7).
+- ve_settle: the layout picks the size of frames on auto, a first cut: one step wider when the row has the room
+  (`frames::row_room`), one step down when pressed, one frame at a time; `Frames::auto_pick`, `Frames::pick`
+  (SETL-5).
+- ve_settle: sandbox scene *frames* (`cargo run -p ve_settle --example sandbox -- frames`): the frame
+  playground's demo widgets, rectangles and hexagons mixed, running past the bottom on the `ve_backdrop` grid,
+  with switches for the size pick, ghost slots, landing place, follow, backdrop and glass (SETL-7).
+- ve_frame: hooks for a layout that places frames itself: `FrameState::set_auto_pick` / `auto_pick` (which size
+  a frame on auto shows), `body_rect`, `open_size`, `is_hex` (FRM-2), and `WidgetFrame::fold_in_grid(true)`, which
+  lets a frame fold down to its header in a grid too (FRM-4).
+
+### Fixed
+
+- ve_settle: a body with an outline held between a neighbour and a wall, or pushed by a neighbour that is itself
+  being parted, no longer stays 20 to 50 points deep in that neighbour: its glide per step is counted by where it
+  ends up, not by the way it went over the solver's passes, what a wall takes back counts against it, and on a
+  flat face it is a whole glide. 9 points for a few steps are left when the pushing body carries speed (SETL-17).
+- ve_settle: `World::max_overlap` measured a bulged rectangle against an outline by its pillow and reported
+  overlaps that were not there; it measures the two as they meet (SETL-17).
+
 ## [0.22.0] - 2026-10-13
 
 ### Added

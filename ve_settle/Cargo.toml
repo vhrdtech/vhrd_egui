@@ -1,17 +1,30 @@
 [package]
 name = "ve_settle"
-description = "Physics layout: rectangles that settle under gravity, home springs, walls and contacts, no egui dependency"
+description = "Physics layout: rectangles and convex polygons that settle under gravity, home springs, walls and contacts; no dependencies, ve_frame widgets on the bodies with the feature `frame`"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
 authors.workspace = true
 repository.workspace = true
 
-# The core has no dependencies at all; egui is only for the sandbox example and its tests.
+[features]
+# `ve_settle::frames`: ve_frame widgets on the bodies of a world (SETL-7). Pulls in egui and ve_frame.
+frame = ["dep:egui", "dep:ve_frame"]
+
+# The core has no dependencies at all; egui and ve_frame come with the `frame` feature only.
 [dependencies]
+egui = { workspace = true, optional = true }
+ve_frame = { path = "../ve_frame", version = "0.22", optional = true }
 
 [dev-dependencies]
+# the sandbox and its tests use the `frame` feature
+ve_settle = { path = ".", features = ["frame"] }
 egui.workspace = true
+serde.workspace = true
+serde_json = "1"
+ve_backdrop = { path = "../ve_backdrop", version = "0.22" }
+ve_dash = { path = "../ve_dash", version = "0.22" }
+ve_frame = { path = "../ve_frame", version = "0.22" }
 eframe = { workspace = true, features = ["wgpu"] }
 egui_kittest = { workspace = true, features = ["wgpu", "eframe"] }
 ve_theme = { path = "../ve_theme", version = "0.22" }

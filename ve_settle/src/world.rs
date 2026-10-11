@@ -219,6 +219,12 @@ pub struct Body {
     drag_target: Vec2,
     /// How far slopes moved it sideways this step, points.
     slid: f32,
+    /// How far the contacts of this step have moved it in all, if it
+    /// or what it touches has an outline: held to a glide per step
+    /// (SETL-17).
+    net: Vec2,
+    /// Whether contacts with an outline moved it this step.
+    nudged: bool,
     prev: Rect,
 }
 
@@ -481,6 +487,8 @@ impl World {
             yielding: false,
             drag_target: desc.center,
             slid: 0.0,
+            net: Vec2::ZERO,
+            nudged: false,
             prev: rect,
         });
         self.wake();
@@ -685,9 +693,12 @@ impl World {
                 if a.lifted || b.lifted {
                     continue;
                 }
-                // As they are seen: with what vertex attraction added.
+                // As they are seen, with what vertex attraction added, and
+                // as they meet: a plain rectangle meets an outline as its
+                // rectangle, whatever it bulges by.
                 if a.outline.is_some() || b.outline.is_some() {
-                    let hit = sat(&a.shape(), &b.shape(), |_| gap, Vec2::ZERO);
+                    let (pa, pb) = (a.shape_in(&a.rect), b.shape_in(&b.rect));
+                    let hit = sat(&pa, &pb, |_| gap, Vec2::ZERO);
                     worst = worst.max(hit.map_or(0.0, |h| h.depth));
                     continue;
                 }
@@ -748,6 +759,8 @@ impl World {
             // Pushed off by several slopes at once, it still glides.
             b.slide_pull = b.slide_pull.clamp_length(SLIDE_MAX);
             b.slid = 0.0;
+            b.net = Vec2::ZERO;
+            b.nudged = false;
             b.seated = false;
             b.prev = b.rect;
             b.pressure = 0.0;
@@ -801,7 +814,7 @@ impl World {
             if !b.dragged {
                 moved_free = moved_free.max(d);
                 // Sliding off a slope is a glide: it does not build up speed.
-                let limit = if b.slid > 0.0 {
+                let limit = if b.slid > 0.0 || b.nudged {
                     p.glide_speed.min(p.max_speed)
                 } else {
                     p.max_speed
@@ -1441,12 +1454,18 @@ impl World {
                     b.jam[axis] += (depth * felt / (1.0 + felt) - squeezed).max(0.0);
                 }
                 b.squeeze[axis] += squeezed;
+                // What the wall takes back counts against what neighbours
+                // pushed it by (SETL-17): held between the two it has not
+                // moved, and a neighbour can push it again.
+                let back = depth - squeezed * 0.5;
                 if side.is_low() {
                     b.rect.min[axis] += depth;
                     b.rect.max[axis] += depth - squeezed;
+                    b.net[axis] += back;
                 } else {
                     b.rect.max[axis] -= depth;
                     b.rect.min[axis] -= depth - squeezed;
+                    b.net[axis] -= back;
                 }
             }
         }
@@ -1564,6 +1583,7 @@ impl World {
                 sideways[axis] = 0.0;
                 let mut straight = each - sideways;
                 let mut seated = false;
+                let mut on_slope = false;
                 // Seated (SETL-15): an outline pressed onto a slope by
                 // gravity does not slide along it while the slope is no
                 // steeper than the friction holds. The two part along
@@ -1576,6 +1596,7 @@ impl World {
                         up[g] = each[g] / (along * along);
                         (straight, sideways) = (up, Vec2::ZERO);
                         seated = true;
+                        on_slope = across > 1e-3;
                     }
                 }
                 let (slide_a, slide_b) = (
@@ -1584,21 +1605,23 @@ impl World {
                 );
                 // An outline lies on several others at once (they nest):
                 // all their pushes together move it no more than a glide
-                // per step.
+                // per step. That is the distance it ends up moved by, not
+                // the way it went: pushed back and forth between two
+                // neighbours over the passes it has gone nowhere, and
+                // must still be free to give way (SETL-17).
                 // (Put back onto a slope it travels twice as far as the
                 // overlap is deep: half a glide, as a slide.)
-                let most = if seated { glide * 0.5 } else { glide };
+                // Flat on flat nothing is doubled: pushed by a neighbour
+                // that parts at a glide, it has to keep up with it.
+                let most = if on_slope { glide * 0.5 } else { glide };
                 let (straight_a, straight_b) = if outlined {
-                    (
-                        spend_slide(a, straight, most),
-                        spend_slide(b, straight, most),
-                    )
+                    (spend_net(a, -straight, most), spend_net(b, straight, most))
                 } else {
-                    (straight, straight)
+                    (-straight, straight)
                 };
                 a.seated |= seated;
                 b.seated |= seated;
-                a.shift(-straight_a - slide_a);
+                a.shift(straight_a - slide_a);
                 b.shift(straight_b + slide_b);
             }
         }
@@ -1656,6 +1679,16 @@ fn spend_slide(b: &mut Body, d: Vec2, glide: f32) -> Vec2 {
         d
     };
     b.slid += d.length();
+    d
+}
+
+/// The part of a push `d` that keeps all the pushes on the body in this
+/// step together within `most` points, taken from that budget.
+fn spend_net(b: &mut Body, d: Vec2, most: f32) -> Vec2 {
+    let to = (b.net + d).clamp_length(most);
+    let d = to - b.net;
+    b.net = to;
+    b.nudged = true;
     d
 }
 
