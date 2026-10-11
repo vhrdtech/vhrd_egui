@@ -1577,16 +1577,25 @@ impl Sandbox {
             "Fixed steps per second of simulated time. Each frame runs as many as fit into it.",
         );
         p.dt = 1.0 / rate.max(1.0);
-        ui.add(Slider::new(&mut p.iterations, 1..=64).text("iterations"))
-            .on_hover_text("Contact solver passes per step, at most. More passes resolve longer chains of bodies in one step.");
-        ui.add(
+        let slider = ui.add(Slider::new(&mut p.iterations, 1..=64).text("iterations"));
+        shows(ui, &slider, Effect::of("iterations"));
+        slider.on_hover_text(effect_tip("iterations", "Contact solver passes per step, at most. More passes resolve longer chains of bodies in one step."));
+        let slider = ui.add(
             Slider::new(&mut p.rest_eps, 0.0005..=0.5)
                 .logarithmic(true)
                 .text("rest threshold"),
-        )
-        .on_hover_text("A step in which nothing moved more than this many points is calm.");
-        ui.add(Slider::new(&mut p.rest_steps, 1..=240).text("rest steps"))
-            .on_hover_text("This many calm steps in a row put the world to rest.");
+        );
+        shows(ui, &slider, Effect::of("rest threshold"));
+        slider.on_hover_text(effect_tip(
+            "rest threshold",
+            "A step in which nothing moved more than this many points is calm.",
+        ));
+        let slider = ui.add(Slider::new(&mut p.rest_steps, 1..=240).text("rest steps"));
+        shows(ui, &slider, Effect::of("rest steps"));
+        slider.on_hover_text(effect_tip(
+            "rest steps",
+            "This many calm steps in a row put the world to rest.",
+        ));
         self.world.set_params(p);
     }
 
@@ -2402,8 +2411,71 @@ impl Sandbox {
                     y += p.grid_pitch;
                 }
             }
+            Effect::Contacts => {
+                let center = |id| {
+                    let body = self.world.body(id)?;
+                    Some(self.screen_pos(body.rect.center()))
+                };
+                let contacts = self.world.contacts();
+                for contact in contacts {
+                    let Some(from) = center(contact.a) else {
+                        continue;
+                    };
+                    let width = thin + contact.depth.clamp(0.0, 4.0);
+                    let stroke = Stroke::new(width, c.cat[0]);
+                    match contact.b.and_then(center) {
+                        Some(to) => {
+                            painter.line_segment([from, to], stroke);
+                            painter.circle_filled(from.lerp(to, 0.5), 2.5, c.cat[0]);
+                        }
+                        // a wall: the way it pushed the body
+                        None => painter.arrow(from, to_vec(contact.normal) * 24.0, stroke),
+                    }
+                }
+                let text = format!(
+                    "{} contacts in the last step, up to {} passes per step",
+                    contacts.len(),
+                    p.iterations
+                );
+                effect_caption(&painter, self.arena, tokens, text);
+            }
+            Effect::Rest => {
+                let dt = p.dt;
+                for body in self.world.bodies() {
+                    let at = self.screen_pos(body.rect.center());
+                    let moved = body.vel.length() * dt;
+                    if moved <= p.rest_eps {
+                        painter.circle_filled(at, 4.0, c.cat[2]);
+                    } else {
+                        painter.circle_stroke(at, 7.0, Stroke::new(medium, c.cat[1]));
+                    }
+                }
+                let text = if self.world.is_at_rest() {
+                    format!(
+                        "at rest: nothing moves more than {} points a step",
+                        p.rest_eps
+                    )
+                } else {
+                    format!(
+                        "moving: {:.3} points in the last step (calm under {}); {} calm steps in a row put it to rest",
+                        self.world.last_move(),
+                        p.rest_eps,
+                        p.rest_steps
+                    )
+                };
+                effect_caption(&painter, self.arena, tokens, text);
+            }
         }
     }
+}
+
+/// A line of text at the top of the arena that says what an effect shows.
+fn effect_caption(painter: &egui::Painter, arena: egui::Rect, tokens: &Tokens, text: String) {
+    let at = arena.left_top() + vec2(12.0, 10.0);
+    let galley = painter.layout_no_wrap(text, FontId::proportional(13.0), tokens.colors.text_muted);
+    let back = egui::Rect::from_min_size(at, galley.size()).expand(4.0);
+    painter.rect_filled(back, tokens.radius.s, tokens.colors.surface_raised);
+    painter.galley(at, galley, tokens.colors.text_muted);
 }
 
 /// A spring drawn from `from` to `to`: a zigzag of eight turns.
@@ -2436,18 +2508,28 @@ fn wall_point(body: Rect, bounds: Rect, axis: Axis) -> Vec2 {
 /// A slider for one parameter, with what it does on hover.
 fn knob(ui: &mut Ui, name: &str, value: &mut f32, range: std::ops::RangeInclusive<f32>, tip: &str) {
     let effect = Effect::of(name);
-    let tip = match effect {
+    let tip = effect_tip(name, tip);
+    let slider = ui.add(Slider::new(value, range).text(name));
+    shows(ui, &slider, effect);
+    slider.on_hover_text(tip);
+}
+
+/// While the pointer is on (or drags) `slider`, the world shows `effect`.
+fn shows(ui: &Ui, slider: &egui::Response, effect: Option<Effect>) {
+    if let (true, Some(effect)) = (slider.hovered() || slider.dragged(), effect) {
+        ui.data_mut(|d| d.insert_temp(Effect::id(), Some(effect)));
+    }
+}
+
+/// A slider's tooltip, with what the world shows while the pointer is on it.
+fn effect_tip(name: &str, tip: &str) -> String {
+    match Effect::of(name) {
         Some(effect) => format!(
             "{tip}\n\nWhile the pointer is on this slider the world shows it: {}.",
             effect.what()
         ),
         None => tip.to_owned(),
-    };
-    let slider = ui.add(Slider::new(value, range).text(name));
-    if let (true, Some(effect)) = (slider.hovered() || slider.dragged(), effect) {
-        ui.data_mut(|d| d.insert_temp(Effect::id(), Some(effect)));
     }
-    slider.on_hover_text(tip);
 }
 
 /// What a parameter does, drawn in the world while its slider is under
@@ -2474,6 +2556,11 @@ pub enum Effect {
     Friction,
     /// The grid: its lines across the arena.
     Grid,
+    /// The solver's passes: the contacts it worked on in the last step.
+    Contacts,
+    /// Rest: which widgets moved less than the rest threshold in the last
+    /// step, and whether the world rests.
+    Rest,
 }
 
 impl Effect {
@@ -2492,6 +2579,8 @@ impl Effect {
             "attract range" | "attract strength" => Self::Attract,
             "friction" => Self::Friction,
             "grid pitch" | "grid stiffness" => Self::Grid,
+            "iterations" => Self::Contacts,
+            "rest threshold" | "rest steps" => Self::Rest,
             _ => return None,
         })
     }
@@ -2518,6 +2607,12 @@ impl Effect {
             }
             Self::Friction => "the slanted edges friction holds a widget on",
             Self::Grid => "the grid's lines every pitch, from the walls' corner",
+            Self::Contacts => {
+                "every contact the solver worked on in the last step, a line between the two thicker the deeper they were, with how many there were"
+            }
+            Self::Rest => {
+                "a dot on each widget that moved less than the rest threshold in the last step and a ring on each that moved more, and whether the world rests"
+            }
         }
     }
 

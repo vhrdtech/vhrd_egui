@@ -741,8 +741,13 @@ up and Packery's "others flow around the dragged one". No app uses it yet.
     velocities with rings for a glide and the speed limit, the gap as a band around each widget, pressure as a
     heat tint with the bulged shapes, snap and attraction ranges as circles around corners and vertices with
     the pulls, the slanted edges friction holds, the grid as lines. "Keep the hovered parameter shown" pins it.
-    Each slider's tooltip says what it shows. kittest `tabs_speed_and_the_effect_of_a_hovered_slider` (it
-    paints every effect and checks the pin; the hover itself is not driven in the test).
+    Each slider's tooltip says what it shows. Round 3: iterations show the contacts of the last step (a line
+    between the two, thicker the deeper, and how many), rest threshold and rest steps show which widgets moved
+    less than the threshold (a dot) or more (a ring) and whether the world rests (`Effect::Contacts`,
+    `Effect::Rest`, a caption at the top of the arena). kittest
+    `tabs_speed_and_the_effect_of_a_hovered_slider` paints every effect, checks the pin and hovers five sliders
+    for real (round 2's hover failed because the slider was below the fold of the panel, not a bug). Not done:
+    stiffness and damping as colour on the contacts.
   - *Grow to the right*: the scene turned a quarter (gravity left, the right side open, scrolling sideways),
     for the hard-edge rule of SETL-19; the scroll area follows the world's extent on whichever side is open. Not done: porting tpm_mesh_dash from `masonry.rs` (P2605#7oct-1717); the open ends
   are SETL-18. Not seen in a real window by the user yet: checked headless only.

@@ -50,6 +50,8 @@ versions follow [Semantic Versioning](https://semver.org/). Feature IDs refer to
   waking the world. **Behaviour change:** contacts no longer squeeze a body with an outline.
 - ve_settle: `Frames::stretch_hexagons` (off by default, experimental): attraction may resize a hexagon frame by
   up to its range; sandbox checkbox "Hexagons stretch to line up" (SETL-20).
+- ve_settle sandbox: the iterations, rest threshold and rest steps sliders show their effect in the world too:
+  the contacts of the last step, and which widgets are calm and whether the world rests (SETL-7).
 - ve_frame: `FrameState::set_layout_size` / `layout_size`: a layout gives a hexagon in a grid its whole size, as
   a floating one has its window's (FRM-2, SETL-20).
 

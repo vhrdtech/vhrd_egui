@@ -956,6 +956,9 @@ fn tabs_speed_and_the_effect_of_a_hovered_slider() {
         "bulge gain",
         "grid pitch",
         "glide speed",
+        "iterations",
+        "rest threshold",
+        "rest steps",
     ] {
         assert!(app::Effect::of(name).is_some(), "{name}");
     }
@@ -972,6 +975,8 @@ fn tabs_speed_and_the_effect_of_a_hovered_slider() {
         E::Attract,
         E::Friction,
         E::Grid,
+        E::Contacts,
+        E::Rest,
     ] {
         assert!(!effect.what().is_empty());
         h.state_mut().effect = Some(effect);
@@ -985,4 +990,32 @@ fn tabs_speed_and_the_effect_of_a_hovered_slider() {
         None,
         "without the pin it goes with the pointer"
     );
+    // a real hover: the pointer on a slider shows its effect, off it the effect goes (a window tall enough
+    // for the whole panel: the sliders are below the fold of the usual one)
+    h.set_size(egui::vec2(1250.0, 2400.0));
+    h.step();
+    h.step();
+    for (name, effect) in [
+        ("gravity", E::Gravity),
+        ("gap", E::Gap),
+        ("attract range", E::Attract),
+        ("iterations", E::Contacts),
+        ("rest steps", E::Rest),
+    ] {
+        let slider = h.get_by_role_and_label(egui::accesskit::Role::Slider, name);
+        assert!(
+            slider.rect().max.y < 2400.0,
+            "{name} in view: {:?}",
+            slider.rect()
+        );
+        slider.hover();
+        h.step();
+        h.step();
+        assert_eq!(h.state().effect, Some(effect), "hovering {name}");
+    }
+    let empty = h.state().arena.left_top() + egui::vec2(2.0, 2.0);
+    h.hover_at(empty);
+    h.step();
+    h.step();
+    assert_eq!(h.state().effect, None, "the pointer left the sliders");
 }
