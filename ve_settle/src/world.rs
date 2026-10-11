@@ -80,9 +80,9 @@ const LIFT_STEPS: u32 = 360;
 const EJECT_FROM: f32 = 0.5;
 /// Seconds after the last change from outside at which a world still
 /// moving starts to cool, and the seconds that takes; then it rests.
-pub const COOL_AFTER: f32 = 12.0;
+pub const COOL_AFTER: f32 = 8.0;
 /// See [`COOL_AFTER`].
-pub const COOL_SECS: f32 = 3.0;
+pub const COOL_SECS: f32 = 2.0;
 /// Passes of the hard constraints (cores, walls) per step, at most.
 const HARD_PASSES: u32 = 8;
 
@@ -615,6 +615,32 @@ impl World {
         removed
     }
 
+    /// Put a body where it belongs, at the size it has, at once: for
+    /// one that has not been shown yet (a scene seeded before its first
+    /// frame). Nothing glides or grows; its home, if it has one, moves
+    /// along, and it keeps no speed. A body on screen is moved with
+    /// [`World::grab`] and sized with [`World::set_want`] instead.
+    pub fn put(&mut self, id: BodyId, center: Vec2, size: Vec2) {
+        self.change(id, |b| {
+            let size = size.max(Vec2::ZERO);
+            b.rect = Rect::from_center_size(center, size);
+            b.prev = b.rect;
+            b.want = size;
+            b.natural = size;
+            b.min_size = b.min_size.min(size);
+            b.max_size = b.max_size.max(size);
+            b.squeeze = Vec2::ZERO;
+            b.stretch_lo = Vec2::ZERO;
+            b.stretch_hi = Vec2::ZERO;
+            b.vel = Vec2::ZERO;
+            b.drag_target = center;
+            if b.home.is_some() {
+                b.home = Some(center);
+            }
+            true
+        });
+    }
+
     /// Tell a body the size it wants now (its content grew or shrank).
     /// Its size follows at [`Params::grow_speed`].
     pub fn set_want(&mut self, id: BodyId, want: Vec2) {
@@ -932,6 +958,7 @@ impl World {
                 self.pairs_pass(Some(p.tension), dt, false);
             }
         }
+        self.eject_pass();
         // Bodies last: where both cannot hold, a wall gives, not a body.
         for _ in 0..p.iterations.max(1) {
             if self.pairs_pass(None, dt, false) <= SLOP {
@@ -1625,6 +1652,8 @@ impl World {
         let glide = self.params.glide_speed * dt;
         let prefer = self.yield_dir();
         let free_axis = self.params.free_axis();
+        let (hard, walls) = (self.hard, self.params.walls);
+        let push_out = self.params.push_out;
         let away_axis = prefer.main_axis();
         let mut away = Vec2::ZERO;
         away[away_axis] = prefer[away_axis].signum();
@@ -1761,8 +1790,53 @@ impl World {
                 };
                 a.seated |= seated;
                 b.seated |= seated;
-                a.shift(straight_a - slide_a);
-                b.shift(straight_b + slide_b);
+                // A body that stands at a hard wall does not go through
+                // it: what would push it there moves the other one.
+                let (mut da, mut db) = (straight_a - slide_a, straight_b + slide_b);
+                for axis in Axis::BOTH {
+                    let held = |b: &Body, d: f32| at_hard_wall(b, d, axis, &hard, &walls);
+                    if held(a, da[axis]) {
+                        db[axis] -= da[axis];
+                        da[axis] = 0.0;
+                    } else if held(b, db[axis]) {
+                        da[axis] -= db[axis];
+                        db[axis] = 0.0;
+                    }
+                }
+                // In a world open away from gravity nothing is pushed
+                // toward gravity's side by a contact: the one farther out
+                // takes the whole of it, outward, where there is always
+                // room. So a push runs down a whole stack in one pass
+                // instead of halving from body to body (SETL-19).
+                if let Some(axis) = free_axis.filter(|_| push_out) {
+                    let out = away[axis];
+                    let b_is_out = (b.rect.center()[axis] - a.rect.center()[axis]) * out >= 0.0;
+                    let apart = (db[axis] - da[axis]) * if b_is_out { out } else { -out };
+                    if apart > 0.0 && !a.lifted && !b.lifted {
+                        let take = |o: &mut Body, old: f32| {
+                            let want = out * apart;
+                            // One on top of the other, flat on flat, goes as
+                            // far as it is pushed, like a rectangle: what
+                            // pushes it comes at a glide. On a slanted face
+                            // the push is a share of a sideways one and can
+                            // be large: there an outline keeps to its glide.
+                            if !outlined || hit.normal[axis].abs() > 0.9 {
+                                return want;
+                            }
+                            let net = (o.net[axis] + want - old).clamp(-glide, glide);
+                            let got = old + net - o.net[axis];
+                            o.net[axis] = net;
+                            got
+                        };
+                        if b_is_out {
+                            (da[axis], db[axis]) = (0.0, take(b, db[axis]));
+                        } else {
+                            (da[axis], db[axis]) = (take(a, da[axis]), 0.0);
+                        }
+                    }
+                }
+                a.shift(da);
+                b.shift(db);
             }
         }
         if let Some((depth, front)) = band {
@@ -1779,6 +1853,50 @@ impl World {
         worst
     }
 
+    /// Where the passes left two solid bodies in each other (a row too
+    /// full between two hard walls) and the side away from gravity is
+    /// open, the one farther out goes out that way: by as much as parts
+    /// them, a glide per step at most, every step until they are apart.
+    /// The world grows there; nothing has to give in a closed wall. Run
+    /// before the last pass over the pairs, which hands the move on to
+    /// what lies beyond.
+    fn eject_pass(&mut self) {
+        let Some(axis) = self.params.free_axis() else {
+            return;
+        };
+        let glide = self.params.glide_speed * self.params.dt;
+        let out = self.yield_dir()[axis].signum();
+        for i in 0..self.bodies.len() {
+            for j in i + 1..self.bodies.len() {
+                let (a, b) = pair_mut(&mut self.bodies, i, j);
+                if a.dragged || b.dragged || a.lifted || b.lifted {
+                    continue;
+                }
+                let Some(hit) = touch(a, b, 0.0, Vec2::ZERO).filter(|h| h.depth > EJECT_FROM)
+                else {
+                    continue;
+                };
+                let b_is_out = (b.rect.center()[axis] - a.rect.center()[axis]) * out >= 0.0;
+                let (inner, outer) = if b_is_out { (&*a, b) } else { (&*b, a) };
+                // as far as their rectangles lie in each other that way
+                let lap = if out > 0.0 {
+                    inner.rect.max[axis] - outer.rect.min[axis]
+                } else {
+                    outer.rect.max[axis] - inner.rect.min[axis]
+                };
+                // Only side by side: one on top of the other is parted
+                // by the pass over the pairs, along that same axis.
+                if hit.normal[axis].abs() > 0.2 {
+                    continue;
+                }
+                let mut by = Vec2::ZERO;
+                // (a little under a glide: the pass over the pairs adds to it)
+                by[axis] = out * lap.clamp(0.0, glide * 0.8);
+                outer.shift(by);
+            }
+        }
+    }
+
     /// What holds whatever the forces and the passes above did, as
     /// positions, not pushes: no body's core inside another's, and no
     /// body past a closed wall. An open side holds nothing and pulls
@@ -1788,37 +1906,6 @@ impl World {
         let walls = self.params.walls;
         let away = self.yield_dir();
         let glide = self.params.glide_speed * self.params.dt;
-        // Where the passes above left two solid bodies in each other
-        // (a row too full between two hard walls) and the side away
-        // from gravity is open, the one farther out goes out that way:
-        // a glide per step, every step, until they are apart. The
-        // world grows there; nothing has to give in a closed wall.
-        if let Some(axis) = self.params.free_axis() {
-            let out = away[axis].signum();
-            for i in 0..self.bodies.len() {
-                for j in i + 1..self.bodies.len() {
-                    let (a, b) = pair_mut(&mut self.bodies, i, j);
-                    if a.dragged || b.dragged || a.lifted || b.lifted {
-                        continue;
-                    }
-                    let deep = touch(a, b, 0.0, Vec2::ZERO).is_some_and(|h| h.depth > EJECT_FROM);
-                    if !deep {
-                        continue;
-                    }
-                    let b_is_out = (b.rect.center()[axis] - a.rect.center()[axis]) * out >= 0.0;
-                    let (inner, outer) = if b_is_out { (&*a, b) } else { (&*b, a) };
-                    // as far as their rectangles lie in each other that way
-                    let lap = if out > 0.0 {
-                        inner.rect.max[axis] - outer.rect.min[axis]
-                    } else {
-                        outer.rect.max[axis] - inner.rect.min[axis]
-                    };
-                    let mut by = Vec2::ZERO;
-                    by[axis] = out * lap.clamp(0.0, glide);
-                    outer.shift(by);
-                }
-            }
-        }
         for pass in 0..HARD_PASSES {
             let mut moved = false;
             for i in 0..self.bodies.len() {
@@ -1923,6 +2010,23 @@ impl World {
                 self.bodies[i].lifted = false;
             }
         }
+    }
+}
+
+/// Whether a move by `d` along `axis` would take a solid body through the
+/// hard wall it stands at.
+fn at_hard_wall(b: &Body, d: f32, axis: Axis, hard: &Rect, walls: &crate::params::Walls) -> bool {
+    if b.lifted || d == 0.0 {
+        return false;
+    }
+    let (low, high) = match axis {
+        Axis::X => (walls.left, walls.right),
+        Axis::Y => (walls.top, walls.bottom),
+    };
+    if d < 0.0 {
+        low && b.rect.min[axis] + d < hard.min[axis]
+    } else {
+        high && b.rect.max[axis] + d > hard.max[axis] && b.rect.size()[axis] <= hard.size()[axis]
     }
 }
 

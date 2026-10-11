@@ -137,6 +137,12 @@ pub struct Params {
     pub rest_steps: u32,
     /// The fixed time step, seconds.
     pub dt: f32,
+    /// In a world open away from gravity, a contact along gravity's axis
+    /// moves only the body farther out, by the whole of it, instead of
+    /// both by half: a push runs down a whole stack in one pass, and
+    /// nothing is pushed toward gravity's wall. For stacks that gravity
+    /// packs (no homes); off by default, where a push is shared.
+    pub push_out: bool,
 }
 
 impl Params {
@@ -237,6 +243,7 @@ impl Params {
             rest_eps: to.rest_eps,
             rest_steps: to.rest_steps,
             dt: to.dt,
+            push_out: to.push_out,
         }
     }
 }
@@ -272,6 +279,7 @@ impl Default for Params {
             rest_eps: 0.005,
             rest_steps: 24,
             dt: 1.0 / 120.0,
+            push_out: false,
         }
     }
 }

@@ -50,6 +50,7 @@ fn random(rng: &mut Rng, base: &Params) -> Params {
         rest_eps: rng.in_range(0.0005, 0.5),
         rest_steps: 1 + (rng.next() * 239.0) as u32,
         dt: 1.0 / rng.in_range(30.0, 480.0),
+        push_out: rng.next() < 0.5,
     }
 }
 
@@ -178,7 +179,7 @@ fn randomise_then_reset(gravity: Side, seed: u32) {
 }
 
 /// Seconds the world may take to rest once the parameters are back at their defaults.
-const REST_SECS: f32 = 16.0;
+const REST_SECS: f32 = 11.0;
 
 #[test]
 fn any_parameters_then_the_defaults_in_a_world_that_grows_down() {

@@ -504,6 +504,113 @@ impl<W> Frames<W> {
         self.cells.get(&id).map(|c| c.pick)
     }
 
+    /// Draw a widget's frame out of sight in each of its sizes and keep what they take, so that its body
+    /// can have its real size before the frame is shown once (a scene seeded all at once would otherwise
+    /// open with guessed sizes and grow into shape). `draw` is the closure [`Frames::show`] takes; the
+    /// widget's frame state is left as it was. After this [`Frames::outer`] knows every size.
+    pub fn measure(
+        &mut self,
+        ui: &mut Ui,
+        id: SlotId,
+        mut draw: impl FnMut(&mut Ui, &mut Slot<W>) -> Option<FrameAction>,
+    ) {
+        let (Some(cell), Some(slot)) = (self.cells.get_mut(&id), self.dock.get_mut(id)) else {
+            return;
+        };
+        let kept = slot.frame;
+        let sizes: &[Size] = match cell.seat.hints {
+            Some(_) => &[Size::Nom, Size::Min, Size::Wide],
+            None => &[Size::Nom],
+        };
+        for (n, size) in sizes.iter().enumerate() {
+            let fills = cell.seat.shape == Shape::Rect && *size != Size::Min;
+            let mut width = match cell.seat.hints {
+                Some(hints) => hints.of(*size).x + cell.chrome.unwrap_or(CHROME_GUESS).x,
+                None => cell.seat.room,
+            };
+            // a second go when the first did not fit (the header needs more) or taught the chrome
+            for go in 0..3 {
+                let room = egui::Rect::from_min_size(ui.max_rect().min, vec2(width, 10_000.0));
+                let mut child = ui.new_child(
+                    UiBuilder::new()
+                        .id_salt(("ve_settle::measure", id.0, n, go))
+                        .max_rect(room)
+                        .layout(Layout::top_down(Align::Min))
+                        .invisible(),
+                );
+                slot.frame = kept;
+                slot.frame.size = SizeMode::Auto;
+                slot.frame.collapsed = false;
+                slot.frame.set_auto_pick(Some(*size));
+                draw(&mut child, slot);
+                let Some(drawn) = slot.frame.drawn_rect().map(|r| r.size()) else {
+                    break;
+                };
+                cell.outer[index(*size)] = Some(drawn);
+                let Some(hints) = cell.seat.hints.filter(|_| fills) else {
+                    break;
+                };
+                if drawn.x > width + FIT_SLACK {
+                    cell.least[index(*size)] = drawn.x;
+                    width = drawn.x;
+                    continue;
+                }
+                let Some(body) = slot.frame.body_rect() else {
+                    break;
+                };
+                let chrome = drawn - body.size();
+                let learned = cell.chrome.is_none_or(|c| (c.x - chrome.x).abs() > 0.5);
+                cell.chrome = Some(chrome);
+                let want = (hints.of(*size).x + chrome.x).max(cell.least[index(*size)]);
+                if !learned && (want - width).abs() <= FIT_SLACK {
+                    break;
+                }
+                width = want;
+            }
+        }
+        slot.frame = kept;
+    }
+
+    /// The size a widget's frame takes when it shows `size`, once it was drawn or measured so.
+    pub fn outer(&self, id: SlotId, size: Size) -> Option<egui::Vec2> {
+        self.cells.get(&id).and_then(|c| c.outer[index(size)])
+    }
+
+    /// Say which size a widget shows while its switch is on auto, in place of the layout's own pick: for a
+    /// scene that is laid out before it is shown. The layout goes on from there.
+    pub fn set_pick(&mut self, id: SlotId, size: Size) {
+        if let Some(cell) = self.cells.get_mut(&id) {
+            cell.pick = size;
+        }
+    }
+
+    /// Put a widget's body with its middle at the world point `at`, at the size its frame takes
+    /// ([`Frames::measure`]; the size it has, when that is not known), at once: for a widget that has not
+    /// been shown yet. See [`World::put`].
+    pub fn place(&mut self, world: &mut World, id: SlotId, at: Vec2) {
+        let Some(cell) = self.cells.get_mut(&id) else {
+            return;
+        };
+        let size = match (
+            cell.outer[index(cell.pick)],
+            cell.body.and_then(|b| world.body(b)),
+        ) {
+            (Some(outer), _) => Vec2::new(outer.x, outer.y),
+            (None, Some(body)) => body.rect.size(),
+            (None, None) => cell.size,
+        };
+        (cell.center, cell.size) = (at, size);
+        cell.outlined = None;
+        if let Some(body) = cell.body {
+            world.set_limits(body, size, size);
+            world.put(body, at, size);
+            if cell.seat.shape == Shape::Hex {
+                let outline = hex_outline(vec2(size.x, size.y), size.y);
+                world.set_outline(body, Some(outline));
+            }
+        }
+    }
+
     /// Whether a widget's body is a ghost: the widget floats and its place is kept.
     pub fn is_ghost(&self, id: SlotId) -> bool {
         self.cells.get(&id).is_some_and(|c| c.ghost)
@@ -839,9 +946,7 @@ impl<W> Frames<W> {
             let (Some(cell), Some(body)) = (self.cells.get_mut(&id), world.body(body_id)) else {
                 continue;
             };
-            if !row_is_calm(world, body_id) {
-                continue;
-            }
+            let calm = row_is_calm(world, body_id);
             let now = (cell.pick, vec2(rect.size().x, rect.size().y));
             // pressed for two looks in a row: a neighbour passing by is not a row too full
             cell.pressed = if body.load().x > PRESSED {
@@ -859,7 +964,10 @@ impl<W> Frames<W> {
                 world.wake();
                 return;
             }
-            let Some(up) = wider(cell.pick).filter(|_| cell.held != Some(self.epoch)) else {
+            // Stepping down does not wait for the row to stand still (a row too full between two
+            // walls never does); stepping up does: the room is only known when nothing moves.
+            let free = calm && cell.held != Some(self.epoch);
+            let Some(up) = wider(cell.pick).filter(|_| free) else {
                 continue;
             };
             let need = cell.outer_of(up, now).x - now.1.x;

@@ -359,6 +359,7 @@ fn column_with_a_hexagon() -> World {
     let mut params = Params::default();
     params.walls.bottom = false;
     params.home_stiffness = 0.0;
+    params.push_out = true;
     let bounds = Rect::from_min_size(Vec2::ZERO, Vec2::new(400.0, 600.0));
     let mut world = World::new(bounds, params);
     let rigid = |x: f32, y: f32, h: f32| {
@@ -399,7 +400,7 @@ fn a_hexagon_keeps_up_with_the_neighbour_that_is_pushed_onto_it() {
         deepest = deepest.max(world.max_overlap());
     }
     assert!(world.is_at_rest(), "still moving");
-    assert!(deepest < 12.0, "a solid pair overlapped by {deepest}");
+    assert!(deepest < 1.0, "a solid pair overlapped by {deepest}");
     assert_eq!(world.max_overlap(), 0.0);
 }
 
