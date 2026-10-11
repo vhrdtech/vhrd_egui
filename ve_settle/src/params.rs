@@ -156,6 +156,91 @@ impl Params {
     }
 }
 
+impl Params {
+    /// The same parameters with every number inside the range the solver
+    /// can work with: nothing negative that is a size, a speed or a rate,
+    /// nothing that is not a number (it becomes the default), a step
+    /// between 1/1000 and 1/20 s, at least one pass. [`crate::World`]
+    /// takes parameters through this, so no slider can break it.
+    pub fn sanitized(mut self) -> Self {
+        let d = Params::default();
+        let fix = |v: &mut f32, default: f32, lo: f32, hi: f32| {
+            *v = if v.is_finite() {
+                v.clamp(lo, hi)
+            } else {
+                default
+            };
+        };
+        let big = 1e6;
+        fix(&mut self.gravity, d.gravity, 0.0, big);
+        fix(&mut self.home_stiffness, d.home_stiffness, 0.0, big);
+        fix(&mut self.home_drift, d.home_drift, 0.0, big);
+        fix(&mut self.damping, d.damping, 0.0, big);
+        fix(&mut self.gap, d.gap, 0.0, big);
+        fix(&mut self.tension, d.tension, 0.0, 1.0);
+        fix(&mut self.restore, d.restore, 0.0, big);
+        fix(&mut self.grow_speed, d.grow_speed, 1.0, big);
+        fix(&mut self.glide_speed, d.glide_speed, 1.0, big);
+        fix(&mut self.snap_range, d.snap_range, 0.0, big);
+        fix(&mut self.snap_stiffness, d.snap_stiffness, 0.0, big);
+        fix(&mut self.attract_range, d.attract_range, 0.0, big);
+        fix(&mut self.attract_strength, d.attract_strength, 0.0, big);
+        fix(&mut self.friction, d.friction, 0.0, big);
+        fix(&mut self.bulge_rest, d.bulge_rest, 0.0, big);
+        fix(&mut self.bulge_from, d.bulge_from, 0.0, big);
+        fix(&mut self.bulge_gain, d.bulge_gain, 0.0, big);
+        fix(&mut self.bulge_max, d.bulge_max, 0.0, big);
+        fix(&mut self.bulge_speed, d.bulge_speed, 1.0, big);
+        fix(&mut self.grid_pitch, d.grid_pitch, 0.0, big);
+        fix(&mut self.grid_stiffness, d.grid_stiffness, 0.0, big);
+        fix(&mut self.max_speed, d.max_speed, 1.0, big);
+        fix(&mut self.rest_eps, d.rest_eps, 1e-6, big);
+        fix(&mut self.dt, d.dt, 1e-3, 0.05);
+        self.iterations = self.iterations.clamp(1, 256);
+        self.rest_steps = self.rest_steps.max(1);
+        self
+    }
+
+    /// These parameters moved `share` (0 to 1) of the way to `to`: every
+    /// number that acts as a force, a speed or a size. What is a choice
+    /// (gravity's side, the walls) or belongs to the solver's clock (the
+    /// step, the passes, when it rests) is taken from `to` as it is.
+    pub fn toward(&self, to: &Params, share: f32) -> Params {
+        let t = share.clamp(0.0, 1.0);
+        let mix = |a: f32, b: f32| if t >= 1.0 { b } else { a + (b - a) * t };
+        Params {
+            gravity_side: to.gravity_side,
+            gravity: mix(self.gravity, to.gravity),
+            home_stiffness: mix(self.home_stiffness, to.home_stiffness),
+            home_drift: mix(self.home_drift, to.home_drift),
+            damping: mix(self.damping, to.damping),
+            gap: mix(self.gap, to.gap),
+            tension: mix(self.tension, to.tension),
+            restore: mix(self.restore, to.restore),
+            grow_speed: mix(self.grow_speed, to.grow_speed),
+            glide_speed: mix(self.glide_speed, to.glide_speed),
+            snap_range: mix(self.snap_range, to.snap_range),
+            snap_stiffness: mix(self.snap_stiffness, to.snap_stiffness),
+            attract_range: mix(self.attract_range, to.attract_range),
+            attract_strength: mix(self.attract_strength, to.attract_strength),
+            friction: mix(self.friction, to.friction),
+            bulge_rest: mix(self.bulge_rest, to.bulge_rest),
+            bulge_from: mix(self.bulge_from, to.bulge_from),
+            bulge_gain: mix(self.bulge_gain, to.bulge_gain),
+            bulge_max: mix(self.bulge_max, to.bulge_max),
+            bulge_speed: mix(self.bulge_speed, to.bulge_speed),
+            grid_pitch: mix(self.grid_pitch, to.grid_pitch),
+            grid_stiffness: mix(self.grid_stiffness, to.grid_stiffness),
+            max_speed: mix(self.max_speed, to.max_speed),
+            walls: to.walls,
+            iterations: to.iterations,
+            rest_eps: to.rest_eps,
+            rest_steps: to.rest_steps,
+            dt: to.dt,
+        }
+    }
+}
+
 impl Default for Params {
     fn default() -> Self {
         Self {

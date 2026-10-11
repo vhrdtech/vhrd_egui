@@ -236,9 +236,24 @@ fn bodies_without_room_are_squeezed_but_not_below_their_minimum() {
 
 #[test]
 fn tension_zero_is_rigid() {
+    // Every wall closed and no room: the walls are hard and the sizes
+    // stay, so this is the one case in which bodies overlap.
     let (mut w, ids) = tight_stack(0.0);
     w.settle(20_000).expect("settles");
-    assert_eq!(w.max_overlap(), 0.0, "bodies win over walls");
+    assert_eq!(w.max_escape(), 0.0, "nothing crosses a closed wall");
+    assert_eq!(w.max_core_overlap(), 0.0, "and no two share a middle");
+    for id in &ids {
+        assert_size(&w, *id, v(200.0, 120.0));
+    }
+    // The wall across from gravity open, as a dash that scrolls has
+    // it: the stack runs past it and nothing overlaps.
+    let (mut w, ids) = tight_stack(0.0);
+    let mut p = *w.params();
+    p.walls.bottom = false;
+    w.set_params(p);
+    w.settle(20_000).expect("settles");
+    assert_eq!(w.max_overlap(), 0.0);
+    assert_eq!(w.max_escape(), 0.0);
     for id in ids {
         assert_size(&w, id, v(200.0, 120.0));
     }
