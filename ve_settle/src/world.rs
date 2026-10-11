@@ -80,9 +80,9 @@ const LIFT_STEPS: u32 = 360;
 const EJECT_FROM: f32 = 0.5;
 /// Seconds after the last change from outside at which a world still
 /// moving starts to cool, and the seconds that takes; then it rests.
-pub const COOL_AFTER: f32 = 8.0;
+pub const COOL_AFTER: f32 = 12.0;
 /// See [`COOL_AFTER`].
-pub const COOL_SECS: f32 = 2.0;
+pub const COOL_SECS: f32 = 3.0;
 /// Passes of the hard constraints (cores, walls) per step, at most.
 const HARD_PASSES: u32 = 8;
 
@@ -438,6 +438,8 @@ impl World {
 
     /// The parameters that were set. While a change is ramped in, the
     /// solver works with [`World::live_params`].
+    // the field `params` is what the solver works with, see `live_params`
+    #[allow(clippy::misnamed_getters)]
     pub fn params(&self) -> &Params {
         &self.wanted
     }

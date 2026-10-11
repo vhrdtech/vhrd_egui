@@ -429,6 +429,8 @@ pub struct Frames<W> {
     bounds: Option<Rect>,
     grab_offset: egui::Vec2,
     view: Option<View>,
+    /// The picks as they are were decided for the scene as a whole ([`Frames::hold_picks`]).
+    hold: bool,
 }
 
 impl<W> Default for Frames<W> {
@@ -453,6 +455,7 @@ impl<W> Frames<W> {
             bounds: None,
             grab_offset: egui::Vec2::ZERO,
             view: None,
+            hold: false,
         }
     }
 
@@ -582,6 +585,13 @@ impl<W> Frames<W> {
         if let Some(cell) = self.cells.get_mut(&id) {
             cell.pick = size;
         }
+    }
+
+    /// The picks as they are now were decided for the scene as a whole (laid out before it was shown): the
+    /// layout does not widen any frame until something changes (a widget added or gone, a size switch, a
+    /// drop, the window). A frame that is pressed still steps down.
+    pub fn hold_picks(&mut self) {
+        self.hold = true;
     }
 
     /// Put a widget's body with its middle at the world point `at`, at the size its frame takes
@@ -733,6 +743,11 @@ impl<W> Frames<W> {
         order.sort_by_key(|(_, body)| world.body(*body).map(|b| (b.dragged, b.lifted)));
         for (id, body_id) in order {
             self.show_one(ui, world, view, (id, body_id), &mut draw, &mut shown);
+        }
+        if std::mem::take(&mut self.hold) {
+            for cell in self.cells.values_mut() {
+                cell.held = Some(self.epoch);
+            }
         }
         let dt = ui.input(|i| i.stable_dt).min(0.1);
         self.pick_pass(world, dt);

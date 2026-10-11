@@ -24,8 +24,30 @@ versions follow [Semantic Versioning](https://semver.org/). Feature IDs refer to
   a frame on auto shows), `body_rect`, `open_size`, `is_hex` (FRM-2), and `WidgetFrame::fold_in_grid(true)`, which
   lets a frame fold down to its header in a grid too (FRM-4).
 
+- ve_settle: closed walls are hard edges and bodies have cores. After the solver's passes no solid body is past a
+  closed wall and no two bodies share a middle (`World::max_escape`, `max_core_overlap`, `CORE`); an open side
+  holds nothing. **Behaviour change:** in a closed box too full for rigid bodies they overlap now instead of
+  leaning out through a wall (SETL-19).
+- ve_settle: `World::set_params` makes parameters sane (`Params::sanitized`), ramps a change in over 30 steps
+  (`Params::toward`, `World::live_params`, `PARAM_RAMP_STEPS`) and leaves no body faster than a glide;
+  `World::params()` is what was set (SETL-19).
+- ve_settle: a world still moving 12 s after the last change from outside cools to rest over 3 s (`COOL_AFTER`,
+  `COOL_SECS`), so every world rests; a lifted body lands after 3 s at the latest (SETL-19).
+- ve_settle: `Params::push_out` (off by default): in a world open away from gravity a contact along gravity's
+  axis moves only the body farther out, so a push runs down a whole stack at once (SETL-19, SETL-17).
+- ve_settle: `World::put` seats a body that was not shown yet at its place and size at once; `frames`:
+  `Frames::measure`, `outer`, `set_pick`, `place`, `hold_picks` lay a scene out before it is shown (SETL-7).
+- ve_settle sandbox, frames scene: opens at its sizes instead of growing into shape; tabs Rectangles / Hexagons
+  / Mixed; frames per second with a chart of the last 10 s of frame times, min / p50 / p95 / p99 / max and the
+  solver's time; each slider shows what it does in the world while the pointer is on it (gravity arrows,
+  springs, ranges as circles, pressure as heat, the grid); "Grow to the right" turns the scene to scroll
+  sideways (SETL-7, SETL-19).
+
 ### Fixed
 
+- ve_settle sandbox: "Default parameters" goes back to the scene's defaults, not `Params::default()`, which
+  closed the bottom wall of a scene that runs past it and threw the widgets about; it sits at the top now
+  (SETL-19).
 - ve_settle: a body with an outline held between a neighbour and a wall, or pushed by a neighbour that is itself
   being parted, no longer stays 20 to 50 points deep in that neighbour: its glide per step is counted by where it
   ends up, not by the way it went over the solver's passes, what a wall takes back counts against it, and on a
