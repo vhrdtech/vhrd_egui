@@ -832,14 +832,17 @@ up and Packery's "others flow around the dragged one". No app uses it yet.
   of a row should get the room (the top left one does); a frame that went wide does not give the room back when
   a new neighbour would fit beside it at nom, only when it is pressed; the plain sandbox panels have no sizes to
   pick from.
-- 🐛 **SETL-16 A pile with outlines in it does not come apart** (found with SETL-7, 11 Oct 2026): tiles seeded
+- 🚧 **SETL-16 A pile with outlines in it does not come apart** (found with SETL-7, 11 Oct 2026): tiles seeded
   tighter than they fit, as the *full* scene seeds its panels, come apart when they are all rectangles (SETL-11),
   also rigid ones, but not with hexagons among them: outlines never bulge or yield (SETL-9), so nothing leaves an
   overfull row that holds one, and the pile stays, overlapping, with bodies lifted for ever. 35 bodies in rows
   of four, five of every twelve a hexagon: no rest after 6000 steps, 24 points of overlap. Seeded in rows that
   fit, the same bodies rest in 170 steps and stay well when one grows, leaves or comes back, which is what the
-  *frames* scene does. Failing test, ignored: `a_pile_seeded_tighter_than_it_fits_comes_apart_with_hexagons_in_it`
-  in `ve_settle/tests/polygon.rs`. To fix it an outline has to be able to give way out of a row.
+  *frames* scene does. Round 3 (12 Oct 2026): with `Params::push_out` (SETL-19, on in the frames scene) the
+  same pile comes apart and rests with no overlap and nobody lifted (test
+  `a_pile_seeded_tighter_than_it_fits_comes_apart_with_hexagons_in_it`, 0.4 s). Without it, still not: 4
+  points of overlap left (ignored test `..._without_push_out`, `ve_settle/tests/polygon.rs`); for that an
+  outline has to be able to give way out of a row.
 - 🚧 **SETL-17 A hexagon dips into a neighbour that is pushed onto it** (found with SETL-7, 11 Oct 2026): all the
   pushes on an outline together move it no more than a glide per step, so that a tile dropped onto a tight
   honeycomb does not jump (SETL-14). That budget counted the way the outline went, back and forth over the

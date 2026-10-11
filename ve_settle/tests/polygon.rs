@@ -404,14 +404,15 @@ fn a_hexagon_keeps_up_with_the_neighbour_that_is_pushed_onto_it() {
     assert_eq!(world.max_overlap(), 0.0);
 }
 
-/// SETL-16, open: tiles seeded tighter than they fit come apart when they are all rectangles
-/// (`a_packed_field_gives_way_row_by_row_without_crushing`), but not with hexagons among them: outlines
-/// never give way out of a row, so the pile stays, overlapping, with tiles lifted for ever.
-#[test]
-#[ignore = "SETL-16: a pile with outlines in it does not come apart"]
-fn a_pile_seeded_tighter_than_it_fits_comes_apart_with_hexagons_in_it() {
+/// SETL-16: tiles seeded tighter than they fit come apart when they are all rectangles
+/// (`a_packed_field_gives_way_row_by_row_without_crushing`), and with hexagons among them when the world
+/// pushes outward (`Params::push_out`, as the frames scene runs): a push runs down the whole stack at once.
+/// Without it the outlines never give way out of a row and the pile stays, 4 points deep, with tiles lifted
+/// (`..._without_push_out`).
+fn pile_with_hexagons(push_out: bool) -> World {
     let mut params = Params::default();
     params.walls.bottom = false;
+    params.push_out = push_out;
     let bounds = Rect::from_min_size(Vec2::ZERO, Vec2::new(890.0, 800.0));
     let mut world = World::new(bounds, params);
     let sizes = [
@@ -452,6 +453,21 @@ fn a_pile_seeded_tighter_than_it_fits_comes_apart_with_hexagons_in_it() {
         }
         world.add(desc);
     }
+    world
+}
+
+#[test]
+fn a_pile_seeded_tighter_than_it_fits_comes_apart_with_hexagons_in_it() {
+    let mut world = pile_with_hexagons(true);
+    assert!(world.settle(6_000).is_some(), "still moving");
+    assert_eq!(world.max_overlap(), 0.0);
+    assert!(world.bodies().iter().all(|b| !b.lifted));
+}
+
+#[test]
+#[ignore = "SETL-16: without push_out a pile with outlines in it does not come apart"]
+fn a_pile_seeded_tighter_than_it_fits_comes_apart_with_hexagons_in_it_without_push_out() {
+    let mut world = pile_with_hexagons(false);
     assert!(world.settle(6_000).is_some(), "still moving");
     assert_eq!(world.max_overlap(), 0.0);
     assert!(world.bodies().iter().all(|b| !b.lifted));
