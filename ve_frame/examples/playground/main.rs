@@ -10,11 +10,16 @@
 //! window and back, send to a new OS window, send to the loopback "machine" and receive it again), and turn
 //! the transport off to see the disabled entry say why.
 //!
+//! Behind everything is a `ve_backdrop` grid: every frame in view feeds it its rectangle as a `Lit`, so light
+//! gathers around the frames, more around the floating ones and the one on top. *backdrop* turns it off,
+//! *glass* turns its emulated transparency on, *backdrop settings* opens its own settings beside the grid.
+//!
 //! Run: `cargo run -p ve_frame --example playground`
 
 use eframe::egui;
 use egui::{Align, Layout, RichText, Ui};
 use serde::{Deserialize, Serialize};
+use ve_backdrop::{Backdrop, Lit};
 use ve_dash::{Meter, Sparkline, StatusLight, Theme};
 use ve_frame::{
     Applied, Dock, FloatLook, FrameAction, FrameState, HexFace, LandMode, Machine, Moves, Parcel,
@@ -36,7 +41,14 @@ fn main() -> eframe::Result {
         options,
         Box::new(|cc| {
             ve_theme::setup(&cc.egui_ctx);
-            Ok(Box::new(App(Playground::matrix())))
+            // the shader when eframe runs on wgpu, the CPU painter otherwise; alive, unlike in the tests
+            let backdrop = match &cc.wgpu_render_state {
+                Some(render_state) => Backdrop::with_wgpu(render_state),
+                None => Backdrop::new(),
+            };
+            let mut playground = Playground::matrix();
+            playground.backdrop = backdrop;
+            Ok(Box::new(App(playground)))
         }),
     )
 }
@@ -591,6 +603,14 @@ pub struct Playground {
     pub ghosts: bool,
     /// What happens when a widget is put back at a place that is scrolled out of view.
     pub land: LandMode,
+    /// The background behind the grid. [`Playground::with`] starts it with reduced motion (a UI test waits
+    /// for the UI to come to rest); the app replaces it with a live one.
+    pub backdrop: Backdrop,
+    /// Whether the backdrop is drawn, and whether its settings are open beside the grid.
+    pub backdrop_on: bool,
+    pub backdrop_settings: bool,
+    /// What the frames fed the backdrop last frame (for the tests).
+    pub lit: Vec<Lit>,
     /// The last thing that happened, shown in the bar.
     pub message: String,
     /// Where the main grid's frames were drawn last frame, and the room they had (for the tests).
@@ -617,6 +637,10 @@ impl Playground {
             look: FloatLook::default(),
             ghosts: true,
             land: LandMode::default(),
+            backdrop: Backdrop::new().with_settings(ve_backdrop::Settings::reduced()),
+            backdrop_on: true,
+            backdrop_settings: false,
+            lit: Vec::new(),
             message: String::new(),
             drawn: Vec::new(),
             room: egui::Rect::NOTHING,
@@ -655,8 +679,61 @@ impl Playground {
         scale.is_some_and(|i| self.show_scale[i]) && on_tab
     }
 
-    /// The whole playground into `ui`.
+    /// The whole playground into `ui`: the backdrop's settings beside it when they are open, the backdrop
+    /// behind, the controls and the grid on top.
     pub fn ui(&mut self, ui: &mut Ui) {
+        if self.backdrop_settings {
+            egui::Panel::right("ve_frame_playground_backdrop")
+                .resizable(true)
+                .show(ui, |ui| {
+                    ui.heading("Backdrop");
+                    egui::ScrollArea::vertical().show(ui, |ui| self.backdrop.settings.ui(ui));
+                });
+        }
+        egui::CentralPanel::default()
+            .frame(egui::Frame::NONE)
+            .show(ui, |ui| {
+                // first, so everything else is drawn on top; filled once the frames are laid out
+                let slot = self
+                    .backdrop_on
+                    .then(|| self.backdrop.reserve(ui.painter()));
+                let area = ui.clip_rect();
+                self.content(ui);
+                self.lit = self.lits(ui.ctx().content_rect());
+                if let Some(slot) = slot {
+                    self.backdrop.fill(ui.painter(), slot, area, &self.lit);
+                }
+            });
+    }
+
+    /// What the frames of the main window feed the backdrop: the rectangle each was drawn in, whether it
+    /// floats and whether it is the one on top. A hexagon goes by its bounding rectangle (a `Lit` is a rounded
+    /// rectangle). The backdrop takes a limited number, so the floating ones come first and frames out of
+    /// view are left out.
+    fn lits(&self, screen: egui::Rect) -> Vec<Lit> {
+        let mut lits: Vec<Lit> = self
+            .dock
+            .iter()
+            .filter(|s| s.frame.placement.viewport == ViewportSlot::MAIN)
+            .filter(|s| s.frame.placement.floating || self.visible(&s.widget))
+            .filter_map(|s| {
+                let rect = s.frame.drawn_rect().filter(|r| screen.intersects(*r))?;
+                let radius = if s.widget.opts.hex { 0.0 } else { 6.0 };
+                Some(
+                    Lit::new(rect)
+                        .corner_radius(radius)
+                        .floating(s.frame.placement.floating)
+                        .focused(s.frame.is_focused())
+                        .id(egui::Id::new(("ve_frame_playground_lit", s.id.0))),
+                )
+            })
+            .collect();
+        lits.sort_by_key(|l| !l.floating);
+        lits.truncate(ve_backdrop::MAX_LIT);
+        lits
+    }
+
+    fn content(&mut self, ui: &mut Ui) {
         self.controls(ui);
         ui.separator();
         let remote = self.transport.then_some(&self.loopback as &dyn Remote);
@@ -801,6 +878,23 @@ impl Playground {
                     "The grid keeps the place of a widget that floats, as a dashed outline with its title; \
                      click it to put the widget back. Off: the rows close up behind it",
                 );
+            ui.separator();
+            ui.checkbox(&mut self.backdrop_on, "backdrop")
+                .on_hover_text(
+                    "The ve_backdrop grid behind everything: light gathers around the frames, more around \
+                     the floating ones and the one on top",
+                );
+            ui.add_enabled_ui(self.backdrop_on, |ui| {
+                ui.checkbox(&mut self.backdrop.settings.glass, "glass")
+                    .on_hover_text(
+                        "Emulated transparency: a dimmed copy of the desktop wallpaper under the grid",
+                    )
+                    .on_disabled_hover_text("Not available: the backdrop is off");
+                ui.checkbox(&mut self.backdrop_settings, "backdrop settings")
+                    .on_hover_text("Open the backdrop's own settings in a panel on the right")
+                    .on_disabled_hover_text("Not available: the backdrop is off");
+            });
+            ui.separator();
             let mut follow = self.land == LandMode::Follow;
             ui.checkbox(&mut follow, "follow")
                 .on_hover_text(

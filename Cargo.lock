@@ -3685,7 +3685,7 @@ dependencies = [
 
 [[package]]
 name = "ve_frame"
-version = "0.18.0"
+version = "0.20.0"
 dependencies = [
  "eframe",
  "egui",
@@ -3693,6 +3693,7 @@ dependencies = [
  "image",
  "serde",
  "serde_json",
+ "ve_backdrop",
  "ve_dash",
  "ve_theme",
 ]

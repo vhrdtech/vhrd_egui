@@ -1616,3 +1616,84 @@ fn a_widget_landing_in_view_just_glows() {
     assert!(!frame.is_away() && frame.glow() > 0.5);
     assert!(h.query_by_label("go to w0").is_none());
 }
+
+/// The playground draws the ve_backdrop grid behind its frames and feeds it every frame in view as a `Lit`:
+/// a floating one says that it floats, and the one on top that it is focused.
+#[test]
+fn the_backdrop_is_drawn_and_lit_by_the_frames() {
+    let opts = Opts {
+        sides: false,
+        ..Opts::ALL
+    };
+    let widgets = [
+        Demo::new(opts, Scale::Medium),
+        Demo::new(opts, Scale::Medium),
+        Demo::new(opts, Scale::Tiny),
+    ];
+    let mut h = harness(Playground::with(widgets), vec2(1100.0, 700.0));
+    assert!(
+        !h.state().backdrop.settings.glass,
+        "glass is off until asked for"
+    );
+    let docked = h.state().lit.clone();
+    assert_eq!(docked.len(), 3, "every frame in view is lit");
+    assert!(
+        docked
+            .iter()
+            .all(|l| !l.floating && !l.focused && l.id.is_some())
+    );
+
+    let [a, _] = two_floating(&mut h);
+    let rect = h
+        .state()
+        .dock
+        .get(a)
+        .expect("there")
+        .frame
+        .drawn_rect()
+        .expect("drawn");
+    let lit = h.state().lit.clone();
+    let floating: Vec<_> = lit.iter().filter(|l| l.floating).collect();
+    assert_eq!(floating.len(), 2);
+    assert!(
+        lit[0].floating && lit[1].floating,
+        "the floating ones come first"
+    );
+    assert!(
+        floating.iter().any(|l| l.rect == rect),
+        "by the rectangle it is drawn in"
+    );
+    assert_eq!(
+        floating.iter().filter(|l| l.focused).count(),
+        1,
+        "the one on top"
+    );
+    assert_eq!(lit.len(), 3);
+
+    // the grid shows on the empty page; without the backdrop the page is plain
+    let marks = |h: &mut Harness<'_, Playground>| {
+        let image = h.render().expect("rendered");
+        let page = pixel(&image, egui::pos2(900.0, 600.0));
+        let mut differing = 0;
+        for x in (860..1080).step_by(1) {
+            for y in (520..690).step_by(1) {
+                if pixel(&image, egui::pos2(x as f32, y as f32)) != page {
+                    differing += 1;
+                }
+            }
+        }
+        differing
+    };
+    assert!(marks(&mut h) > 20, "the grid's marks on the empty page");
+    h.snapshot_options("backdrop", &tolerant());
+    click(&mut h, "backdrop");
+    h.run();
+    assert_eq!(marks(&mut h), 0, "a plain page without the backdrop");
+    assert!(h.get_by_label("glass").accesskit_node().is_disabled());
+
+    // its own settings open beside the grid
+    click(&mut h, "backdrop");
+    click(&mut h, "backdrop settings");
+    h.run();
+    h.get_by_label("Backdrop");
+}

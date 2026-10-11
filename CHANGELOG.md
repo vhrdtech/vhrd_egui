@@ -5,39 +5,6 @@ versions follow [Semantic Versioning](https://semver.org/). Feature IDs refer to
 
 ## [Unreleased]
 
-## [0.20.0] - 2026-10-11
-
-### Changed
-
-- ve_backdrop: emulated transparency defaults are calmer: `glass_dim` 0.97 (a faint hint of the wallpaper
-  through the theme, was 0.72), `glass_blur` 0.0 (no blur, was 0.7) (BACK-2).
-- ve_backdrop: the wallpaper's working resolution follows the blur instead of always shrinking to a fixed
-  320 px: sharp at no blur, it decodes at the window's monitor resolution in physical pixels, and shrinks only
-  as the blur grows enough to hide the lost detail; re-decoded on the worker thread when the blur or the
-  monitor estimate crosses a meaningful line, without losing the picture already shown. The old fixed numbers
-  are now `Settings` fields (`glass_min_width`, `glass_max_side`, `glass_max_alloc`). **Breaking:**
-  `GlassStatus::Shown` gains a `working: [usize; 2]` field with the resolution chosen (BACK-2).
-
-## [0.19.0] - 2026-10-11
-
-### Added
-
-- ve_backdrop (new crate): an animated app background. `Backdrop` draws a calm grid of dots or small squares
-  that reacts to the pointer (soft lens, a ripple from a click) and to widget frames passed as `Lit` (light
-  gathers under and around them, more under the focused or floating one; with an id the light fades in and
-  out). Drawn by a wgpu shader through an `egui_wgpu` paint callback (`Backdrop::with_wgpu`), with a
-  CPU-painted fallback for glow and wasm (`Backdrop::new`). Colours from the ve_theme tokens for dark and
-  light, every tunable in `Settings` with `Settings::ui` as the form, `Settings::reduced_motion` freezes it.
-  `paint`, `reserve` + `fill`, `paint_background`, `light` / `take_lit`; the `backdrop_playground` example has
-  a slider for every parameter (BACK-1).
-- ve_backdrop: emulated transparency: `Settings::glass` draws a blurred, dimmed copy of the desktop wallpaper
-  under the grid (`glass_dim`, `glass_blur`), for desktops that do not blur what is behind a window;
-  `Settings::background_opacity` lets a really transparent window show through instead. The wallpaper is found
-  per desktop (omarchy, hyprpaper, swaybg, KDE, GNOME, Windows, macOS; `Backdrop::set_wallpaper` or
-  `VE_WALLPAPER` name it) and read on a worker thread; `Backdrop::glass_status` says what is shown or why not.
-  It lines up with the real wallpaper where the window's position is known: X11, Windows, macOS, and Hyprland
-  through its IPC sockets (`ve_backdrop::Hyprland`, live from the event socket); other compositors through the
-  `PositionProvider` trait; fitted to the window otherwise. Feature `glass`, on by default (BACK-2).
 ### Added
 
 - ve_frame, a new crate: the frame every widget sits in. `WidgetFrame` draws a header (optional LED, title,
@@ -84,6 +51,9 @@ versions follow [Semantic Versioning](https://semver.org/). Feature IDs refer to
 - ve_frame: the ☰ looks pressed while its menu is open (`menu_open_look`, `FrameState::menu_open`) (FRM-1).
 - ve_frame playground: tabs *Rectangles* and *Hexagons*, hexagons with bars, wings and no sides, every example
   explains itself in its ⓘ, switches for elevation, focus border, ghost slots and follow (FRM-6).
+- ve_frame playground: the `ve_backdrop` grid behind everything, lit by the frames (floating and focused ones
+  more); switches for the backdrop, its glass and its settings panel. `ve_frame` itself doesn't depend on
+  `ve_backdrop` (FRM-6).
 - ve_theme: `Elevation::floating`, the shadow of a widget lifted out of its grid, in dark and light (THM-1).
 - ve_widget: `Widget::frame_spec` (`FrameSpec`: LED, ⓘ text and stats, sizes) and `Widget::ui_sized`, both with
   defaults; `ve_widget::ve_frame` re-export (FRM-7).
@@ -112,6 +82,40 @@ versions follow [Semantic Versioning](https://semver.org/). Feature IDs refer to
   row now, and a hexagon on auto is chosen by its whole outline (FRM-2, FRM-6).
 - ve_dash: the three UI snapshots are compared with a budget of 20 failing pixels, so `cargo test -p ve_dash`
   passes on omarchy-m1 too (DASH-21).
+
+## [0.20.0] - 2026-10-11
+
+### Changed
+
+- ve_backdrop: emulated transparency defaults are calmer: `glass_dim` 0.97 (a faint hint of the wallpaper
+  through the theme, was 0.72), `glass_blur` 0.0 (no blur, was 0.7) (BACK-2).
+- ve_backdrop: the wallpaper's working resolution follows the blur instead of always shrinking to a fixed
+  320 px: sharp at no blur, it decodes at the window's monitor resolution in physical pixels, and shrinks only
+  as the blur grows enough to hide the lost detail; re-decoded on the worker thread when the blur or the
+  monitor estimate crosses a meaningful line, without losing the picture already shown. The old fixed numbers
+  are now `Settings` fields (`glass_min_width`, `glass_max_side`, `glass_max_alloc`). **Breaking:**
+  `GlassStatus::Shown` gains a `working: [usize; 2]` field with the resolution chosen (BACK-2).
+
+## [0.19.0] - 2026-10-11
+
+### Added
+
+- ve_backdrop (new crate): an animated app background. `Backdrop` draws a calm grid of dots or small squares
+  that reacts to the pointer (soft lens, a ripple from a click) and to widget frames passed as `Lit` (light
+  gathers under and around them, more under the focused or floating one; with an id the light fades in and
+  out). Drawn by a wgpu shader through an `egui_wgpu` paint callback (`Backdrop::with_wgpu`), with a
+  CPU-painted fallback for glow and wasm (`Backdrop::new`). Colours from the ve_theme tokens for dark and
+  light, every tunable in `Settings` with `Settings::ui` as the form, `Settings::reduced_motion` freezes it.
+  `paint`, `reserve` + `fill`, `paint_background`, `light` / `take_lit`; the `backdrop_playground` example has
+  a slider for every parameter (BACK-1).
+- ve_backdrop: emulated transparency: `Settings::glass` draws a blurred, dimmed copy of the desktop wallpaper
+  under the grid (`glass_dim`, `glass_blur`), for desktops that do not blur what is behind a window;
+  `Settings::background_opacity` lets a really transparent window show through instead. The wallpaper is found
+  per desktop (omarchy, hyprpaper, swaybg, KDE, GNOME, Windows, macOS; `Backdrop::set_wallpaper` or
+  `VE_WALLPAPER` name it) and read on a worker thread; `Backdrop::glass_status` says what is shown or why not.
+  It lines up with the real wallpaper where the window's position is known: X11, Windows, macOS, and Hyprland
+  through its IPC sockets (`ve_backdrop::Hyprland`, live from the event socket); other compositors through the
+  `PositionProvider` trait; fitted to the window otherwise. Feature `glass`, on by default (BACK-2).
 
 ## [0.18.0] - 2026-10-11
 

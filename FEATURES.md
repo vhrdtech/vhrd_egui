@@ -458,6 +458,16 @@ switch (P2605#8oct-1205). ve_settle (SETL-5, SETL-7) later reads the same shapes
   off, and what to try, with the title's code as a small last line; examples without an ⓘ say it on their
   count. Switches: elevation, focus border, ghost slots, follow. kittest `the_playground_has_a_tab_per_shape`,
   `an_example_explains_itself`, snapshot `tab_hexagons`.
+  Backdrop (user, 11 Oct 2026): the playground draws a `ve_backdrop::Backdrop` behind everything (the wgpu
+  shader when eframe has a render state, the CPU painter otherwise and in the tests) and feeds it every frame
+  in view as a `Lit`: its drawn rectangle (`FrameState::drawn_rect`), corner radius 6, `floating` and
+  `focused` (`FrameState::is_focused`), an id so the light fades; floating ones come first, at most `MAX_LIT`.
+  A hexagon goes by its bounding rectangle: a `Lit` is a rounded rectangle, the backdrop has no outline to give
+  it. Switches *backdrop*, *glass* (off by default) and *backdrop settings* (the backdrop's `Settings::ui` in a
+  panel on the right). `ve_frame` itself has no dependency on `ve_backdrop`: it is a dev-dependency for the
+  playground only, because the frame already hands a host all a `Lit` needs and a dashboard that wants frames
+  without the background (or the other way round) shouldn't pull in wgpu and the wallpaper code. kittest
+  `the_backdrop_is_drawn_and_lit_by_the_frames`, snapshot `backdrop`; all snapshots show the grid now.
 - ✅ **FRM-7 Widgets and the shell on the frame**: `Widget` gained `frame_spec() -> FrameSpec { led, about,
   stats, sizes }` and `ui_sized(ui, cx, id, size)`, both with defaults, so existing widgets compile unchanged.
   `ve_app::Shell` keeps its widgets in a `Dock<Box<dyn Widget>>` and draws each in a `WidgetFrame`: in a tile
