@@ -225,7 +225,7 @@ fn info_and_led_explain_themselves() {
     hover(&mut h, "info");
     assert!(h.query_by_label("clicks: 1").is_some());
     assert!(
-        h.query_by_label("A demo counter: click +1 and watch the count travel with the widget.")
+        h.query_by_label("On: LED, info, size switch, menu, footer, left and right side columns")
             .is_some()
     );
     h.get_by_label("status: counting: 1 clicks");
@@ -297,14 +297,15 @@ fn min_body_is_exactly_the_hinted_size() {
     }
 }
 
-/// The whole matrix renders: 2 shapes × 64 option sets × 3 scales.
+/// The whole matrix renders: rectangles with 64 option sets, hexagons with 32 × three kinds of sides, each in
+/// 3 scales.
 #[test]
 fn the_matrix_has_every_combination() {
     let mut h = harness(Playground::matrix(), vec2(1280.0, 800.0));
-    assert_eq!(h.state().dock.len(), 2 * 64 * 3);
+    assert_eq!(h.state().dock.len(), (64 + 32 * 3) * 3);
     let mut seen = std::collections::HashSet::new();
     for s in h.state().dock.iter() {
-        assert!(seen.insert((s.widget.opts, s.widget.scale.label())));
+        assert!(seen.insert((s.widget.opts, s.widget.scale.label(), s.widget.wings)));
     }
     h.run();
     h.snapshot_options("matrix", &tolerant());
@@ -691,15 +692,20 @@ fn hexagon_wings_hold_content_when_asked_for() {
         hex: true,
         ..Opts::ALL
     };
-    let mut h = harness(
+    let strips = harness(
         Playground::with([Demo::new(hex, Scale::Medium)]),
         vec2(900.0, 500.0),
     );
-    assert!(h.query_by_label("count 0").is_none() && h.query_by_label("wing level 0").is_none());
-    h.get_by_label("ch 1");
+    assert!(
+        strips.query_by_label("count 0").is_none()
+            && strips.query_by_label("wing level 0").is_none()
+    );
+    strips.get_by_label("ch 1");
 
-    click(&mut h, "wings");
-    h.run();
+    let mut h = harness(
+        Playground::with([Demo::new(hex, Scale::Medium).with_wings()]),
+        vec2(900.0, 500.0),
+    );
     assert!(
         h.query_by_label("ch 1").is_none(),
         "the face items give way"
@@ -718,11 +724,88 @@ fn hexagon_wings_hold_content_when_asked_for() {
     h.get_by_label("count 1");
     h.get_by_label("wing level 1");
     h.snapshot_options("hex_wings", &tolerant());
+}
 
-    click(&mut h, "wings");
+/// The playground has a tab per shape; the hexagon tab opens with a hexagon that has side strips and one with
+/// wings in view, nothing to filter or scroll.
+#[test]
+fn the_playground_has_a_tab_per_shape() {
+    let mut h = harness(Playground::matrix(), vec2(1280.0, 800.0));
+    let on_screen = |h: &Harness<'_, Playground>, label: &str| {
+        let screen = egui::Rect::from_min_size(egui::Pos2::ZERO, vec2(1280.0, 800.0));
+        h.query_all_by_label(label)
+            .any(|n| screen.contains_rect(n.rect()))
+    };
+    h.get_by_label("Rectangles");
+    h.get_by_label("Hexagons");
+    assert_eq!(h.state().tab, Some(playground::Tab::Rectangles));
+    assert!(h.state().drawn.len() == 64 * 3, "only the rectangles");
+    assert!(!on_screen(&h, "ch 1"));
+
+    click(&mut h, "Hexagons");
     h.run();
-    h.get_by_label("ch 1");
-    assert!(h.query_by_label("count 1").is_none());
+    assert_eq!(h.state().drawn.len(), 32 * 3 * 3, "only the hexagons");
+    assert!(on_screen(&h, "medium LISMFX"), "a hexagon with side strips");
+    assert!(
+        on_screen(&h, "ch 1") && on_screen(&h, "24 °C"),
+        "its strips of items"
+    );
+    assert!(on_screen(&h, "medium LISMFW"), "a hexagon with wings");
+    assert!(
+        on_screen(&h, "wing level 0") && on_screen(&h, "count 0"),
+        "its wings"
+    );
+    h.snapshot_options("tab_hexagons", &tolerant());
+
+    click(&mut h, "Rectangles");
+    h.run();
+    assert!(!on_screen(&h, "ch 1"));
+}
+
+/// The ⓘ of an example says in plain words what it shows: shape, size class, which options are on and off,
+/// what to try; the title's code is the small last line. Examples without an ⓘ say it on their count.
+#[test]
+fn an_example_explains_itself() {
+    let hex = Opts {
+        hex: true,
+        footer: false,
+        ..Opts::ALL
+    };
+    let mut h = harness(
+        Playground::with([Demo::new(hex, Scale::Medium)]),
+        vec2(900.0, 600.0),
+    );
+    hover(&mut h, "info");
+    for line in [
+        "A medium hexagon: its body is 90 × 40 pt at its smallest and asks for 200 pt of width in its \
+         normal form, 380 pt in its wide one.",
+        "On: LED, info, size switch, menu, side strips along the slanted faces",
+        "Off: footer",
+        "Try:",
+        "• Hover the items along the slanted faces: text and a dot, rotated with the face.",
+        "code: medium LISM-X",
+    ] {
+        assert!(h.query_by_label(line).is_some(), "missing: {line}");
+    }
+
+    // wings are named as such, and an example without the ⓘ explains itself on its count
+    let bare = Opts {
+        hex: true,
+        ..Opts::default()
+    };
+    let mut h = harness(
+        Playground::with([Demo::new(bare, Scale::Big).with_wings()]),
+        vec2(900.0, 600.0),
+    );
+    assert!(h.query_by_label("info").is_none());
+    hover(&mut h, "0");
+    for line in [
+        "On: wings beside the body",
+        "Off: LED, info, size switch, menu, footer",
+        "code: big -----W",
+    ] {
+        assert!(h.query_by_label(line).is_some(), "missing: {line}");
+    }
 }
 
 /// Where the size switch of the only widget is.

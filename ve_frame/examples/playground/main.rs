@@ -1,10 +1,14 @@
-//! Frame playground: every combination of the frame's options, in three widget sizes.
+//! Frame playground: every combination of the frame's options, in three widget sizes, on two tabs.
 //!
-//! The matrix is 2 shapes × 2⁶ options (LED, ⓘ, size switch, menu, footer, sides) × tiny / medium / big:
-//! 384 widgets in a wrapping grid. Each title spells its options (`tiny LISMFX`, a dash for one that is off).
-//! Try the size switch of any of them (the *Auto room* slider is the width auto has to choose from), the ☰
-//! menu (pop out as a window and back — it glows where it lands, and a floating one resizes by its edges and
-//! corner —, send to a new OS window, send to the loopback "machine" and receive it again), and turn the transport off to see the disabled entry say why.
+//! *Rectangles*: 2⁶ options (LED, ⓘ, size switch, menu, footer, sides) × tiny / medium / big = 192 widgets.
+//! *Hexagons*: the same options with three kinds of sides (none, strips of items along the slanted faces, wings
+//! the content draws into) = 288 widgets, the ones with everything on first. Each title spells its options
+//! (`tiny LISMFX`, a dash for one that is off, `W` for wings); the ⓘ of a widget (and its count, when it has no
+//! ⓘ) says in plain words what it shows and what to try with it.
+//!
+//! Try the size switch (the *Auto room* slider is the width auto has to choose from), the ☰ menu (pop out as a
+//! window and back, send to a new OS window, send to the loopback "machine" and receive it again), and turn
+//! the transport off to see the disabled entry say why.
 //!
 //! Run: `cargo run -p ve_frame --example playground`
 
@@ -83,13 +87,18 @@ impl Opts {
 
     /// `LISMFX`, with a dash for each option that is off.
     pub fn code(self) -> String {
+        self.code_with(false)
+    }
+
+    /// [`Self::code`] with `W` in place of `X` for a hexagon whose sides are wings.
+    pub fn code_with(self, wings: bool) -> String {
         [
             (self.led, 'L'),
             (self.info, 'I'),
             (self.sizes, 'S'),
             (self.menu, 'M'),
             (self.footer, 'F'),
-            (self.sides, 'X'),
+            (self.sides, if wings { 'W' } else { 'X' }),
         ]
         .iter()
         .map(|&(on, c)| if on { c } else { '-' })
@@ -133,7 +142,8 @@ pub struct Demo {
     pub opts: Opts,
     pub scale: Scale,
     pub clicks: u32,
-    /// Whether a hexagon asks for the wings beside its body and draws into them (the playground's toggle).
+    /// Whether a hexagon with sides asks for the wings beside its body and draws into them, instead of
+    /// carrying strips of items along its slanted faces.
     #[serde(default)]
     pub wings: bool,
 }
@@ -148,8 +158,133 @@ impl Demo {
         }
     }
 
+    /// The same widget with wings as its sides (a hexagon).
+    pub fn with_wings(mut self) -> Self {
+        self.opts.sides = true;
+        self.wings = true;
+        self
+    }
+
+    /// Whether this one draws into a hexagon's wings.
+    fn uses_wings(&self) -> bool {
+        self.wings && self.opts.hex && self.opts.sides
+    }
+
     pub fn title(&self) -> String {
-        format!("{} {}", self.scale.label(), self.opts.code())
+        let code = self.opts.code_with(self.uses_wings());
+        format!("{} {code}", self.scale.label())
+    }
+
+    /// What this example is, in a sentence: its shape and size class.
+    pub fn what(&self) -> String {
+        let hints = self.scale.hints();
+        let shape = if self.opts.hex {
+            "hexagon"
+        } else {
+            "rectangle"
+        };
+        format!(
+            "A {} {shape}: its body is {:.0} × {:.0} pt at its smallest and asks for {:.0} pt of width in \
+             its normal form, {:.0} pt in its wide one.",
+            self.scale.label(),
+            hints.min.x,
+            hints.min.y,
+            hints.nom.x,
+            hints.wide.x
+        )
+    }
+
+    /// The name of the kind of sides this example has.
+    fn sides_name(&self) -> &'static str {
+        match (self.opts.hex, self.uses_wings()) {
+            (false, _) => "left and right side columns",
+            (true, false) => "side strips along the slanted faces",
+            (true, true) => "wings beside the body",
+        }
+    }
+
+    /// Which optional parts are on and which are off, as two lines.
+    pub fn parts(&self) -> (String, String) {
+        let o = self.opts;
+        let all = [
+            (o.led, "LED"),
+            (o.info, "info"),
+            (o.sizes, "size switch"),
+            (o.menu, "menu"),
+            (o.footer, "footer"),
+            (o.sides, self.sides_name()),
+        ];
+        let list = |on: bool| {
+            let names: Vec<_> = all.iter().filter(|p| p.0 == on).map(|p| p.1).collect();
+            if names.is_empty() {
+                "nothing".to_owned()
+            } else {
+                names.join(", ")
+            }
+        };
+        (
+            format!("On: {}", list(true)),
+            format!("Off: {}", list(false)),
+        )
+    }
+
+    /// What to try with this example, one line per thing.
+    pub fn to_try(&self) -> Vec<String> {
+        let o = self.opts;
+        let mut lines =
+            vec!["Click +1: the count is the widget's state and travels with it.".to_owned()];
+        if o.led {
+            lines.push(
+                "Watch the LED: grey at 0, green, then yellow at 3 and red at 5 clicks; hover it."
+                    .into(),
+            );
+        }
+        if o.sizes {
+            lines.push(
+                "Click the size switch: auto, min (the fixed smallest form), nom, wide; drag Auto room to \
+                 see auto choose."
+                    .into(),
+            );
+        } else {
+            lines.push("No size switch: the body takes the size its content needs.".into());
+        }
+        if o.menu {
+            lines.push(
+                "Open the menu: pop it out as a window, send it to another OS window or to the loopback \
+                 machine."
+                    .into(),
+            );
+        }
+        if o.sides {
+            lines.push(match (o.hex, self.uses_wings()) {
+                (false, _) => "Use + and − in the left side; the right side shows two status dots.".to_owned(),
+                (true, false) => "Hover the items along the slanted faces: text and a dot, rotated with the face.".to_owned(),
+                (true, true) => "Click +1 and watch the level in the left wing fill row by row; the count sits in the right wing.".to_owned(),
+            });
+        }
+        if o.footer {
+            lines.push("The footer shows the widget's slot in the dock.".into());
+        }
+        lines
+    }
+
+    /// The whole explanation, as the ⓘ shows it below [`Self::what`].
+    fn explain(&self, ui: &mut Ui) {
+        let (on, off) = self.parts();
+        ui.label(on);
+        ui.label(off);
+        ui.add_space(4.0);
+        ui.label("Try:");
+        for line in self.to_try() {
+            ui.label(format!("• {line}"));
+        }
+        ui.add_space(4.0);
+        ui.label(format!("clicks: {}", self.clicks));
+        ui.label(
+            RichText::new(format!("code: {}", self.title()))
+                .weak()
+                .small(),
+        );
     }
 
     fn wave(&self) -> Vec<f32> {
@@ -158,10 +293,20 @@ impl Demo {
             .collect()
     }
 
+    /// The count. Hovering it explains the example too, for the ones without an ⓘ.
+    fn count(&self, ui: &mut Ui) {
+        ui.label(RichText::new(self.clicks.to_string()).monospace())
+            .on_hover_ui(|ui| {
+                ui.label("Clicks counted by this widget.");
+                ui.separator();
+                ui.label(self.what());
+                self.explain(ui);
+            });
+    }
+
     /// The body, arranged for `size`.
     fn body(&mut self, ui: &mut Ui, size: Size) {
         let theme = Theme::from_tokens(&ve_theme::Tokens::of_ui(ui));
-        let count = RichText::new(self.clicks.to_string()).monospace();
         let add = |ui: &mut Ui, clicks: &mut u32| {
             if ui
                 .small_button("+1")
@@ -174,15 +319,13 @@ impl Demo {
         match size {
             Size::Min => {
                 ui.horizontal(|ui| {
-                    ui.label(count)
-                        .on_hover_text("Clicks counted by this widget");
+                    self.count(ui);
                     add(ui, &mut self.clicks);
                 });
             }
             Size::Nom => {
                 ui.horizontal(|ui| {
-                    ui.label(count)
-                        .on_hover_text("Clicks counted by this widget");
+                    self.count(ui);
                     add(ui, &mut self.clicks);
                     ui.weak("normal form");
                 });
@@ -197,8 +340,7 @@ impl Demo {
             }
             Size::Wide => {
                 ui.horizontal(|ui| {
-                    ui.label(count)
-                        .on_hover_text("Clicks counted by this widget");
+                    self.count(ui);
                     add(ui, &mut self.clicks);
                     ui.weak("wide form");
                     if self.scale != Scale::Tiny {
@@ -295,13 +437,9 @@ pub fn draw_at(
         let (status, why) = widget.status();
         f = f.led(status, why);
     }
+    let explained = widget.clone();
     if opts.info {
-        f = f
-            .about("A demo counter: click +1 and watch the count travel with the widget.")
-            .info(move |ui| {
-                ui.label(format!("clicks: {clicks}"));
-                ui.label(format!("options: {}", opts.code()));
-            });
+        f = f.about(widget.what()).info(move |ui| explained.explain(ui));
     }
     if opts.sizes {
         f = f.sizes(widget.scale.hints());
@@ -326,7 +464,7 @@ pub fn draw_at(
     }
     if opts.hex {
         f = f.shape(Shape::Hex);
-        if opts.sides {
+        if opts.sides && !widget.uses_wings() {
             let led = widget.status().0;
             f = f
                 .hex_side(
@@ -371,12 +509,14 @@ pub fn draw_at(
                 }
             });
     }
-    let r = f.hex_wings(widget.wings).show_area(ui, frame, |ui, area| {
-        if let Some(wings) = &area.wings {
-            widget.wings(ui, wings);
-        }
-        widget.body(ui, area.size);
-    });
+    let r = f
+        .hex_wings(widget.uses_wings())
+        .show_area(ui, frame, |ui, area| {
+            if let Some(wings) = &area.wings {
+                widget.wings(ui, wings);
+            }
+            widget.body(ui, area.size);
+        });
     if reset {
         widget.clicks = 0;
     }
@@ -407,6 +547,13 @@ impl Remote for Loopback {
     }
 }
 
+/// The two lists of the playground.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Tab {
+    Rectangles,
+    Hexagons,
+}
+
 /// The playground: a dock of demo widgets, the loopback transport and the controls.
 pub struct Playground {
     pub dock: Dock<Demo>,
@@ -416,10 +563,8 @@ pub struct Playground {
     /// The body width a frame on auto gets.
     pub auto_room: f32,
     pub show_scale: [bool; 3],
-    pub show_rect: bool,
-    pub show_hex: bool,
-    /// Whether hexagons use the wings beside their body for content instead of items on their faces.
-    pub wings: bool,
+    /// Which list the grid shows; `None` shows both shapes (a hand-made set of widgets).
+    pub tab: Option<Tab>,
     /// The last thing that happened, shown in the bar.
     pub message: String,
     /// Where the main grid's frames were drawn last frame, and the room they had (for the tests).
@@ -442,9 +587,7 @@ impl Playground {
             transport: true,
             auto_room: 240.0,
             show_scale: [true; 3],
-            show_rect: true,
-            show_hex: true,
-            wings: false,
+            tab: None,
             message: String::new(),
             drawn: Vec::new(),
             room: egui::Rect::NOTHING,
@@ -452,32 +595,41 @@ impl Playground {
         }
     }
 
-    /// Every combination of the options, as rectangle and hexagon, in the three scales.
+    /// Every combination of the options in the three scales, on two tabs. Rectangles: 64 option sets. Hexagons:
+    /// the five other options with each kind of sides (strips along the faces, wings, none); the medium ones
+    /// with the most options come first, so a hexagon with side strips and one with wings open the list.
     pub fn matrix() -> Self {
-        Self::with(Scale::ALL.into_iter().flat_map(|scale| {
-            [false, true].into_iter().flat_map(move |hex| {
-                (0..64).map(move |bits| Demo::new(Opts::from_bits(bits, hex), scale))
-            })
-        }))
+        let rects = Scale::ALL.into_iter().flat_map(|scale| {
+            (0..64).map(move |bits| Demo::new(Opts::from_bits(bits, false), scale))
+        });
+        let hexes = [Scale::Medium, Scale::Big, Scale::Tiny]
+            .into_iter()
+            .flat_map(|scale| {
+                (0..32_u8).rev().flat_map(move |bits| {
+                    let plain = Demo::new(Opts::from_bits(bits, true), scale);
+                    let strips = Demo::new(Opts::from_bits(bits | 32, true), scale);
+                    [strips, plain.clone().with_wings(), plain]
+                })
+            });
+        let mut playground = Self::with(rects.chain(hexes));
+        playground.tab = Some(Tab::Rectangles);
+        playground
     }
 
     fn visible(&self, demo: &Demo) -> bool {
         let scale = Scale::ALL.iter().position(|s| *s == demo.scale);
-        scale.is_some_and(|i| self.show_scale[i])
-            && if demo.opts.hex {
-                self.show_hex
-            } else {
-                self.show_rect
-            }
+        let on_tab = match self.tab {
+            Some(Tab::Rectangles) => !demo.opts.hex,
+            Some(Tab::Hexagons) => demo.opts.hex,
+            None => true,
+        };
+        scale.is_some_and(|i| self.show_scale[i]) && on_tab
     }
 
     /// The whole playground into `ui`.
     pub fn ui(&mut self, ui: &mut Ui) {
         self.controls(ui);
         ui.separator();
-        for slot in self.dock.iter_mut() {
-            slot.widget.wings = self.wings;
-        }
         let remote = self.transport.then_some(&self.loopback as &dyn Remote);
         let moves = self.dock.moves(remote);
         let room = self.auto_room;
@@ -568,6 +720,27 @@ impl Playground {
     }
 
     fn controls(&mut self, ui: &mut Ui) {
+        ui.horizontal(|ui| {
+            let count = |hex: bool| self.dock.iter().filter(|s| s.widget.opts.hex == hex).count();
+            let (rects, hexes) = (count(false), count(true));
+            for (tab, label, n, what) in [
+                (
+                    Tab::Rectangles,
+                    "Rectangles",
+                    rects,
+                    "rectangular frames: with and without left and right side columns",
+                ),
+                (
+                    Tab::Hexagons,
+                    "Hexagons",
+                    hexes,
+                    "hexagonal frames: with side strips along the slanted faces, with wings, and without sides",
+                ),
+            ] {
+                ui.selectable_value(&mut self.tab, Some(tab), label)
+                    .on_hover_text(format!("Show the {n} {what}"));
+            }
+        });
         ui.horizontal_wrapped(|ui| {
             ui.label("Auto room")
                 .on_hover_text("The body width, in points, a frame on auto gets to choose its size from");
@@ -581,16 +754,6 @@ impl Playground {
                 ui.checkbox(&mut self.show_scale[i], scale.label())
                     .on_hover_text(format!("Show the {} widgets", scale.label()));
             }
-            ui.separator();
-            ui.checkbox(&mut self.show_rect, "rectangles")
-                .on_hover_text("Show the rectangular frames");
-            ui.checkbox(&mut self.show_hex, "hexagons")
-                .on_hover_text("Show the hexagonal frames");
-            ui.checkbox(&mut self.wings, "wings")
-                .on_hover_text(
-                    "Hexagons give the regions between their body and the slanted faces to the widget's \
-                     content (a level and the count here) instead of the items along the faces",
-                );
             ui.separator();
             ui.checkbox(&mut self.transport, "transport")
                 .on_hover_text(
