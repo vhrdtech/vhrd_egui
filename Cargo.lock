@@ -3713,6 +3713,12 @@ dependencies = [
  "eframe",
  "egui",
  "egui_kittest",
+ "serde",
+ "serde_json",
+ "ve_backdrop",
+ "ve_dash",
+ "ve_frame",
+ "ve_settle",
  "ve_theme",
 ]
 

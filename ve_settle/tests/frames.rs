@@ -1,0 +1,607 @@
+//! The sandbox's frames scene driven through egui_kittest: real `ve_frame` widgets on the bodies of the
+//! world (SETL-7). On every frame no two solid bodies overlap and nothing jumps; after each change the
+//! world comes to rest.
+
+#[path = "../examples/sandbox/app.rs"]
+#[allow(dead_code)]
+mod app;
+
+use std::collections::HashMap;
+
+use app::{Sandbox, Scene};
+use egui::{Pos2, pos2, vec2};
+use egui_kittest::Harness;
+use egui_kittest::kittest::Queryable;
+use ve_frame::{FrameAction, Size, SizeMode, SlotId};
+use ve_settle::frames::LandAt;
+use ve_settle::{Body, BodyId, Poly, Rect};
+
+/// Frames per second the tests run at.
+const FPS: f32 = 60.0;
+/// Everything has to be at rest this many frames after a change (10 s): a frame on auto may step through
+/// its sizes one at a time, and each step is a change of its own.
+const SETTLE_FRAMES: usize = 600;
+/// The farthest a body's edge may move in one frame, points: beyond this it reads as a jump.
+const MAX_FRAME_MOVE: f32 = 32.0;
+/// The deepest a hexagon may be found in a neighbour while things move, points (SETL-17: an outline gives
+/// way by a glide per step at most, so pressed harder than that it dips in until the row has sorted itself
+/// out). Rectangles never overlap, and at rest nothing does.
+const OUTLINE_DIP: f32 = 12.0;
+
+type App = Harness<'static, Sandbox>;
+
+/// Steps the app frame by frame and checks the promises on each one.
+struct Watch {
+    seen: HashMap<BodyId, Rect>,
+    /// The deepest a hexagon was found in a neighbour while things moved.
+    worst_dip: f32,
+}
+
+impl Watch {
+    fn look(&mut self, h: &App) {
+        let world = &h.state().world;
+        let title = |id: BodyId| {
+            let frames = &h.state().frames;
+            let slot = frames.slot(id).and_then(|s| frames.dock.get(s));
+            slot.map(|s| s.widget.title()).unwrap_or_default()
+        };
+        // As the solver sees them: a hexagon by its outline, a rectangle by its rectangle.
+        let shape = |b: &Body| match b.outline {
+            Some(_) => b.shape(),
+            None => Poly::rect(&b.rect),
+        };
+        for (i, a) in world.bodies().iter().enumerate() {
+            for b in &world.bodies()[i + 1..] {
+                if a.lifted || b.lifted {
+                    continue;
+                }
+                if a.outline.is_none() && b.outline.is_none() {
+                    let o = a.rect.overlap(&b.rect, 0.0);
+                    assert!(
+                        o.x.min(o.y) <= 0.01,
+                        "two rectangles overlap at step {}: {} {:?}, {} {:?}",
+                        world.steps(),
+                        title(a.id),
+                        a.rect,
+                        title(b.id),
+                        b.rect
+                    );
+                    continue;
+                }
+                let hit = ve_settle::sat(&shape(a), &shape(b), |_| 0.0, ve_settle::Vec2::ZERO);
+                let depth = hit.map_or(0.0, |h| h.depth);
+                assert!(
+                    depth <= OUTLINE_DIP,
+                    "a hexagon is {depth} points deep in its neighbour at step {}: {} {:?}, {} {:?}",
+                    world.steps(),
+                    title(a.id),
+                    a.rect,
+                    title(b.id),
+                    b.rect
+                );
+                self.worst_dip = self.worst_dip.max(depth);
+            }
+        }
+        let mut now = HashMap::new();
+        for body in world.bodies() {
+            if let (Some(before), false) = (self.seen.get(&body.id), body.dragged) {
+                let moved = (body.rect.min - before.min)
+                    .max_abs()
+                    .max((body.rect.max - before.max).max_abs());
+                assert!(
+                    moved <= MAX_FRAME_MOVE,
+                    "{} jumped {moved} points in one frame at step {}: {before:?} to {:?}",
+                    title(body.id),
+                    world.steps(),
+                    body.rect
+                );
+            }
+            now.insert(body.id, body.rect);
+        }
+        self.seen = now;
+    }
+
+    fn frame(&mut self, h: &mut App) {
+        h.step();
+        self.look(h);
+    }
+
+    fn frames(&mut self, h: &mut App, n: usize) {
+        for _ in 0..n {
+            self.frame(h);
+        }
+    }
+
+    /// Frames until the world rests and stays so for half a second (the layout may still pick a size);
+    /// panics if that takes too long.
+    fn rest(&mut self, h: &mut App) -> usize {
+        self.frames(h, 2);
+        let mut calm = 0;
+        for n in 2..SETTLE_FRAMES {
+            calm = if h.state().world.is_at_rest() {
+                calm + 1
+            } else {
+                0
+            };
+            if calm >= 30 {
+                assert_eq!(h.state().world.max_overlap(), 0.0, "an overlap at rest");
+                return n;
+            }
+            self.frame(h);
+        }
+        panic!("not at rest {SETTLE_FRAMES} frames after the last change");
+    }
+}
+
+/// The frames scene in a window, settled.
+fn sandbox() -> (App, Watch) {
+    let mut h = Harness::builder()
+        .with_size(vec2(1250.0, 800.0))
+        .with_step_dt(1.0 / FPS)
+        .build_eframe(|cc| Sandbox::with_scene(cc, Scene::Frames));
+    // as on a desktop: the glow fades, a window hops, a frame folds over a few frames
+    h.ctx.all_styles_mut(|s| s.animation_time = 1.0 / 12.0);
+    h.step();
+    let mut watch = Watch {
+        seen: HashMap::new(),
+        worst_dip: 0.0,
+    };
+    watch.look(&h);
+    watch.rest(&mut h);
+    (h, watch)
+}
+
+/// An empty frames scene with the demo widgets `kinds` of [`app::mixed`] added in a row.
+fn sandbox_of(kinds: &[u32]) -> (App, Watch, Vec<SlotId>) {
+    let (mut h, mut watch) = sandbox();
+    h.state_mut().clear();
+    watch.frame(&mut h);
+    let mut slots = Vec::new();
+    for (i, kind) in kinds.iter().enumerate() {
+        let s = h.state_mut();
+        let at = s.arena.min + vec2(200.0 + 420.0 * i as f32, 150.0);
+        let demo = app::mixed(*kind);
+        let seat = app::seat(&demo);
+        let at = ve_settle::Vec2::new(at.x, at.y);
+        slots.push(s.frames.add(&mut s.world, demo, seat, at));
+    }
+    watch.rest(&mut h);
+    (h, watch, slots)
+}
+
+fn click_at(h: &mut App, watch: &mut Watch, at: Pos2) {
+    h.hover_at(at);
+    watch.frame(h);
+    h.drag_at(at);
+    watch.frame(h);
+    h.drop_at(at);
+    watch.frame(h);
+}
+
+fn body_rect(h: &App, slot: SlotId) -> Rect {
+    let s = h.state();
+    let body = s.frames.body(slot).expect("the widget has a body");
+    s.world.body(body).expect("the body is in the world").rect
+}
+
+fn frame_of(h: &App, slot: SlotId) -> ve_frame::FrameState {
+    h.state().frames.dock.get(slot).expect("the widget").frame
+}
+
+/// The first widget of the scene that `pick` accepts.
+fn find(h: &App, pick: impl Fn(&app::playground::Demo) -> bool) -> SlotId {
+    let slots = &h.state().frames.dock;
+    slots
+        .iter()
+        .find(|s| pick(&s.widget))
+        .map(|s| s.id)
+        .expect("such a widget")
+}
+
+/// Click a frame's size switch.
+fn click_switch(h: &mut App, watch: &mut Watch, slot: SlotId) {
+    let at = frame_of(h, slot).switch_pos().expect("a size switch");
+    click_at(h, watch, at);
+}
+
+#[test]
+fn the_frames_scene_fills_the_window_runs_past_the_bottom_and_rests() {
+    let (mut h, mut watch) = sandbox();
+    let s = h.state();
+    assert!(
+        s.world.bodies().len() >= 12,
+        "{} widgets",
+        s.world.bodies().len()
+    );
+    let lowest = s.world.bodies().iter().map(|b| b.rect.max.y);
+    let lowest = lowest.fold(0.0, f32::max);
+    assert!(
+        lowest > s.arena.max.y + 100.0,
+        "runs past the bottom: {lowest}"
+    );
+    let (mut hexes, mut rects) = (0, 0);
+    for slot in s.frames.dock.iter() {
+        let body = s.frames.body(slot.id).and_then(|b| s.world.body(b));
+        let body = body.expect("every widget of the scene has a body");
+        // the frame is drawn on its body: same place, same size
+        let drawn = slot.frame.drawn_rect().expect("drawn");
+        let on_screen = s.screen_rect(body.rect);
+        assert!(
+            (drawn.min - on_screen.min).length() < 1.0
+                && (drawn.size() - on_screen.size()).length() < 1.5,
+            "{}: drawn {drawn:?}, body {on_screen:?}",
+            slot.widget.title()
+        );
+        // the shape of the frame is the outline of the body
+        match (slot.widget.opts.hex, &body.outline) {
+            (true, Some(outline)) => {
+                assert_eq!(outline.points().len(), 6);
+                hexes += 1;
+            }
+            (false, None) => rects += 1,
+            (hex, outline) => panic!("hexagon {hex} with outline {outline:?}"),
+        }
+        assert!(body.tension() < 0.001, "nobody is squeezed at rest");
+    }
+    assert!(
+        hexes >= 4 && rects >= 6,
+        "{hexes} hexagons, {rects} rectangles"
+    );
+    // the frames in view feed the backdrop
+    assert!(!s.lit.is_empty() && s.lit.len() <= ve_backdrop::MAX_LIT);
+    // at rest nothing moves any more
+    let before: Vec<Rect> = s.world.bodies().iter().map(|b| b.rect).collect();
+    let steps = s.world.steps();
+    watch.frames(&mut h, 60);
+    let after: Vec<Rect> = h.state().world.bodies().iter().map(|b| b.rect).collect();
+    assert_eq!(before, after);
+    assert_eq!(
+        h.state().world.steps(),
+        steps,
+        "a world at rest runs no steps"
+    );
+}
+
+#[test]
+fn the_size_switch_changes_the_body_and_the_neighbours_make_room() {
+    let (mut h, mut watch) = sandbox();
+    // a rectangle with a size switch that has neighbours below it
+    let slot = find(&h, |d| {
+        !d.opts.hex && d.opts.sizes && d.title() == "medium LISMFX"
+    });
+    let hints = app::playground::Scale::Medium.hints();
+    let others = |h: &App| -> Vec<(BodyId, Rect)> {
+        let world = &h.state().world;
+        world.bodies().iter().map(|b| (b.id, b.rect)).collect()
+    };
+    let auto = body_rect(&h, slot).size();
+    let start = others(&h);
+
+    // min: the fixed smallest form, a body just around it
+    click_switch(&mut h, &mut watch, slot);
+    assert_eq!(frame_of(&h, slot).size, SizeMode::Min);
+    watch.rest(&mut h);
+    let min = body_rect(&h, slot).size();
+    assert_eq!(frame_of(&h, slot).shown_size(), Some(Size::Min));
+    assert!(
+        min.y < auto.y - 30.0 && min.y < hints.min.y + 100.0,
+        "min {min:?}, auto {auto:?}"
+    );
+    let moved = others(&h);
+    let closed_up = start.iter().zip(&moved).filter(|(a, b)| a.1 != b.1).count();
+    assert!(closed_up >= 2, "the others close up: {closed_up} moved");
+
+    // nom, then wide: the body grows and the others make room
+    click_switch(&mut h, &mut watch, slot);
+    watch.rest(&mut h);
+    let nom = body_rect(&h, slot).size();
+    assert!(nom.y > min.y + 30.0, "nom {nom:?}, min {min:?}");
+    click_switch(&mut h, &mut watch, slot);
+    assert_eq!(frame_of(&h, slot).size, SizeMode::Wide);
+    watch.rest(&mut h);
+    let wide = body_rect(&h, slot).size();
+    assert!(
+        wide.x > nom.x + 100.0 && wide.x >= hints.wide.x,
+        "wide {wide:?}, nom {nom:?}"
+    );
+    // the frame is as large as its body in every form
+    let drawn = frame_of(&h, slot).drawn_rect().expect("drawn").size();
+    assert!((drawn.x - wide.x).abs() < 1.5 && (drawn.y - wide.y).abs() < 1.5);
+}
+
+#[test]
+fn a_hexagons_body_and_outline_follow_its_size() {
+    let (mut h, mut watch) = sandbox();
+    let hex = find(&h, |d| {
+        d.opts.hex && d.opts.sizes && d.title().starts_with("medium")
+    });
+    let before = body_rect(&h, hex).size();
+    click_switch(&mut h, &mut watch, hex);
+    watch.rest(&mut h);
+    let small = body_rect(&h, hex).size();
+    assert!(
+        small.x < before.x - 40.0 && small.y < before.y - 20.0,
+        "hexagon on min {small:?}, before {before:?}"
+    );
+    let s = h.state();
+    let body = s
+        .frames
+        .body(hex)
+        .and_then(|b| s.world.body(b))
+        .expect("body");
+    assert!(body.shape().is_convex() && body.outline.is_some());
+}
+
+#[test]
+fn popping_out_and_back_keeps_the_world_calm() {
+    let (mut h, mut watch) = sandbox();
+    let slot = find(&h, |d| d.opts.menu && d.title() == "medium LISMFX");
+    let bodies = h.state().world.bodies().len();
+    let home = body_rect(&h, slot);
+
+    // through the menu, as a person does
+    let menu = frame_of(&h, slot).menu_rect().expect("a menu").center();
+    click_at(&mut h, &mut watch, menu);
+    h.get_by_label("Pop out as a window").click();
+    watch.frames(&mut h, 3);
+    let frame = frame_of(&h, slot);
+    assert!(frame.placement.floating);
+    // the body left the world; the window opened where the widget sat
+    assert_eq!(h.state().frames.body(slot), None);
+    assert_eq!(h.state().world.bodies().len(), bodies - 1);
+    let window = frame.window_pos.expect("a window position");
+    let sat = h.state().screen_rect(home).min;
+    assert!((pos2(window[0], window[1]) - sat).length() < 2.0);
+    watch.rest(&mut h);
+    // it is fed to the backdrop as the floating one, first
+    assert!(h.state().lit.first().is_some_and(|l| l.floating));
+
+    // back: the body returns where it sat, the others part for it, the frame glows
+    h.state_mut().apply(slot, FrameAction::DockBack);
+    watch.frames(&mut h, 3);
+    assert!(h.state().frames.body(slot).is_some());
+    assert_eq!(h.state().world.bodies().len(), bodies);
+    assert!(frame_of(&h, slot).glow() > 0.0, "it glows where it landed");
+    let back = body_rect(&h, slot);
+    assert!(
+        (back.center() - home.center()).max_abs() < 40.0,
+        "{back:?} vs {home:?}"
+    );
+    watch.rest(&mut h);
+    assert_eq!(frame_of(&h, slot).glow(), 0.0);
+    let rested = body_rect(&h, slot);
+    assert!(
+        (rested.center().x - home.center().x).abs() < 60.0,
+        "{rested:?} vs {home:?}"
+    );
+}
+
+#[test]
+fn a_ghost_keeps_the_place_of_a_widget_that_floats() {
+    let (mut h, mut watch) = sandbox();
+    h.state_mut().frames.ghosts = true;
+    let slot = find(&h, |d| d.opts.hex && d.opts.menu);
+    let (bodies, home) = (h.state().world.bodies().len(), body_rect(&h, slot));
+    h.state_mut().apply(slot, FrameAction::PopOut);
+    watch.rest(&mut h);
+    assert!(frame_of(&h, slot).placement.floating && h.state().frames.is_ghost(slot));
+    // nothing moved: the body is still there
+    assert_eq!(h.state().world.bodies().len(), bodies);
+    assert_eq!(body_rect(&h, slot), home);
+    // a click on the ghost puts the widget back; the window was over it, so move the window away first
+    h.state_mut()
+        .frames
+        .dock
+        .get_mut(slot)
+        .expect("the widget")
+        .frame
+        .window_pos = Some([20.0, 500.0]);
+    watch.frames(&mut h, 2);
+    let at = h.state().screen_rect(home).center();
+    click_at(&mut h, &mut watch, at);
+    watch.frames(&mut h, 2);
+    assert!(!frame_of(&h, slot).placement.floating);
+    assert!(!h.state().frames.is_ghost(slot));
+    watch.rest(&mut h);
+    assert_eq!(body_rect(&h, slot), home);
+}
+
+#[test]
+fn a_widget_put_back_out_of_view_is_followed_or_lands_where_its_window_is() {
+    let (mut h, mut watch) = sandbox();
+    // a widget far below the window
+    let slot = {
+        let s = h.state();
+        let lowest = s
+            .frames
+            .dock
+            .iter()
+            .filter(|w| w.widget.opts.menu)
+            .max_by(|a, b| {
+                let y = |w: &ve_frame::Slot<_>| body_rect(&h, w.id).min.y;
+                y(a).total_cmp(&y(b))
+            });
+        lowest.expect("a widget").id
+    };
+    let home = body_rect(&h, slot);
+    assert!(home.min.y > h.state().arena.max.y, "it starts out of view");
+    h.state_mut().land = ve_frame::LandMode::Follow;
+    h.state_mut().apply(slot, FrameAction::PopOut);
+    watch.rest(&mut h);
+    assert_eq!(h.state().scroll, 0.0);
+    h.state_mut().apply(slot, FrameAction::DockBack);
+    watch.rest(&mut h);
+    // the view went after it
+    let shown = h.state().screen_rect(body_rect(&h, slot));
+    assert!(h.state().scroll > 100.0, "scrolled {}", h.state().scroll);
+    assert!(h.state().arena.contains(shown.center()), "{shown:?}");
+
+    // the other way: it lands where its window is
+    h.state_mut().frames.land_at = LandAt::Window;
+    h.state_mut().apply(slot, FrameAction::PopOut);
+    watch.frames(&mut h, 3);
+    let arena = h.state().arena;
+    let to = arena.min + vec2(40.0, 60.0);
+    h.state_mut()
+        .frames
+        .dock
+        .get_mut(slot)
+        .expect("the widget")
+        .frame
+        .window_pos = Some([to.x, to.y]);
+    watch.rest(&mut h);
+    let window = frame_of(&h, slot).drawn_rect().expect("drawn");
+    let at = h.state().world_pos(window.center());
+    h.state_mut().apply(slot, FrameAction::DockBack);
+    watch.frames(&mut h, 3);
+    let landed = body_rect(&h, slot).center();
+    assert!(
+        (landed - at).max_abs() < 40.0,
+        "landed {landed:?}, window {at:?}"
+    );
+    watch.rest(&mut h);
+}
+
+#[test]
+fn a_folded_frame_is_a_body_as_small_as_its_header() {
+    let (mut h, mut watch) = sandbox();
+    for hex in [false, true] {
+        let slot = find(&h, |d| {
+            d.opts.hex == hex && d.title().starts_with("medium LISM")
+        });
+        let open = body_rect(&h, slot);
+        // a double click on the bare header, between the title and the controls
+        let header = h.state().screen_rect(open);
+        let at = pos2(header.center().x + 10.0, header.min.y + 13.0);
+        h.hover_at(at);
+        watch.frame(&mut h);
+        for _ in 0..2 {
+            h.drag_at(at);
+            h.drop_at(at);
+        }
+        watch.frames(&mut h, 2);
+        assert!(frame_of(&h, slot).collapsed, "hexagon {hex}: folded");
+        watch.rest(&mut h);
+        let folded = body_rect(&h, slot);
+        assert!(
+            folded.size().y < 32.0 && (folded.size().x - open.size().x).abs() < 1.5,
+            "hexagon {hex}: folded {folded:?}, open {open:?}"
+        );
+        if hex {
+            // the band that still shows: four corners, wider at the cut
+            let s = h.state();
+            let body = s
+                .frames
+                .body(slot)
+                .and_then(|b| s.world.body(b))
+                .expect("body");
+            assert_eq!(body.outline.expect("an outline").points().len(), 4);
+        }
+        // unfolded it takes the size it had
+        h.state_mut()
+            .frames
+            .dock
+            .get_mut(slot)
+            .expect("the widget")
+            .frame
+            .collapsed = false;
+        watch.rest(&mut h);
+        let again = body_rect(&h, slot).size();
+        // (vertex attraction may have lined its side up with a neighbour's before)
+        assert!(
+            (again.y - open.size().y).abs() < 1.5 && (again.x - open.size().x).abs() < 17.0,
+            "{again:?} vs {open:?}"
+        );
+    }
+}
+
+#[test]
+fn the_layout_picks_the_size_of_a_frame_on_auto_from_the_room_in_its_row() {
+    // one rectangle and one hexagon, alone in a wide row
+    let (mut h, mut watch, slots) = sandbox_of(&[0, 2]);
+    h.set_size(vec2(1900.0, 800.0));
+    watch.rest(&mut h);
+    let hints = app::playground::Scale::Medium.hints();
+    for slot in &slots {
+        // room for the wide form: the layout steps up to it
+        assert_eq!(frame_of(&h, *slot).size, SizeMode::Auto);
+        assert_eq!(h.state().frames.pick(*slot), Some(Size::Wide));
+        assert_eq!(frame_of(&h, *slot).shown_size(), Some(Size::Wide));
+        assert!(body_rect(&h, *slot).size().x >= hints.wide.x);
+    }
+    // the window gets too narrow for both: pressed, they step down and stay there
+    h.set_size(vec2(1000.0, 800.0));
+    watch.rest(&mut h);
+    let picks = |h: &App| -> Vec<Size> {
+        let frames = &h.state().frames;
+        slots.iter().filter_map(|s| frames.pick(*s)).collect()
+    };
+    let narrow = picks(&h);
+    assert!(narrow.iter().any(|p| *p != Size::Wide), "{narrow:?}");
+    let arena = h.state().arena;
+    for slot in &slots {
+        let r = body_rect(&h, *slot);
+        assert!(
+            r.min.x >= arena.min.x - 0.5 && r.max.x <= arena.max.x + 0.5,
+            "{r:?} in {arena:?}"
+        );
+    }
+    watch.frames(&mut h, 120);
+    assert_eq!(picks(&h), narrow, "the picks hold");
+    // off: the picks stay as they are, whatever the room
+    h.state_mut().frames.auto_pick = false;
+    h.set_size(vec2(1600.0, 800.0));
+    watch.rest(&mut h);
+    assert_eq!(picks(&h), narrow);
+}
+
+#[test]
+fn dragging_a_frame_moves_its_body_and_the_others_flow_around() {
+    let (mut h, mut watch) = sandbox();
+    let slot = find(&h, |d| {
+        !d.opts.hex && d.opts.footer && d.title() == "medium LISMFX"
+    });
+    let from_rect = h.state().screen_rect(body_rect(&h, slot));
+    // hold it by its footer: no control there
+    let from = pos2(from_rect.center().x, from_rect.max.y - 8.0);
+    let to = from + vec2(360.0, 260.0);
+    h.hover_at(from);
+    watch.frame(&mut h);
+    h.drag_at(from);
+    watch.frame(&mut h);
+    for n in 1..=40 {
+        h.hover_at(from + (to - from) * (n as f32 / 40.0));
+        watch.frame(&mut h);
+    }
+    let held = h.state().screen_rect(body_rect(&h, slot));
+    assert!(
+        // (a frame behind: the world steps before the pointer is read)
+        (held.center() - (from_rect.center() + (to - from))).length() < 14.0,
+        "the body follows the pointer: {held:?}"
+    );
+    h.drop_at(to);
+    watch.rest(&mut h);
+    // dropped, it settles near there, under gravity
+    let dropped = h.state().screen_rect(body_rect(&h, slot));
+    assert!(
+        (dropped.center().x - held.center().x).abs() < 200.0,
+        "{dropped:?} vs {held:?}"
+    );
+    // its button still clicks: a control is not a grip
+    let clicks = |h: &App| {
+        h.state()
+            .frames
+            .dock
+            .get(slot)
+            .expect("widget")
+            .widget
+            .clicks
+    };
+    assert_eq!(clicks(&h), 0);
+    let plus = pos2(dropped.min.x + 14.0, dropped.min.y + 26.0 + 16.0);
+    let before = body_rect(&h, slot);
+    click_at(&mut h, &mut watch, plus);
+    watch.frames(&mut h, 2);
+    assert_eq!(clicks(&h), 1, "the + in the left side clicked");
+    assert_eq!(body_rect(&h, slot), before, "and did not move the body");
+}

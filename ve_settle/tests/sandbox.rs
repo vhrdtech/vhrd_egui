@@ -106,7 +106,7 @@ fn sandbox_with(scene: Scene) -> (App, Watch) {
     // (SETL-11).
     let limit = match scene {
         Scene::Few => SETTLE_FRAMES,
-        Scene::Full | Scene::Shapes | Scene::Tight => SETTLE_FRAMES * 2,
+        Scene::Full | Scene::Shapes | Scene::Tight | Scene::Frames => SETTLE_FRAMES * 2,
     };
     watch.rest_within(&mut h, limit);
     (h, watch)

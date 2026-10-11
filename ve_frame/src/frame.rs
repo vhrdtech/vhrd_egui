@@ -146,6 +146,7 @@ pub struct WidgetFrame<'a> {
     title_shown: bool,
     hex_wings: bool,
     hex_bar: f32,
+    fold_in_grid: bool,
     float_look: FloatLook,
     land_mode: LandMode,
     /// Worked out when the frame is drawn: its border, its shadow, and whether the header has the fold
@@ -177,6 +178,7 @@ impl<'a> WidgetFrame<'a> {
             title_shown: true,
             hex_wings: false,
             hex_bar: hex::BAR_THICKNESS,
+            fold_in_grid: false,
             float_look: FloatLook::default(),
             land_mode: LandMode::default(),
             edge: Stroke::NONE,
@@ -310,6 +312,15 @@ impl<'a> WidgetFrame<'a> {
         self
     }
 
+    /// Let the frame fold down to its header in a grid too (off by default: only floating windows fold). For
+    /// a layout that closes up around a folded frame, such as a physics layout; the header gets the ▾ and
+    /// folds on a double click, as a floating one does, and unfolds to the size it had
+    /// ([`FrameState::open_size`]).
+    pub fn fold_in_grid(mut self, fold: bool) -> Self {
+        self.fold_in_grid = fold;
+        self
+    }
+
     /// Draw the frame. `body` gets the size to arrange itself for.
     pub fn show<R>(
         self,
@@ -349,7 +360,7 @@ impl<'a> WidgetFrame<'a> {
         } else {
             tokens.shadow.window
         });
-        self.foldable = state.placement.floating;
+        self.foldable = state.placement.floating || self.fold_in_grid;
         let salt = self.id_salt.unwrap_or_else(|| Id::new(&self.title));
         let mem = ui.id().with(("ve_frame::learned", salt));
         // What this frame took the last time it was drawn here; in a new place (just popped out, just put
@@ -381,7 +392,11 @@ impl<'a> WidgetFrame<'a> {
         state.resizable = true;
         state.hex = shape == Shape::Hex;
         let hex_room = self.hex_room(state);
-        let size = match &self.sizes {
+        // a layout that picks the size itself overrules auto's own choice by the room's width
+        let picked = state
+            .auto_pick
+            .filter(|_| state.size == SizeMode::Auto && self.sizes.is_some());
+        let own = || match &self.sizes {
             Some(hints) if avail.x.is_finite() => match (shape, hex_room) {
                 (Shape::Rect, _) => state.size.resolve(state.last_size, room.x, hints),
                 // a floating hexagon was given a size: choose by the body that leaves
@@ -402,11 +417,12 @@ impl<'a> WidgetFrame<'a> {
             Some(_) => state.size.fixed().unwrap_or(Size::Nom),
             None => Size::Nom,
         };
+        let size = picked.unwrap_or_else(own);
         state.last_size = Some(size);
         // Folding: a floating frame folds down to its header. The frame is always laid out in full, with its
         // real size; while it is folded or on its way, only the top of it is given room and shown, the rest
         // is cut off. Nothing is ever rescaled.
-        let open = if floating {
+        let open = if self.foldable {
             let secs = if ui.style().animation_time > 0.0 {
                 FOLD_SECS
             } else {
@@ -420,7 +436,13 @@ impl<'a> WidgetFrame<'a> {
         };
         state.fold = open;
         state.folding = open < 1.0;
-        let full = state.window_size.filter(|_| state.folding).map(Vec2::from);
+        // the size it is cut from: a window's own, or in a grid the one it had when it was last drawn in full
+        let whole = if floating {
+            state.window_size
+        } else {
+            state.open_size
+        };
+        let full = whole.filter(|_| state.folding).map(Vec2::from);
         let edge = self.edge;
         let (land_mode, title) = (self.land_mode, self.title.clone());
         let draw = |ui: &mut Ui, state: &mut FrameState| {
@@ -472,6 +494,10 @@ impl<'a> WidgetFrame<'a> {
         }
         landing_glow(ui, &theme, state, r.response.rect, shape);
         state.drawn = Some(r.response.rect);
+        state.body = Some(r.body_rect);
+        if full.is_none() && !state.settling {
+            state.open_size = Some(r.response.rect.size().into());
+        }
         if !floating && state.anchor_due {
             // The size switch was clicked last frame and the frame has its new size now: scroll so the
             // switch is where it was, ready for the next click. A floating frame's window moves instead

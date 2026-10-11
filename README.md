@@ -11,7 +11,8 @@ options in three widget sizes; click a size switch, open a ☰ menu, drag the *A
 (`cargo run -p ve_app --example shell_demo`) hosts its widgets in the same frame.
 
 Physics layout prototype: `ve_settle` (rectangles that settle under gravity, home springs, walls and contacts; no
-egui dependency). Try it with `cargo run -p ve_settle --example sandbox`: a slider on every parameter, a debug
+egui dependency; with the feature `frame`, `ve_frame` widgets on the bodies: `-- frames` starts the sandbox with
+them). Try it with `cargo run -p ve_settle --example sandbox`: a slider on every parameter, a debug
 overlay, drag, resize, add and remove widgets, pause and single-step.
 
 New app: `just new NAME` (the `ve_template` command, `egui_app_skill/SKILL.md`) generates an app with the stack's

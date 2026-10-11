@@ -8,7 +8,9 @@
 //! something changes.
 //!
 //! The crate has no dependencies and knows nothing about egui: feed it
-//! sizes, read back rectangles. The sandbox example
+//! sizes, read back rectangles. The feature `frame` adds [`frames`]:
+//! `ve_frame` widgets drawn on the bodies, their shapes and sizes read
+//! from the frames (it pulls in egui and `ve_frame`). The sandbox example
 //! (`cargo run -p ve_settle --example sandbox`) puts a slider on every
 //! parameter and draws the bodies, forces, tension and home spots.
 //!
@@ -88,10 +90,12 @@
 //! assert!(world.body(hex).unwrap().shape().is_convex());
 //! ```
 //!
-//! Limits: outlines are convex, sizes are given, not chosen by the layout
-//! (SETL-5), and every pair is tested (fine for a dashboard's worth of
-//! bodies).
+//! Limits: outlines are convex; the core takes sizes as given (choosing
+//! between a widget's sizes is what [`frames`] does on top, SETL-5); and
+//! every pair is tested (fine for a dashboard's worth of bodies).
 
+#[cfg(feature = "frame")]
+pub mod frames;
 mod geom;
 mod params;
 mod world;

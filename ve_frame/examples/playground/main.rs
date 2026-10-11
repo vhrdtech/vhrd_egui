@@ -432,12 +432,13 @@ impl Demo {
     }
 }
 
-/// Draw one demo widget in its frame, with the options it was made with. Returns the menu pick and where the
-/// frame was drawn.
+/// Draw one demo widget in its frame, with the options it was made with; `fold` lets it fold in a grid too
+/// (off in the playground's own rows; a host that closes up around a folded frame turns it on). Returns the
+/// menu pick and where the frame was drawn.
 pub fn draw_at(
     ui: &mut Ui,
     slot: &mut Slot<Demo>,
-    (moves, look, land): (&Moves, FloatLook, LandMode),
+    (moves, look, land, fold): (&Moves, FloatLook, LandMode, bool),
 ) -> (Option<FrameAction>, egui::Rect) {
     let Slot { id, widget, frame } = slot;
     let opts = widget.opts;
@@ -449,7 +450,8 @@ pub fn draw_at(
     let mut f = WidgetFrame::new(widget.title())
         .id_salt(id.0)
         .float_look(look)
-        .land_mode(land);
+        .land_mode(land)
+        .fold_in_grid(fold);
     if opts.led {
         let (status, why) = widget.status();
         f = f.led(status, why);
@@ -768,7 +770,7 @@ impl Playground {
         self.drawn = drawn;
         let mut floated = Vec::new();
         let mut float = |ui: &mut Ui, slot: &mut Slot<Demo>| {
-            let (action, rect) = draw_at(ui, slot, (&moves, look, land));
+            let (action, rect) = draw_at(ui, slot, (&moves, look, land, false));
             floated.push((slot.id, rect));
             action
         };
@@ -983,7 +985,7 @@ fn grid(
             let (action, rect) = ui
                 .allocate_ui_with_layout(size, Layout::top_down(Align::Min), |ui| {
                     ui.set_max_width(cell);
-                    draw_at(ui, slot, (moves, look, land))
+                    draw_at(ui, slot, (moves, look, land, false))
                 })
                 .inner;
             drawn.push(rect);
