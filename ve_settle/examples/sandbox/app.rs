@@ -20,7 +20,7 @@ use egui::{
 };
 use playground::{Demo, Opts, Scale};
 use ve_backdrop::{Backdrop, Lit};
-use ve_frame::{Applied, FloatLook, FrameAction, LandMode, Shape, Slot, SlotId};
+use ve_frame::{Applied, FloatLook, FrameAction, LandMode, Shape, Size, Slot, SlotId};
 use ve_settle::frames::{Frames, LandAt, Seat, View};
 use ve_settle::{Axis, BodyDesc, BodyId, MAX_VERTICES, Params, Poly, Rect, Side, Vec2, World};
 use ve_theme::{Tokens, UiExt as _};
@@ -265,6 +265,8 @@ impl Scene {
             p.home_stiffness = 0.0;
             // without a home to brake it, what a landing widget pushes away must not fly on
             p.max_speed = p.glide_speed;
+            // gravity packs the stack: a push goes outward, down the whole of it
+            p.push_out = true;
         }
         p
     }
@@ -293,9 +295,6 @@ const SEED_SIZE: egui::Vec2 = vec2(480.0, 320.0);
 /// The area of an average sandbox widget, points², for the full scene's count.
 const AVERAGE_AREA: f32 = 330.0 * 230.0;
 
-/// Room a frame is seeded with on top of the guess of its size: sides, a
-/// footer and the header's controls are only known once it was drawn.
-const FRAME_SPARE: egui::Vec2 = vec2(70.0, 30.0);
 /// The area of an average demo frame, points², for the frames scene's count.
 const FRAME_AREA: f32 = 300.0 * 200.0;
 
@@ -327,6 +326,31 @@ pub fn mixed(n: u32) -> Demo {
     let (bits, hex, scale, wings) = kinds[n as usize % kinds.len()];
     let demo = Demo::new(Opts::from_bits(bits, hex), scale);
     if wings { demo.with_wings() } else { demo }
+}
+
+/// Which frames the frames scene holds.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Tab {
+    /// Rectangles only.
+    Rectangles,
+    /// Hexagons only.
+    Hexagons,
+    /// Both, as [`mixed`] has them.
+    Mixed,
+}
+
+impl Tab {
+    /// The `n`-th demo widget of this tab.
+    pub fn demo(self, n: u32) -> Demo {
+        let hex = match self {
+            Tab::Mixed => return mixed(n),
+            Tab::Rectangles => false,
+            Tab::Hexagons => true,
+        };
+        // the n-th of that shape in the mixed list, which repeats every twelve
+        let of_shape: Vec<u32> = (0..12).filter(|k| mixed(*k).opts.hex == hex).collect();
+        mixed(of_shape[n as usize % of_shape.len()])
+    }
 }
 
 /// What the layout has to know about a demo widget.
@@ -405,6 +429,24 @@ pub struct Sandbox {
     pub lit: Vec<Lit>,
     /// The last thing a frame's menu did.
     pub message: String,
+    /// Which frames the frames scene holds.
+    pub tab: Tab,
+    /// How far the arena is scrolled to the right, points (a world that
+    /// is open on the right grows there).
+    pub scroll_x: f32,
+    /// Framed widgets still to be seeded: they are measured and laid
+    /// out with the next frame, before they are shown.
+    due: usize,
+    /// Frame and solver times of the last seconds.
+    pub perf: Perf,
+    /// What the solver took in the last frame, milliseconds.
+    solver_ms: f32,
+    /// The parameter whose slider is under the pointer: its effect is
+    /// drawn in the world.
+    pub effect: Option<Effect>,
+    /// Draw the effect of the slider hovered last also after the pointer
+    /// has left it.
+    pub pin_effect: bool,
     /// Stepping is stopped; "Step" runs single steps.
     pub paused: bool,
     /// The widget the buttons act on.
@@ -474,6 +516,13 @@ impl Sandbox {
             backdrop_on: true,
             lit: Vec::new(),
             message: String::new(),
+            tab: Tab::Mixed,
+            scroll_x: 0.0,
+            due: 0,
+            perf: Perf::default(),
+            solver_ms: 0.0,
+            effect: None,
+            pin_effect: false,
             paused: false,
             selected: None,
             // the frames are the picture there; the layers are a click away
@@ -497,17 +546,17 @@ impl Sandbox {
 
     /// Where a world point is on the screen.
     pub fn screen_pos(&self, v: Vec2) -> Pos2 {
-        to_pos(v) - vec2(0.0, self.scroll)
+        to_pos(v) - vec2(self.scroll_x, self.scroll)
     }
 
     /// Where a world rectangle is on the screen.
     pub fn screen_rect(&self, r: Rect) -> egui::Rect {
-        to_rect(r).translate(vec2(0.0, -self.scroll))
+        to_rect(r).translate(vec2(-self.scroll_x, -self.scroll))
     }
 
     /// The world point under a screen point.
     pub fn world_pos(&self, p: Pos2) -> Vec2 {
-        from_pos(p + vec2(0.0, self.scroll))
+        from_pos(p + vec2(self.scroll_x, self.scroll))
     }
 
     /// How tall the arena's content is: the window, or down to the lowest
@@ -520,6 +569,17 @@ impl Sandbox {
             .map(|b| b.rect.max.y)
             .fold(self.arena.max.y, f32::max);
         lowest + self.world.params().gap - self.arena.min.y
+    }
+
+    /// How wide the arena's content is: the window, or out to the
+    /// rightmost widget when the world is open there and they run past it.
+    pub fn content_width(&self) -> f32 {
+        let p = self.world.params();
+        if p.walls.right {
+            return self.arena.width();
+        }
+        let far = self.world.bodies().iter().map(|b| b.rect.max.x);
+        far.fold(self.arena.max.x, f32::max) + p.gap - self.arena.min.x
     }
 
     /// The farthest the arena can be scrolled down.
@@ -581,7 +641,7 @@ impl Sandbox {
                 inner.min.y + inner.height().max(0.0) * ry as f32 / 1000.0,
             )
         });
-        let demo = mixed(self.seq);
+        let demo = self.tab.demo(self.seq);
         self.seq += 1;
         let seat = seat(&demo);
         let slot = self.frames.add(&mut self.world, demo, seat, from_pos(at));
@@ -592,7 +652,7 @@ impl Sandbox {
 
     /// How many widgets the scene holds, floating frames included.
     pub fn count(&self) -> usize {
-        self.items.len() + self.frames.dock.len()
+        self.items.len() + self.frames.dock.len() + self.due
     }
 
     /// Forget every framed widget and keep the switches of the layout.
@@ -681,7 +741,7 @@ impl Sandbox {
     /// overlay): an empty arena to build a case in by hand.
     pub fn clear(&mut self) {
         self.world = World::new(from_rect(self.arena), *self.world.params());
-        self.scroll = 0.0;
+        (self.scroll, self.scroll_x, self.due) = (0.0, 0.0, 0);
         self.items.clear();
         self.drop_frames();
         self.selected = None;
@@ -698,7 +758,7 @@ impl Sandbox {
 
     fn reset(&mut self) {
         self.world = World::new(from_rect(self.arena), self.scene.params());
-        self.scroll = 0.0;
+        (self.scroll, self.scroll_x, self.due) = (0.0, 0.0, 0);
         self.items.clear();
         self.drop_frames();
         self.selected = None;
@@ -824,7 +884,8 @@ impl Sandbox {
     /// `count` widgets in rows across the arena from `top` down.
     fn add_rows(&mut self, count: usize, top: f32) {
         if self.scene == Scene::Frames {
-            self.add_shelves(count, top);
+            // measured and laid out with the next frame (`seed_frames`)
+            self.due += count;
             return;
         }
         let a = self.arena;
@@ -842,24 +903,84 @@ impl Sandbox {
         }
     }
 
-    /// `count` framed widgets in rows that fit, from `top` down, each with
-    /// the room its frame is guessed to take and some to spare. Not seeded
-    /// tighter than they fit, as the full scene is: a pile with hexagons
-    /// in it does not come apart (SETL-16).
-    fn add_shelves(&mut self, count: usize, top: f32) {
+    /// The framed widgets that are due, before they are shown once: each
+    /// is added, its frame measured out of sight in all its sizes, then
+    /// they are laid out in rows that fit at their normal size; what a
+    /// row has left over goes to its frames that have a wide form (as the
+    /// layout would pick, one after the other), and each body is put
+    /// right under what lies above it. So the scene opens at its sizes
+    /// and nearly at rest, instead of growing into shape.
+    fn seed_frames(
+        &mut self,
+        ui: &mut Ui,
+        mut draw: impl FnMut(&mut Ui, &mut Slot<Demo>) -> Option<FrameAction>,
+    ) {
+        let count = std::mem::take(&mut self.due);
         let a = self.arena;
         let gap = self.world.params().gap;
-        let left = a.min.x + gap;
-        let (mut x, mut y, mut row) = (left, top + gap, 0.0f32);
+        let mut placed: Vec<Rect> = self.world.bodies().iter().map(|b| b.rect).collect();
+        let mut fresh = Vec::new();
         for _ in 0..count {
-            let size = seat(&mixed(self.seq)).guess() + Vec2::new(FRAME_SPARE.x, FRAME_SPARE.y);
-            if x > left && x + size.x + gap > a.max.x {
-                (x, y, row) = (left, y + row + gap, 0.0);
+            let body = self.add_frame(Some(a.center_top() + vec2(0.0, 60.0)));
+            if let Some(slot) = self.frames.slot(body) {
+                self.frames.measure(ui, slot, &mut draw);
+                fresh.push(slot);
             }
-            self.add_frame(Some(pos2(x + size.x / 2.0, y + size.y / 2.0)));
-            x += size.x + gap;
-            row = row.max(size.y);
         }
+        let size_of = |frames: &Frames<Demo>, slot: SlotId, size: Size| {
+            let guess = frames.dock.get(slot).map(|s| seat(&s.widget).guess());
+            let guess = guess.map_or(vec2(240.0, 120.0), to_vec);
+            frames.outer(slot, size).unwrap_or(guess)
+        };
+        let room = a.width() - 2.0 * gap;
+        let mut rows: Vec<Vec<SlotId>> = vec![Vec::new()];
+        let mut used = 0.0;
+        for slot in fresh {
+            let w = size_of(&self.frames, slot, Size::Nom).x;
+            if used > 0.0 && used + w > room {
+                rows.push(Vec::new());
+                used = 0.0;
+            }
+            used += w + gap;
+            if let Some(row) = rows.last_mut() {
+                row.push(slot);
+            }
+        }
+        for row in rows {
+            let nom = |s: &SlotId| size_of(&self.frames, *s, Size::Nom).x + gap;
+            let taken: f32 = row.iter().map(nom).sum();
+            let mut spare = room + gap - taken;
+            let mut x = a.min.x + gap;
+            for slot in row {
+                let (n, wide) = (
+                    size_of(&self.frames, slot, Size::Nom),
+                    size_of(&self.frames, slot, Size::Wide),
+                );
+                let sized = self.frames.dock.get(slot);
+                let sized = sized.is_some_and(|s| s.widget.opts.sizes);
+                let need = wide.x - n.x;
+                let widen = self.frames.auto_pick
+                    && sized
+                    && need > 0.0
+                    && spare >= need + ve_frame::AUTO_HYSTERESIS;
+                let size = if widen {
+                    spare -= need;
+                    self.frames.set_pick(slot, Size::Wide);
+                    wide
+                } else {
+                    n
+                };
+                // right under what lies above it
+                let over = |r: &&Rect| r.max.x > x - gap && r.min.x < x + size.x + gap;
+                let top = placed.iter().filter(over).map(|r| r.max.y + gap);
+                let top = top.fold(a.min.y + gap, f32::max);
+                let at = Vec2::new(x + size.x / 2.0, top + size.y / 2.0);
+                self.frames.place(&mut self.world, slot, at);
+                placed.push(Rect::from_center_size(at, Vec2::new(size.x, size.y)));
+                x += size.x + gap;
+            }
+        }
+        self.selected = None;
     }
 
     /// Content that lives by itself: now and then one widget gets more or
@@ -1025,6 +1146,8 @@ impl Sandbox {
         self.status(ui);
 
         ui.section_header("Overlay", "Debug drawing on top of the widgets.");
+        ui.checkbox(&mut self.pin_effect, "Keep the hovered parameter shown")
+            .on_hover_text("Every slider below shows what it does in the world while the pointer is on it: gravity as a field of arrows, homes as springs, the gap, the snap and attraction ranges as circles, pressure as a heat tint, the grid as lines. On: the one hovered last stays shown after the pointer has left, to watch it while doing something else.");
         ui.checkbox(&mut self.overlay.bodies, "Bodies")
             .on_hover_text("Each body's rectangle, its minimum size (inner outline) and its id. Lifted bodies (just added, dragged, dropped on others) are drawn in the info colour.");
         ui.checkbox(&mut self.overlay.forces, "Forces")
@@ -1084,7 +1207,62 @@ impl Sandbox {
         });
     }
 
+    /// The tabs of the frames scene: which frames it holds.
+    fn tabs(&mut self, ui: &mut Ui) {
+        let on = self.scene == Scene::Frames;
+        let off = "Not available: the tabs choose the frames of the frames scene. Pick \"frames\" under Scene.";
+        let mut tab = self.tab;
+        ui.horizontal(|ui| {
+            ui.add_enabled_ui(on, |ui| {
+                let tabs = [
+                    (Tab::Rectangles, "Rectangles", "Rectangular frames only: with and without sides, footer and size switch, in three scales."),
+                    (Tab::Hexagons, "Hexagons", "Hexagonal frames only: with side bars, with wings and plain; they nest."),
+                    (Tab::Mixed, "Mixed", "Rectangles and hexagons together."),
+                ];
+                for (value, label, tip) in tabs {
+                    ui.selectable_value(&mut tab, value, label)
+                        .on_hover_text(format!("{tip} Picking a tab seeds the scene again."))
+                        .on_disabled_hover_text(off);
+                }
+            });
+        });
+        if tab != self.tab {
+            self.tab = tab;
+            self.reset();
+        }
+    }
+
+    /// Frames per second and the frame times of the last ten seconds.
+    fn speed(&self, ui: &mut Ui) {
+        ui.section_header(
+            "Speed",
+            "How long frames take: the last ten seconds, in milliseconds.",
+        );
+        let Some(s) = self.perf.stats() else {
+            ui.weak("no frames counted yet")
+                .on_hover_text("Frame times show once two frames have been drawn.");
+            return;
+        };
+        ui.monospace(format!("fps {:>6.1}  frames {:>4}", s.fps, s.frames))
+            .on_hover_text("Frames per second: 1000 over the mean frame time of the last ten seconds, and how many frames that is. A frame longer than 250 ms is the app waiting (at rest it draws nothing) and is not counted.");
+        let times = self.perf.frame_times();
+        let accent = ui.tokens().colors.accent;
+        ui.add(ve_dash::Sparkline::new(&times).height(36.0).color(accent))
+            .on_hover_text(format!(
+                "Frame time, milliseconds, oldest on the left: the last {:.0} s of frames that were drawn ({} of them). Lower is faster; a spike is one slow frame.",
+                Perf::SECS,
+                s.frames
+            ));
+        ui.monospace(format!("min {:>5.1}  p50 {:>5.1}  max {:>5.1}", s.min, s.p50, s.max))
+            .on_hover_text("Frame time in milliseconds: the fastest frame, the median (half of the frames were faster) and the slowest of the last ten seconds.");
+        ui.monospace(format!("p95 {:>5.1}  p99 {:>5.1}", s.p95, s.p99))
+            .on_hover_text("Frame time in milliseconds that 95 % and 99 % of the frames stayed under: the slow tail, which is what stutter feels like.");
+        ui.monospace(format!("solver p50 {:>5.2}  max {:>5.2}", s.solver_p50, s.solver_max))
+            .on_hover_text("Time the physics steps of one frame took, milliseconds: median and slowest of the last ten seconds. 0 while the world is at rest: no step runs then. The rest of a frame is drawing.");
+    }
+
     fn status(&mut self, ui: &mut Ui) {
+        self.speed(ui);
         ui.section_header("State", "What the world is doing right now.");
         let w = &self.world;
         let lifted = w.bodies().iter().filter(|b| b.lifted).count();
@@ -1298,6 +1476,8 @@ impl Sandbox {
             "How hard edges are pulled onto grid steps, 1/s² near a step (strongest a quarter pitch off). 0 turns the grid off.",
         );
 
+        ui.checkbox(&mut p.push_out, "Push outward")
+            .on_hover_text("In a world open away from gravity (the bottom wall open, gravity up): a contact along gravity's axis moves only the widget farther out, by the whole of it, so a push runs down a whole stack at once and nothing is pushed toward gravity's wall. Off: both widgets give half. On in the frames scene, where gravity packs the frames and there are no homes.");
         ui.section_header("Motion", "Speeds, so that things glide and never jump.");
         knob(
             ui,
@@ -1343,10 +1523,10 @@ impl Sandbox {
             .on_hover_text("This many calm steps in a row put the world to rest.");
         if ui
             .button("Default parameters")
-            .on_hover_text("Put every parameter back to its default; the widgets stay.")
+            .on_hover_text("Put every parameter back to the scene's defaults (the walls and gravity it started with); the widgets stay. The change comes in over a quarter second and no widget keeps more speed than a glide, so nothing is thrown about.")
             .clicked()
         {
-            p = Params::default();
+            p = self.scene.params();
         }
         self.world.set_params(p);
     }
@@ -1356,6 +1536,12 @@ impl Sandbox {
         let arena = ui.available_rect_before_wrap();
         self.arena = arena;
         let framed = self.scene == Scene::Frames;
+        // the slider under the pointer, if it has something to show here
+        let hovered: Option<Option<Effect>> = ui.data_mut(|d| d.remove_temp(Effect::id()));
+        let hovered = hovered.flatten();
+        if hovered.is_some() || !self.pin_effect {
+            self.effect = hovered;
+        }
         // first, so everything else is drawn on top; filled once the frames are laid out
         let backdrop = (framed && self.backdrop_on).then(|| self.backdrop.reserve(ui.painter()));
         let background = ui
@@ -1384,7 +1570,9 @@ impl Sandbox {
         }
         if !self.paused {
             let dt = ui.input(|i| i.stable_dt).min(1.0 / 30.0);
+            let began = std::time::Instant::now();
             self.world.advance(dt);
+            self.solver_ms = began.elapsed().as_secs_f32() * 1000.0;
             if self.auto {
                 self.auto_content(dt);
             }
@@ -1406,6 +1594,9 @@ impl Sandbox {
         }
         self.vertex_ui(ui, &tokens);
         self.paint_overlay(ui, &tokens);
+        if let Some(effect) = self.effect {
+            self.paint_effect(ui, &tokens, effect);
+        }
         if !framed {
             self.paint_scrollbar(ui, &tokens);
         }
@@ -1426,16 +1617,26 @@ impl Sandbox {
         };
         let mut picked = Vec::new();
         let mut clicked = None;
+        if self.due > 0 {
+            self.seed_frames(ui, &mut draw);
+        }
         let mut area = ui.new_child(UiBuilder::new().id_salt("settle_frames").max_rect(arena));
-        ScrollArea::vertical()
+        // The world grows where it is open, and the scroll area follows
+        // its extent: down with the bottom wall open, to the right with
+        // the right wall open. A closed wall is a hard edge and does not
+        // scroll.
+        let walls = self.world.params().walls;
+        let width = self.content_width();
+        ScrollArea::new([!walls.right, !walls.bottom])
             .id_salt("settle_frames_scroll")
             .auto_shrink(false)
             .show(&mut area, |ui| {
-                ui.set_min_height(height);
-                // the world is in screen points with the view scrolled to the top
-                self.scroll = arena.min.y - ui.max_rect().min.y;
+                ui.set_min_size(vec2(width, height));
+                // the world is in screen points with the view scrolled to the top left
+                let origin = ui.max_rect().min;
+                (self.scroll_x, self.scroll) = (arena.min.x - origin.x, arena.min.y - origin.y);
                 let view = View {
-                    offset: vec2(0.0, -self.scroll),
+                    offset: vec2(-self.scroll_x, -self.scroll),
                     clip: arena.intersect(ui.clip_rect()),
                 };
                 let shown = self.frames.show(ui, &mut self.world, view, &mut draw);
@@ -1977,6 +2178,194 @@ impl Sandbox {
     }
 }
 
+impl Sandbox {
+    /// What parameter `effect` does, drawn in the world.
+    fn paint_effect(&self, ui: &Ui, tokens: &Tokens, effect: Effect) {
+        let c = &tokens.colors;
+        let painter = ui.painter().with_clip_rect(self.arena);
+        let p = *self.world.params();
+        let (thin, medium) = (tokens.stroke.thin, tokens.stroke.medium);
+        let faint = |color: Color32, alpha: f32| color.gamma_multiply(alpha);
+        let corners = |r: egui::Rect| {
+            [
+                r.left_top(),
+                r.right_top(),
+                r.right_bottom(),
+                r.left_bottom(),
+            ]
+        };
+        match effect {
+            Effect::Gravity => {
+                let Some(side) = p.gravity_side else {
+                    return;
+                };
+                let dir = to_vec(side.dir());
+                let len = (p.gravity / 3000.0 * 44.0).clamp(3.0, 44.0);
+                let stroke = Stroke::new(medium, faint(c.cat[0], 0.8));
+                let (mut y, a) = (self.arena.min.y + 40.0, self.arena);
+                while y < a.max.y {
+                    let mut x = a.min.x + 40.0;
+                    while x < a.max.x {
+                        painter.arrow(pos2(x, y) - dir * len * 0.5, dir * len, stroke);
+                        x += 80.0;
+                    }
+                    y += 80.0;
+                }
+            }
+            Effect::Home => {
+                for body in self.world.bodies() {
+                    let Some(home) = body.home else {
+                        continue;
+                    };
+                    let (from, to) = (self.screen_pos(body.rect.center()), self.screen_pos(home));
+                    let stretch = (to - from).length();
+                    // relaxed: muted; stretched: toward the warning colour
+                    let color = c.cat[1].lerp_to_gamma(c.warn, (stretch / 120.0).min(1.0));
+                    let width = thin + p.home_stiffness / 300.0 * 3.0;
+                    painter.add(egui::Shape::line(
+                        spring(from, to),
+                        Stroke::new(width, color),
+                    ));
+                    painter.circle_filled(to, 3.0, color);
+                }
+            }
+            Effect::Motion => {
+                let (glide, limit) = (p.glide_speed / 60.0, p.max_speed / 60.0);
+                for body in self.world.bodies() {
+                    let at = self.screen_pos(body.rect.center());
+                    painter.circle_stroke(at, glide, Stroke::new(thin, c.cat[2]));
+                    painter.circle_stroke(at, limit, Stroke::new(thin, faint(c.cat[2], 0.35)));
+                    let vel = to_vec(body.vel) / 10.0;
+                    if vel.length() > 1.0 {
+                        painter.arrow(at, vel, Stroke::new(medium, c.cat[2]));
+                    }
+                }
+            }
+            Effect::Gap => {
+                for body in self.world.bodies() {
+                    let r = self.screen_rect(body.rect);
+                    painter.rect_filled(r.expand(p.gap), tokens.radius.m, faint(c.cat[3], 0.18));
+                    painter.rect_stroke(
+                        r.expand(p.gap),
+                        tokens.radius.m,
+                        Stroke::new(thin, c.cat[3]),
+                        StrokeKind::Outside,
+                    );
+                }
+            }
+            Effect::Pressure => {
+                for body in self.world.bodies() {
+                    let load = body.load().max_abs() + body.pressure;
+                    let heat = (load / p.bulge_max.max(1.0)).clamp(0.0, 1.0);
+                    let r = self.screen_rect(body.rect);
+                    if heat > 0.01 {
+                        painter.rect_filled(r, tokens.radius.m, faint(c.warn, 0.15 + 0.5 * heat));
+                    }
+                    let shape = body.shape();
+                    let points = shape.points().iter().map(|v| self.screen_pos(*v));
+                    painter.add(egui::Shape::closed_line(
+                        points.collect(),
+                        Stroke::new(thin, c.cat[4]),
+                    ));
+                }
+            }
+            Effect::Snap => {
+                for body in self.world.bodies() {
+                    for corner in corners(self.screen_rect(body.rect)) {
+                        painter.circle_stroke(
+                            corner,
+                            p.snap_range,
+                            Stroke::new(thin, faint(c.cat[3], 0.6)),
+                        );
+                    }
+                }
+                for snap in self.world.snaps() {
+                    let (from, to) = (self.screen_pos(snap.from), self.screen_pos(snap.to));
+                    let width = medium + p.snap_stiffness / 6000.0 * 3.0;
+                    painter.line_segment([from, to], Stroke::new(width, c.cat[3]));
+                }
+            }
+            Effect::Attract => {
+                for body in self.world.bodies() {
+                    let shape = match body.outline {
+                        Some(_) => body.shape(),
+                        None => Poly::rect(&body.rect),
+                    };
+                    for vertex in shape.points() {
+                        let at = self.screen_pos(*vertex);
+                        painter.circle_stroke(
+                            at,
+                            p.attract_range,
+                            Stroke::new(thin, faint(c.status.ok.solid, 0.6)),
+                        );
+                    }
+                }
+                for pull in self.world.pulls() {
+                    let (from, to) = (self.screen_pos(pull.from), self.screen_pos(pull.to));
+                    painter.arrow(from, to - from, Stroke::new(medium, c.status.ok.solid));
+                }
+            }
+            Effect::Friction => {
+                for body in self.world.bodies().iter().filter(|b| b.outline.is_some()) {
+                    let shape = body.shape();
+                    let pts = shape.points();
+                    for (i, a) in pts.iter().enumerate() {
+                        let b = pts[(i + 1) % pts.len()];
+                        // slanted: neither flat nor upright
+                        let d = b - *a;
+                        if d.x.abs() > 0.5 && d.y.abs() > 0.5 {
+                            let held = d.x.abs() <= p.friction * d.y.abs();
+                            let color = if held { c.status.ok.solid } else { c.warn };
+                            painter.line_segment(
+                                [self.screen_pos(*a), self.screen_pos(b)],
+                                Stroke::new(tokens.stroke.thick, color),
+                            );
+                        }
+                    }
+                }
+            }
+            Effect::Grid => {
+                if p.grid_pitch < 4.0 {
+                    return;
+                }
+                let alpha = 0.25 + 0.5 * (p.grid_stiffness / 3000.0).min(1.0);
+                let stroke = Stroke::new(thin, faint(c.line_strong, alpha));
+                let a = self.arena;
+                let origin = self.screen_pos(self.world.bounds().min + Vec2::splat(p.gap));
+                let mut x = origin.x + ((a.min.x - origin.x) / p.grid_pitch).floor() * p.grid_pitch;
+                while x <= a.max.x {
+                    painter.vline(x, a.y_range(), stroke);
+                    x += p.grid_pitch;
+                }
+                let mut y = origin.y + ((a.min.y - origin.y) / p.grid_pitch).floor() * p.grid_pitch;
+                while y <= a.max.y {
+                    painter.hline(a.x_range(), y, stroke);
+                    y += p.grid_pitch;
+                }
+            }
+        }
+    }
+}
+
+/// A spring drawn from `from` to `to`: a zigzag of eight turns.
+fn spring(from: Pos2, to: Pos2) -> Vec<Pos2> {
+    let along = to - from;
+    let len = along.length();
+    if len < 8.0 {
+        return vec![from, to];
+    }
+    let across = vec2(-along.y, along.x) / len * 5.0;
+    let turns = 8;
+    let mut points = vec![from];
+    for i in 1..turns * 2 {
+        let t = i as f32 / (turns * 2) as f32;
+        let side = if i % 2 == 0 { -1.0 } else { 1.0 };
+        points.push(from + along * t + across * side);
+    }
+    points.push(to);
+    points
+}
+
 /// Where a body touches the nearer wall on `axis`.
 fn wall_point(body: Rect, bounds: Rect, axis: Axis) -> Vec2 {
     let mut at = body.center();
@@ -1987,14 +2376,197 @@ fn wall_point(body: Rect, bounds: Rect, axis: Axis) -> Vec2 {
 
 /// A slider for one parameter, with what it does on hover.
 fn knob(ui: &mut Ui, name: &str, value: &mut f32, range: std::ops::RangeInclusive<f32>, tip: &str) {
-    ui.add(Slider::new(value, range).text(name))
-        .on_hover_text(tip);
+    let effect = Effect::of(name);
+    let tip = match effect {
+        Some(effect) => format!(
+            "{tip}\n\nWhile the pointer is on this slider the world shows it: {}.",
+            effect.what()
+        ),
+        None => tip.to_owned(),
+    };
+    let slider = ui.add(Slider::new(value, range).text(name));
+    if let (true, Some(effect)) = (slider.hovered() || slider.dragged(), effect) {
+        ui.data_mut(|d| d.insert_temp(Effect::id(), Some(effect)));
+    }
+    slider.on_hover_text(tip);
+}
+
+/// What a parameter does, drawn in the world while its slider is under
+/// the pointer, so that tuning is not guesswork.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Effect {
+    /// Gravity: a field of arrows the way it pulls, longer for more.
+    Gravity,
+    /// Homes: a spring from each widget to its home spot.
+    Home,
+    /// Damping and the speeds: each widget's velocity, and how far a
+    /// glide and the speed limit carry in one frame.
+    Motion,
+    /// The gap: the room kept free around each widget.
+    Gap,
+    /// Tension, restore and the pillow: pressure as a heat tint, with the
+    /// bulged shapes.
+    Pressure,
+    /// Corner snapping: its range around every corner, and the snaps.
+    Snap,
+    /// Vertex attraction: its range around every vertex, and the pulls.
+    Attract,
+    /// Friction: the slanted edges it acts on.
+    Friction,
+    /// The grid: its lines across the arena.
+    Grid,
+}
+
+impl Effect {
+    /// The effect of the slider called `name`.
+    pub fn of(name: &str) -> Option<Self> {
+        Some(match name {
+            "gravity" => Self::Gravity,
+            "home stiffness" | "home drift" => Self::Home,
+            "damping" | "grow speed" | "glide speed" | "max speed" | "steps per second" => {
+                Self::Motion
+            }
+            "gap" => Self::Gap,
+            "tension" | "restore" | "bulge at rest" | "bulge from" | "bulge gain" | "bulge max"
+            | "bulge speed" => Self::Pressure,
+            "snap range" | "snap stiffness" => Self::Snap,
+            "attract range" | "attract strength" => Self::Attract,
+            "friction" => Self::Friction,
+            "grid pitch" | "grid stiffness" => Self::Grid,
+            _ => return None,
+        })
+    }
+
+    /// What is drawn, for the slider's tooltip.
+    pub fn what(self) -> &'static str {
+        match self {
+            Self::Gravity => "a field of arrows the way gravity pulls, longer the stronger it is",
+            Self::Home => {
+                "a spring from each widget to its home spot, thicker the stiffer it is, coloured by how far it is stretched"
+            }
+            Self::Motion => {
+                "each widget's velocity as an arrow, a ring as large as a glide carries it in one frame and a faint one for the speed limit"
+            }
+            Self::Gap => "the room kept free around each widget",
+            Self::Pressure => {
+                "pressure as a heat tint on each widget (squeeze and jam), and the bulged shapes the solver sees"
+            }
+            Self::Snap => {
+                "the snap range as a circle around every corner, and the corners being pulled"
+            }
+            Self::Attract => {
+                "the attraction range as a circle around every vertex, and the edges being pulled"
+            }
+            Self::Friction => "the slanted edges friction holds a widget on",
+            Self::Grid => "the grid's lines every pitch, from the walls' corner",
+        }
+    }
+
+    fn id() -> Id {
+        Id::new("settle_effect")
+    }
+}
+
+/// A frame taking longer than this (milliseconds) is the app waiting for
+/// something to do, not a slow frame: it is left out of the statistics.
+const IDLE_MS: f32 = 250.0;
+
+/// Frame and solver times of the last ten seconds.
+#[derive(Default)]
+pub struct Perf {
+    /// (seconds on the clock of counted frames, frame ms, solver ms)
+    samples: std::collections::VecDeque<(f64, f32, f32)>,
+    last: Option<std::time::Instant>,
+    clock: f64,
+}
+
+/// What [`Perf`] says about the last ten seconds, times in milliseconds.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct PerfStats {
+    pub frames: usize,
+    pub fps: f32,
+    pub min: f32,
+    pub max: f32,
+    pub p50: f32,
+    pub p95: f32,
+    pub p99: f32,
+    pub solver_p50: f32,
+    pub solver_max: f32,
+}
+
+/// The value at `share` (0 to 1) of the way through `sorted` (nearest
+/// rank); 0 for an empty list.
+pub fn percentile(sorted: &[f32], share: f32) -> f32 {
+    if sorted.is_empty() {
+        return 0.0;
+    }
+    let rank = (share.clamp(0.0, 1.0) * sorted.len() as f32).ceil() as usize;
+    sorted[rank.clamp(1, sorted.len()) - 1]
+}
+
+impl Perf {
+    /// How many seconds are kept.
+    pub const SECS: f64 = 10.0;
+
+    /// A frame begins: the time since the last one is a frame time, with
+    /// what the solver took in that frame.
+    pub fn frame(&mut self, solver_ms: f32) {
+        let now = std::time::Instant::now();
+        if let Some(last) = self.last.replace(now) {
+            let ms = (now - last).as_secs_f32() * 1000.0;
+            if ms < IDLE_MS {
+                self.push(ms, solver_ms);
+            }
+        }
+    }
+
+    /// Count a frame that took `frame_ms`.
+    pub fn push(&mut self, frame_ms: f32, solver_ms: f32) {
+        self.clock += f64::from(frame_ms) / 1000.0;
+        self.samples.push_back((self.clock, frame_ms, solver_ms));
+        while self
+            .samples
+            .front()
+            .is_some_and(|s| s.0 < self.clock - Self::SECS)
+        {
+            self.samples.pop_front();
+        }
+    }
+
+    /// The frame times kept, oldest first, milliseconds.
+    pub fn frame_times(&self) -> Vec<f32> {
+        self.samples.iter().map(|s| s.1).collect()
+    }
+
+    /// The statistics; `None` before the first frame was counted.
+    pub fn stats(&self) -> Option<PerfStats> {
+        let mut frames = self.frame_times();
+        let mut solver: Vec<f32> = self.samples.iter().map(|s| s.2).collect();
+        if frames.is_empty() {
+            return None;
+        }
+        let mean = frames.iter().sum::<f32>() / frames.len() as f32;
+        frames.sort_by(f32::total_cmp);
+        solver.sort_by(f32::total_cmp);
+        Some(PerfStats {
+            frames: frames.len(),
+            fps: if mean > 0.0 { 1000.0 / mean } else { 0.0 },
+            min: frames[0],
+            max: frames[frames.len() - 1],
+            p50: percentile(&frames, 0.5),
+            p95: percentile(&frames, 0.95),
+            p99: percentile(&frames, 0.99),
+            solver_p50: percentile(&solver, 0.5),
+            solver_max: solver[solver.len() - 1],
+        })
+    }
 }
 
 impl eframe::App for Sandbox {
     fn ui(&mut self, ui: &mut Ui, _frame: &mut eframe::Frame) {
         let ctx = ui.ctx().clone();
         let bg = ui.tokens().colors.bg;
+        self.perf.frame(std::mem::take(&mut self.solver_ms));
         Panel::left("settle_controls")
             .resizable(false)
             .show(ui, |ui| {
@@ -2002,7 +2574,10 @@ impl eframe::App for Sandbox {
             });
         CentralPanel::default()
             .frame(Frame::new().fill(bg))
-            .show(ui, |ui| self.arena_ui(ui));
+            .show(ui, |ui| {
+                self.tabs(ui);
+                self.arena_ui(ui);
+            });
         // At rest nothing is recomputed and nothing asks for a new frame
         // (content that lives by itself needs its clock, though).
         if !self.paused && (self.auto || !self.world.is_at_rest()) {
