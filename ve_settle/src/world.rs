@@ -1863,14 +1863,10 @@ impl World {
                     if low && b.rect.min[axis] + d < self.hard.min[axis] {
                         d = self.hard.min[axis] - b.rect.min[axis];
                     }
-                    // Dropped outside by the user's hand, it is still
-                    // lifted and comes in at a glide.
+                    // In the user's hand a moment ago and still lifted: it
+                    // glides in with the passes above, not here on top.
                     if b.lifted {
-                        d = if pass == 0 {
-                            d.clamp(-glide, glide)
-                        } else {
-                            0.0
-                        };
+                        d = 0.0;
                     }
                     if d != 0.0 {
                         let mut by = Vec2::ZERO;
