@@ -5,6 +5,8 @@ versions follow [Semantic Versioning](https://semver.org/). Feature IDs refer to
 
 ## [Unreleased]
 
+## [0.20.0] - 2026-10-11
+
 ### Changed
 
 - ve_backdrop: emulated transparency defaults are calmer: `glass_dim` 0.97 (a faint hint of the wallpaper
