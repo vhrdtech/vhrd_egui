@@ -5,6 +5,8 @@ versions follow [Semantic Versioning](https://semver.org/). Feature IDs refer to
 
 ## [Unreleased]
 
+## [0.21.0] - 2026-10-11
+
 ### Added
 
 - ve_frame, a new crate: the frame every widget sits in. `WidgetFrame` draws a header (optional LED, title,
@@ -22,7 +24,6 @@ versions follow [Semantic Versioning](https://semver.org/). Feature IDs refer to
   `Dock::send`); without one the menu entry is disabled and says why (FRM-5).
 - ve_frame: `cargo run -p ve_frame --example playground`, the matrix of every option combination in three widget
   sizes, with a loopback machine; headless tests and snapshots (FRM-6).
-
 - ve_frame: a floating widget is resized by its right edge, bottom edge and corner; the size is kept in
   `FrameState::window_size` and never goes below what the frame needs (FRM-4).
 - ve_frame: a widget that was popped out, put back or sent to another window glows where it landed for 0.6 s

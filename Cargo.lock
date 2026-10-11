@@ -3633,7 +3633,7 @@ dependencies = [
 
 [[package]]
 name = "ve_app"
-version = "0.20.0"
+version = "0.21.0"
 dependencies = [
  "eframe",
  "egui",
@@ -3652,7 +3652,7 @@ dependencies = [
 
 [[package]]
 name = "ve_backdrop"
-version = "0.20.0"
+version = "0.21.0"
 dependencies = [
  "bytemuck",
  "eframe",
@@ -3667,7 +3667,7 @@ dependencies = [
 
 [[package]]
 name = "ve_basics"
-version = "0.20.0"
+version = "0.21.0"
 dependencies = [
  "egui",
  "egui_kittest",
@@ -3675,7 +3675,7 @@ dependencies = [
 
 [[package]]
 name = "ve_dash"
-version = "0.20.0"
+version = "0.21.0"
 dependencies = [
  "eframe",
  "egui",
@@ -3685,7 +3685,7 @@ dependencies = [
 
 [[package]]
 name = "ve_frame"
-version = "0.20.0"
+version = "0.21.0"
 dependencies = [
  "eframe",
  "egui",
@@ -3700,7 +3700,7 @@ dependencies = [
 
 [[package]]
 name = "ve_macro"
-version = "0.20.0"
+version = "0.21.0"
 dependencies = [
  "proc-macro2",
  "quote",
@@ -3708,7 +3708,7 @@ dependencies = [
 
 [[package]]
 name = "ve_settle"
-version = "0.20.0"
+version = "0.21.0"
 dependencies = [
  "eframe",
  "egui",
@@ -3718,7 +3718,7 @@ dependencies = [
 
 [[package]]
 name = "ve_template"
-version = "0.20.0"
+version = "0.21.0"
 dependencies = [
  "clap",
  "include_dir",
@@ -3731,7 +3731,7 @@ dependencies = [
 
 [[package]]
 name = "ve_theme"
-version = "0.20.0"
+version = "0.21.0"
 dependencies = [
  "eframe",
  "egui",
@@ -3741,7 +3741,7 @@ dependencies = [
 
 [[package]]
 name = "ve_widget"
-version = "0.20.0"
+version = "0.21.0"
 dependencies = [
  "eframe",
  "egui",
