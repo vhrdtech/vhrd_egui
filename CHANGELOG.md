@@ -5,6 +5,8 @@ versions follow [Semantic Versioning](https://semver.org/). Feature IDs refer to
 
 ## [Unreleased]
 
+## [0.18.0] - 2026-10-11
+
 ### Added
 
 - ve_settle: vertex attraction: a body's vertices pull on nearby vertices and edges of other bodies and on the
@@ -14,7 +16,6 @@ versions follow [Semantic Versioning](https://semver.org/). Feature IDs refer to
   default; `Body::stretch_lo`, `stretch_hi`, `stretch()`, `World::pulls()`, `Pull` (SETL-12).
 - ve_settle sandbox: a "Vertex attraction" slider section (range, strength) and a "Vertex pulls" overlay layer
   (arrows from pulled corners, the edge without its stretch, the points it grew or shrank) (SETL-12).
-
 - ve_settle: convex polygon bodies: a body can have an outline, a convex polygon in unit coordinates of its
   rectangle (`BodyDesc::outline`, `Body::outline`, `World::set_outline`), with the shapes `Poly::unit_rect`,
   `unit_hexagon`, `unit_half_hexagon(side)` and `unit_triangle(side)`; contacts between outlines go through the
