@@ -66,6 +66,26 @@ const SEAT_SPEED: f32 = 60.0;
 /// (points) of a wall or a body rests on it (SETL-12).
 const RESTS_SLACK: f32 = 0.25;
 
+/// Steps over which a change of parameters comes in (a quarter second
+/// at the default step).
+pub const PARAM_RAMP_STEPS: u32 = 30;
+/// The core of a body no other body's core may enter, as a share of its
+/// width and height: a rhombus around its middle.
+pub const CORE: f32 = 0.5;
+/// A body let go stays lifted this many steps at most (three seconds
+/// at the default step).
+const LIFT_STEPS: u32 = 360;
+/// Two solid bodies deeper in each other than this (points) after the
+/// solver's passes are parted by the hard pass.
+const EJECT_FROM: f32 = 0.5;
+/// Seconds after the last change from outside at which a world still
+/// moving starts to cool, and the seconds that takes; then it rests.
+pub const COOL_AFTER: f32 = 12.0;
+/// See [`COOL_AFTER`].
+pub const COOL_SECS: f32 = 3.0;
+/// Passes of the hard constraints (cores, walls) per step, at most.
+const HARD_PASSES: u32 = 8;
+
 /// Names a body for as long as it lives; never reused within a world.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub struct BodyId(pub u64);
@@ -219,6 +239,8 @@ pub struct Body {
     drag_target: Vec2,
     /// How far slopes moved it sideways this step, points.
     slid: f32,
+    /// Steps it has been lifted without being held.
+    aloft: u32,
     /// How far the contacts of this step have moved it in all, if it
     /// or what it touches has an outline: held to a glide per step
     /// (SETL-17).
@@ -356,8 +378,18 @@ impl Pull {
 /// bit: there is no randomness, no clock and no hash-order iteration.
 #[derive(Clone, Debug)]
 pub struct World {
+    /// The parameters the solver works with now: on their way to
+    /// `wanted` while a change is ramped in.
     params: Params,
+    /// The parameters that were set.
+    wanted: Params,
+    /// Steps left until `params` are `wanted`.
+    ramp: u32,
     bounds: Rect,
+    /// Where the hard walls stand: `bounds`, except that a wall moved
+    /// inward is followed in by its hard wall only as the bodies it left
+    /// outside come in.
+    hard: Rect,
     bodies: Vec<Body>,
     contacts: Vec<Contact>,
     snaps: Vec<Snap>,
@@ -365,6 +397,8 @@ pub struct World {
     yielder: Option<BodyId>,
     /// Steps in a row in which nothing moved more than a tremble.
     quiet: u32,
+    /// Steps since something last changed from outside ([`World::wake`]).
+    awake: u32,
     /// How far the field ahead of the yielder may still shift this step.
     band_budget: f32,
     next_id: u64,
@@ -378,15 +412,20 @@ pub struct World {
 impl World {
     /// An empty world inside `bounds`.
     pub fn new(bounds: Rect, params: Params) -> Self {
+        let params = params.sanitized();
         Self {
             params,
+            wanted: params,
+            ramp: 0,
             bounds,
+            hard: bounds,
             bodies: Vec::new(),
             contacts: Vec::new(),
             snaps: Vec::new(),
             pulls: Vec::new(),
             yielder: None,
             quiet: 0,
+            awake: 0,
             band_budget: 0.0,
             next_id: 1,
             at_rest: false,
@@ -397,17 +436,38 @@ impl World {
         }
     }
 
-    /// The parameters in use.
+    /// The parameters that were set. While a change is ramped in, the
+    /// solver works with [`World::live_params`].
     pub fn params(&self) -> &Params {
+        &self.wanted
+    }
+
+    /// The parameters the solver works with right now: those that were
+    /// set, or on the way to them for [`PARAM_RAMP_STEPS`] steps after a
+    /// change.
+    pub fn live_params(&self) -> &Params {
         &self.params
     }
 
-    /// Replace the parameters; wakes the world if anything changed.
+    /// Replace the parameters ([`Params::sanitized`]); wakes the world if
+    /// anything changed. A change puts no energy in: forces, speeds and
+    /// sizes go to their new values over [`PARAM_RAMP_STEPS`] steps, no
+    /// body keeps more speed than a glide, and the world settles again.
+    /// Choices (gravity's side, the walls) and the solver's clock apply
+    /// at once.
     pub fn set_params(&mut self, params: Params) {
-        if self.params != params {
-            self.params = params;
-            self.wake();
+        let params = params.sanitized();
+        if self.wanted == params {
+            return;
         }
+        self.wanted = params;
+        self.params = self.params.toward(&params, 0.0);
+        self.ramp = PARAM_RAMP_STEPS;
+        let calm = self.params.glide_speed.min(params.glide_speed);
+        for b in &mut self.bodies {
+            b.vel = b.vel.clamp_length(calm);
+        }
+        self.wake();
     }
 
     /// The rectangle the walls stand on.
@@ -418,9 +478,57 @@ impl World {
     /// Move the walls; bodies left outside glide back in.
     pub fn set_bounds(&mut self, bounds: Rect) {
         if self.bounds != bounds {
+            // An empty world, or one that never had walls, has nothing
+            // to carry along: the hard walls stand where the new ones do.
+            let fresh = self.bodies.is_empty() || self.bounds.size().max_abs() <= 0.0;
             self.bounds = bounds;
+            if fresh {
+                self.hard = bounds;
+            }
             self.wake();
         }
+    }
+
+    /// The farthest a body's rectangle is past a closed wall, points; 0
+    /// when all are inside. Dragged bodies are in the user's hand and do
+    /// not count, nor do lifted ones: dropped outside, they glide in.
+    pub fn max_escape(&self) -> f32 {
+        let mut worst = 0.0f32;
+        for b in self.bodies.iter().filter(|b| !b.dragged && !b.lifted) {
+            for side in Side::ALL {
+                if !self.wanted.walls.has(side) {
+                    continue;
+                }
+                let axis = side.axis();
+                // a body wider than the world is held at the low wall
+                let fits = b.rect.size()[axis] <= self.hard.size()[axis];
+                let out = if side.is_low() {
+                    self.hard.min[axis] - b.rect.min[axis]
+                } else if fits {
+                    b.rect.max[axis] - self.hard.max[axis]
+                } else {
+                    0.0
+                };
+                worst = worst.max(out);
+            }
+        }
+        worst
+    }
+
+    /// The deepest any body's core is inside another's, as a share of
+    /// the way in (0: none touch, 1: two middles on one spot). Cores are
+    /// what [`World::step`] never lets two bodies share; dragged bodies do
+    /// not count.
+    pub fn max_core_overlap(&self) -> f32 {
+        let mut worst = 0.0f32;
+        for (i, a) in self.bodies.iter().enumerate() {
+            for b in &self.bodies[i + 1..] {
+                if !a.dragged && !b.dragged {
+                    worst = worst.max(core_depth(a, b).0);
+                }
+            }
+        }
+        worst
     }
 
     /// All bodies, in the order they were added.
@@ -487,6 +595,7 @@ impl World {
             yielding: false,
             drag_target: desc.center,
             slid: 0.0,
+            aloft: 0,
             net: Vec2::ZERO,
             nudged: false,
             prev: rect,
@@ -661,6 +770,7 @@ impl World {
         self.at_rest = false;
         self.calm = 0;
         self.quiet = 0;
+        self.awake = 0;
     }
 
     /// Fixed steps taken so far.
@@ -749,8 +859,26 @@ impl World {
         if self.at_rest {
             return false;
         }
+        // A change of parameters comes in over a few steps (no energy).
+        if self.ramp > 0 {
+            self.params = self.params.toward(&self.wanted, 1.0 / self.ramp as f32);
+            self.ramp -= 1;
+        }
         let p = self.params;
         let dt = p.dt.max(1e-4);
+        // A wall that was moved inward does not push: what it left
+        // outside is brought in by the passes below (at a glide, giving
+        // way where there is no room), and the hard wall follows the
+        // outermost body in, never back out, until it stands on the wall.
+        for axis in Axis::BOTH {
+            let free = self.bodies.iter().filter(|b| !b.dragged && !b.lifted);
+            let (lo, hi) = free.fold((f32::INFINITY, f32::NEG_INFINITY), |(lo, hi), b| {
+                (lo.min(b.rect.min[axis]), hi.max(b.rect.max[axis]))
+            });
+            let (wall_lo, wall_hi) = (self.bounds.min[axis], self.bounds.max[axis]);
+            self.hard.min[axis] = wall_lo.min(self.hard.min[axis].max(lo));
+            self.hard.max[axis] = wall_hi.max(self.hard.max[axis].min(hi));
+        }
         self.contacts.clear();
         self.band_budget = p.glide_speed * dt * 0.5;
         let mut home_moved = 0.0f32;
@@ -767,13 +895,20 @@ impl World {
             // A bulge still changing keeps the world awake, like a moving body.
             home_moved = home_moved.max(resize(b, &p, dt));
         }
+        // Cooling: a world that has not come to rest by itself long
+        // after the last change from outside is in a cycle (a corner
+        // snap against a home, a row passed back and forth). Its
+        // forces and speeds fade out, and then it rests where it is.
+        self.awake = self.awake.saturating_add(1);
+        let time = self.awake as f32 * dt;
+        let cool = (1.0 - (time - COOL_AFTER) / COOL_SECS).clamp(0.0, 1.0);
         self.pick_yielder();
         let pulled = self.attract_pass(dt);
         self.snap_pass();
         self.grid_pass();
         for b in &mut self.bodies {
             // A home still drifting keeps the world awake, like a moving body.
-            home_moved = home_moved.max(integrate(b, &p, dt));
+            home_moved = home_moved.max(integrate(b, &p, dt, cool));
         }
 
         for b in &mut self.bodies {
@@ -803,8 +938,13 @@ impl World {
                 break;
             }
         }
+        self.hard_pass();
         self.land_lifted();
         let mut moved = home_moved;
+        if self.ramp > 0 {
+            // still changing: not a moment to rest in
+            moved = moved.max(p.rest_eps * 2.0);
+        }
         let mut moved_free = 0.0f32;
         for b in &mut self.bodies {
             let d = (b.rect.min - b.prev.min)
@@ -856,7 +996,7 @@ impl World {
         } else {
             0
         };
-        if self.calm >= p.rest_steps.max(1) || self.quiet >= SLEEP_STEPS {
+        if self.calm >= p.rest_steps.max(1) || self.quiet >= SLEEP_STEPS || cool <= 0.0 {
             self.at_rest = true;
             self.last_move = 0.0;
             for b in &mut self.bodies {
@@ -1639,12 +1779,131 @@ impl World {
         worst
     }
 
+    /// What holds whatever the forces and the passes above did, as
+    /// positions, not pushes: no body's core inside another's, and no
+    /// body past a closed wall. An open side holds nothing and pulls
+    /// nothing back. Where both cannot be had (a closed box too full),
+    /// the walls hold.
+    fn hard_pass(&mut self) {
+        let walls = self.params.walls;
+        let away = self.yield_dir();
+        let glide = self.params.glide_speed * self.params.dt;
+        // Where the passes above left two solid bodies in each other
+        // (a row too full between two hard walls) and the side away
+        // from gravity is open, the one farther out goes out that way:
+        // a glide per step, every step, until they are apart. The
+        // world grows there; nothing has to give in a closed wall.
+        if let Some(axis) = self.params.free_axis() {
+            let out = away[axis].signum();
+            for i in 0..self.bodies.len() {
+                for j in i + 1..self.bodies.len() {
+                    let (a, b) = pair_mut(&mut self.bodies, i, j);
+                    if a.dragged || b.dragged || a.lifted || b.lifted {
+                        continue;
+                    }
+                    let deep = touch(a, b, 0.0, Vec2::ZERO).is_some_and(|h| h.depth > EJECT_FROM);
+                    if !deep {
+                        continue;
+                    }
+                    let b_is_out = (b.rect.center()[axis] - a.rect.center()[axis]) * out >= 0.0;
+                    let (inner, outer) = if b_is_out { (&*a, b) } else { (&*b, a) };
+                    // as far as their rectangles lie in each other that way
+                    let lap = if out > 0.0 {
+                        inner.rect.max[axis] - outer.rect.min[axis]
+                    } else {
+                        outer.rect.max[axis] - inner.rect.min[axis]
+                    };
+                    let mut by = Vec2::ZERO;
+                    by[axis] = out * lap.clamp(0.0, glide);
+                    outer.shift(by);
+                }
+            }
+        }
+        for pass in 0..HARD_PASSES {
+            let mut moved = false;
+            for i in 0..self.bodies.len() {
+                for j in i + 1..self.bodies.len() {
+                    let (a, b) = pair_mut(&mut self.bodies, i, j);
+                    if a.dragged || b.dragged {
+                        continue;
+                    }
+                    let (depth, out) = core_depth(a, b);
+                    if depth <= 0.0 {
+                        continue;
+                    }
+                    // Two middles on one spot part away from gravity.
+                    let out = if out == Vec2::ZERO { away } else { out };
+                    // One that was just dropped or added there is still
+                    // lifted: it parts at a glide, as it does all over.
+                    // (once a step: the passes must not add up)
+                    let out = match (a.lifted || b.lifted, pass) {
+                        (false, _) => out,
+                        (true, 0) => out.clamp_length(glide),
+                        (true, _) => continue,
+                    };
+                    a.shift(-out * 0.5);
+                    b.shift(out * 0.5);
+                    moved = true;
+                }
+            }
+            for b in &mut self.bodies {
+                if b.dragged {
+                    continue;
+                }
+                for axis in Axis::BOTH {
+                    let (low, high) = match axis {
+                        Axis::X => (walls.left, walls.right),
+                        Axis::Y => (walls.top, walls.bottom),
+                    };
+                    let mut d = 0.0;
+                    if high {
+                        d = (self.hard.max[axis] - b.rect.max[axis]).min(0.0);
+                    }
+                    // the low wall last: a body wider than the world starts at it
+                    if low && b.rect.min[axis] + d < self.hard.min[axis] {
+                        d = self.hard.min[axis] - b.rect.min[axis];
+                    }
+                    // Dropped outside by the user's hand, it is still
+                    // lifted and comes in at a glide.
+                    if b.lifted {
+                        d = if pass == 0 {
+                            d.clamp(-glide, glide)
+                        } else {
+                            0.0
+                        };
+                    }
+                    if d != 0.0 {
+                        let mut by = Vec2::ZERO;
+                        by[axis] = d;
+                        b.shift(by);
+                        if b.vel[axis] * d < 0.0 {
+                            b.vel[axis] = 0.0;
+                        }
+                        moved = true;
+                    }
+                }
+            }
+            if !moved {
+                break;
+            }
+        }
+    }
+
     /// A lifted body that is let go and touches nothing turns solid.
     fn land_lifted(&mut self) {
         let gap = self.params.gap;
         let prefer = self.yield_dir();
         for i in 0..self.bodies.len() {
             if !self.bodies[i].lifted || self.bodies[i].dragged {
+                self.bodies[i].aloft = 0;
+                continue;
+            }
+            // Lifted is a passing state: one that found no free place in
+            // a while lands where it is, and parts from what it lies on
+            // as a solid body does (at a glide).
+            self.bodies[i].aloft += 1;
+            if self.bodies[i].aloft > LIFT_STEPS {
+                self.bodies[i].lifted = false;
                 continue;
             }
             let a = &self.bodies[i];
@@ -1652,11 +1911,48 @@ impl World {
                 self.bodies.iter().enumerate().all(|(j, o)| {
                     j == i || touch(a, o, gap, prefer).is_none_or(|h| h.depth <= SLOP)
                 });
-            if free {
+            // Dropped past a closed wall it is still on its way in.
+            let walls = self.params.walls;
+            let inside = Side::ALL.iter().all(|side| {
+                let axis = side.axis();
+                !walls.has(*side)
+                    || if side.is_low() {
+                        a.rect.min[axis] >= self.hard.min[axis] - SLOP
+                    } else {
+                        a.rect.max[axis] <= self.hard.max[axis] + SLOP
+                            || a.rect.size()[axis] > self.hard.size()[axis]
+                    }
+            });
+            if free && inside {
                 self.bodies[i].lifted = false;
             }
         }
     }
+}
+
+/// How deep the cores of two bodies are in each other, as a share of the
+/// way in (0 or less: apart; 1: their middles on one spot), and the
+/// shortest move of `b` away from `a` that parts them (half each when
+/// both give). A core is a rhombus around the middle, [`CORE`] of the
+/// rectangle wide and high.
+fn core_depth(a: &Body, b: &Body) -> (f32, Vec2) {
+    let reach = (a.rect.size() + b.rect.size()) * (CORE * 0.5);
+    if reach.x <= 0.0 || reach.y <= 0.0 {
+        return (0.0, Vec2::ZERO);
+    }
+    let d = b.rect.center() - a.rect.center();
+    let depth = 1.0 - d.x.abs() / reach.x - d.y.abs() / reach.y;
+    if depth <= 0.0 {
+        return (depth, Vec2::ZERO);
+    }
+    // out through the nearer side of the rhombus: along its shorter half
+    let out = if reach.x <= reach.y {
+        Vec2::new(depth * reach.x * if d.x < 0.0 { -1.0 } else { 1.0 }, 0.0)
+    } else {
+        Vec2::new(0.0, depth * reach.y * if d.y < 0.0 { -1.0 } else { 1.0 })
+    };
+    let out = if d == Vec2::ZERO { Vec2::ZERO } else { out };
+    (depth, out)
 }
 
 /// How far along `away` (a unit axis vector) a rectangle's edge facing
@@ -1796,7 +2092,7 @@ fn resize(b: &mut Body, p: &Params, dt: f32) -> f32 {
 
 /// Gravity, the home spring and damping move a free body; a dragged one
 /// goes where it is held. Returns how far the home spot drifted.
-fn integrate(b: &mut Body, p: &Params, dt: f32) -> f32 {
+fn integrate(b: &mut Body, p: &Params, dt: f32, cool: f32) -> f32 {
     let center = b.rect.center();
     if b.dragged {
         b.rect = b.rect.translate(b.drag_target - center);
@@ -1817,7 +2113,7 @@ fn integrate(b: &mut Body, p: &Params, dt: f32) -> f32 {
         .map_or(Vec2::ZERO, |h| (h - center) * (p.home_stiffness * hold));
     let damp = (-p.damping * dt).exp();
     let pull = b.gravity_pull + b.home_pull + b.snap_pull + b.grid_pull + b.slide_pull;
-    b.vel = ((b.vel + pull * dt) * damp).clamp_length(p.max_speed);
+    b.vel = ((b.vel + pull * (dt * cool)) * (damp * cool)).clamp_length(p.max_speed);
     b.rect = b.rect.translate(b.vel * dt);
     let drift = p.home_drift + (1.0 - hold) * PRESSED_DRIFT;
     if drift > 0.0
