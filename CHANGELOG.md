@@ -45,6 +45,10 @@ versions follow [Semantic Versioning](https://semver.org/). Feature IDs refer to
 
 ### Fixed
 
+- ve_settle: `Frames::clear` keeps handing out new ids, so a new scene's frames no longer start from what the last
+  scene's widgets under the same ids learned of their side columns; the sandbox clears its frames on a new tab or
+  Restart instead of making new ones. The rectangles tab opens at its sizes: 0 of 21 frames change size after
+  opening (7 before), at rest after about 2 s (8 before) (SETL-7).
 - ve_settle sandbox: "Default parameters" goes back to the scene's defaults, not `Params::default()`, which
   closed the bottom wall of a scene that runs past it and threw the widgets about; it sits at the top now
   (SETL-19).

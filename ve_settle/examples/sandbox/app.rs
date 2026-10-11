@@ -673,11 +673,9 @@ impl Sandbox {
     }
 
     /// Forget every framed widget and keep the switches of the layout.
+    /// Before the world is made anew.
     fn drop_frames(&mut self) {
-        let old = std::mem::take(&mut self.frames);
-        self.frames.auto_pick = old.auto_pick;
-        self.frames.ghosts = old.ghosts;
-        self.frames.land_at = old.land_at;
+        self.frames.clear(&mut self.world);
     }
 
     /// Carry out what a frame's menu picked.
@@ -757,10 +755,10 @@ impl Sandbox {
     /// Remove every widget and keep everything else (parameters, scene,
     /// overlay): an empty arena to build a case in by hand.
     pub fn clear(&mut self) {
+        self.drop_frames();
         self.world = World::new(from_rect(self.arena), *self.world.params());
         (self.scroll, self.scroll_x, self.due) = (0.0, 0.0, 0);
         self.items.clear();
-        self.drop_frames();
         self.selected = None;
         self.vertex_drag = None;
         // Nothing is seeded or topped up again until Reset.
@@ -774,10 +772,10 @@ impl Sandbox {
     }
 
     pub fn reset(&mut self) {
+        self.drop_frames();
         self.world = World::new(from_rect(self.arena), self.defaults());
         (self.scroll, self.scroll_x, self.due) = (0.0, 0.0, 0);
         self.items.clear();
-        self.drop_frames();
         self.selected = None;
         self.seq = 0;
         self.seeded = false;

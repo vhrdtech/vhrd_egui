@@ -479,7 +479,8 @@ impl<W> Frames<W> {
         self.dock.remove(id)
     }
 
-    /// Take every widget out, with their bodies.
+    /// Take every widget out, with their bodies, for a new scene: the settings stay. Better than a new
+    /// `Frames`: the ids of new widgets go on from the last one's (see below).
     pub fn clear(&mut self, world: &mut World) {
         for cell in self.cells.values() {
             if let Some(body) = cell.body {
@@ -487,7 +488,13 @@ impl<W> Frames<W> {
             }
         }
         self.cells.clear();
-        self.dock = Dock::new();
+        // Out one by one, not a new dock: a new one would hand out the same ids again, and a frame keeps
+        // what it learned of its sides under its id, so the next widget would start with the last one's.
+        let ids: Vec<SlotId> = self.dock.iter().map(|s| s.id).collect();
+        for id in ids {
+            self.dock.remove(id);
+        }
+        (self.bounds, self.hold, self.pick_clock) = (None, false, 0.0);
         self.epoch += 1;
     }
 
@@ -1054,6 +1061,21 @@ mod tests {
         let most = hex_outline(full, 140.0);
         assert!(most.is_convex());
         assert_eq!(most.points().len(), 6);
+    }
+
+    /// A frame keeps what it learned of its sides under its id: a new scene must not get the ids of the
+    /// last one's widgets, or its frames start from their side columns (the rectangles tab grew after
+    /// opening).
+    #[test]
+    fn a_cleared_scene_does_not_hand_out_its_ids_again() {
+        let mut w = world();
+        let mut frames: Frames<&str> = Frames::new();
+        let at = Vec2::new(200.0, 100.0);
+        let old = frames.add(&mut w, "a", Seat::new("a"), at);
+        frames.clear(&mut w);
+        assert!(w.bodies().is_empty());
+        let new = frames.add(&mut w, "b", Seat::new("b"), at);
+        assert_ne!(old, new);
     }
 
     #[test]

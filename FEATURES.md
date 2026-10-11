@@ -725,9 +725,12 @@ up and Packery's "others flow around the dragged one". No app uses it yet.
     `Frames::set_pick` / `place` (and `World::put`) seat the body at its size at once; the sandbox lays rows
     that fit, gives a row's leftover to its frames with a wide form and puts each body right under what lies
     above it (`seed_frames`); `Frames::hold_picks` keeps the layout from widening anything until something
-    changes. kittest `most_of_the_scene_opens_at_its_sizes`: in the mixed tab 0 of 21 frames change size
-    after opening; in the rectangles tab 7 of 21 still do (those with side columns, and neighbours they
-    press), and that tab takes about 8 s to rest. What is left: SETL-18.
+    changes. kittest `the_scene_opens_at_its_sizes`: in every tab 0 of 21 frames change size after opening;
+    rectangles rest after about 2 s (125 frames) and move 50 points at most (a row settling its gap),
+    hexagons pack into each other for about 4 s (SETL-18). Round 3: the 7 of 21 rectangles that still grew
+    were a stale id: a new scene (a tab, Restart) made a new `Frames`, its dock handed out the old ids again,
+    and each frame started from what the last scene's widget under that id had learned of its side columns.
+    `Frames::clear` keeps the ids going, and the sandbox clears instead of starting a new `Frames`.
   - *Tabs*: Rectangles, Hexagons and Mixed above the arena (`Tab`); picking one seeds the scene again.
   - *Speed*: frames per second, a chart of the frame times of the last 10 s and min / p50 / max / p95 / p99,
     with the solver's time per frame (median, slowest), in the panel (`Perf`, `percentile`).
@@ -915,12 +918,13 @@ up and Packery's "others flow around the dragged one". No app uses it yet.
   - *Rigid bodies everywhere*: only rectangles on auto or wide can be squeezed, so a row made too full by hand
     (a frame switched to wide) is sorted out by the size pick stepping others down, by a rectangle yielding
     (SETL-9), or not at all when only hexagons are left (SETL-16).
-  - *A rectangle with side columns finds its width late*: measured before it is shown it opens some 50
-    points narrower than it ends (350 to 407 seen for `medium -ISM-X`), so its row shuffles and neighbours it
-    presses step down: 7 of 21 frames of the rectangles tab change size after opening. The frame learns what
-    its sides take a frame late and the layout's estimate does not agree with it yet: not found.
+  - *A frame's memory is keyed by its id salt*: `ve_frame` keeps what it learned of its sides and footer under
+    the salt (here the slot id), so a host that reuses ids (a new `Dock` for a new scene) hands a new widget
+    the old one's sides, and it opens at the wrong width (the rectangles tab, fixed in the host by
+    `Frames::clear`). A frame could forget on a new title or new sides instead.
   - *With hexagons the scene still packs after it opens*: sizes are final from the first frame, but frames
-    are laid out by their rectangles and then nest into each other (one moved 204 points in the mixed tab).
+    are laid out by their rectangles and then nest into each other (one moved 204 points in the mixed tab;
+    170 in the hexagons tab, 43 in the mixed one after round 3).
   - *A row made too full by hand* (a rectangle switched to wide beside hexagons at the walls) still has a
     hexagon up to 14 points deep in a neighbour, and moving up to 33 points in a frame, until it has left the
     row: the one case left of SETL-17 in the kittests.

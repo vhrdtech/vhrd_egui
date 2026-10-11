@@ -651,10 +651,10 @@ fn dragging_a_frame_moves_its_body_and_the_others_flow_around() {
 }
 
 /// Item 1 of round 2: the scene is measured and laid out before it is shown, so frames open at a real
-/// size instead of a guess. Most keep it; the rest is listed in SETL-18.
+/// size instead of a guess, and keep it, in every tab (each one a new scene after the last).
 #[test]
-fn most_of_the_scene_opens_at_its_sizes() {
-    for tab in [app::Tab::Rectangles, app::Tab::Mixed] {
+fn the_scene_opens_at_its_sizes() {
+    for tab in [app::Tab::Rectangles, app::Tab::Mixed, app::Tab::Hexagons] {
         let mut h = fresh(false);
         h.state_mut().tab = tab;
         h.state_mut().reset();
@@ -701,29 +701,28 @@ fn most_of_the_scene_opens_at_its_sizes() {
             }
             farthest = farthest.max((a.center() - b.center()).max_abs());
         }
-        // Most open at the size they keep; not all yet (SETL-18): the layout still picks another
-        // size for some once it sees the rows as they came out (6 of 22 seen), and a rectangle with
-        // side columns still finds its width over the first frames.
+        // Every frame opens at the size it keeps. (Until 11 Oct 2026 7 of 21 in the rectangles tab
+        // grew after opening: a new scene's widgets got the ids of the last one's and their frames
+        // started from what those had learned of their side columns.)
         let changed = late.len() + repicked;
         println!(
-            "{tab:?}: {changed} of {} frames changed size after opening",
+            "{tab:?}: {changed} of {} frames changed size after opening, the farthest moved {farthest}, \
+             at rest after {frames} frames",
             first.len()
         );
-        assert!(
-            changed * 2 <= first.len(),
-            "{tab:?}: {repicked} repicked, {} of {} grew after opening: {late:#?}",
-            late.len(),
-            first.len()
+        assert_eq!(
+            changed, 0,
+            "{tab:?}: {repicked} repicked, these grew after opening: {late:#?}"
         );
-        // Rectangles stay close to where they opened (one with side columns that widens moves
-        // its row along, SETL-18); with hexagons in the scene the frames still pack into each other.
-        if tab == app::Tab::Rectangles {
+        // Rectangles settle a row's gap down at most; hexagons still pack into each other after
+        // opening (laid out as rectangles, SETL-18).
+        if tab != app::Tab::Hexagons {
             assert!(
-                farthest <= 120.0,
+                farthest <= 80.0,
                 "{tab:?}: a frame moved {farthest} points after opening"
             );
         }
-        assert!(frames < 400, "{tab:?}: at rest after {frames} frames");
+        assert!(frames < 320, "{tab:?}: at rest after {frames} frames");
     }
 }
 
