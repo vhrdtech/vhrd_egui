@@ -38,6 +38,7 @@ in tpm (P2605). Statuses were checked against the code.
 | `ve_app` | The application shell: menu bar, tiles of widgets, About / Settings / Debug windows, persisted layout, quit dialog. |
 | `ve_dash` | btop-style dashboard building blocks: theme, sparkline, meter, status light, stat tile, titled panel. |
 | `ve_backdrop` | Animated app background: a grid of dots or squares reacting to the pointer and to widget frames; wgpu shader with a CPU-painted fallback. |
+| `ve_frame` | The frame every widget sits in: header (LED, title, ⓘ, size switch, menu), footer, sides, hexagon shape, moves between grid, window, OS window and machine. |
 | `ve_settle` | Physics layout prototype: bodies that settle under gravity, home springs, walls and contacts; no egui dependency. |
 | `ve_template` | The app template as a command: `new`, `check-answers`, `compare`, `version` (`egui_app_skill/`). |
 
@@ -267,6 +268,71 @@ on every background (unit-tested), status colors always come with a text label.
   apart from brand red, warning apart from power orange, the copy equal to the sibling export.
 - 💡 **THM-6 Hot reload of tokens**: in debug builds, read the tokens from a RON file and re-apply on change, as
   re_ui's `hot_reload_design_tokens` does, so tuning doesn't need a rebuild. Needs serde on the token types.
+
+## Widget frame (`FRM`)
+
+One frame every widget sits in, crate `ve_frame` (user, 11 Oct 2026, P2605#11oct-1154): header, body, optional
+footer and sides, a size switch and a menu that moves the widget between the grid, an egui `Window`, another OS
+window and another machine. It is built on the pieces that existed apart and takes their place for new code:
+`Panel` (DASH-17), the status light (DASH-5), the `Widget` trait (WID-1), floating windows (WID-10) and the size
+switch (P2605#8oct-1205). ve_settle (SETL-5, SETL-7) later reads the same shapes and sizes.
+
+### Plan (11 Oct 2026)
+
+- **Crate**: a new `ve_frame`, on `egui`, `ve_theme`, `ve_dash` and `serde`. Not inside `ve_widget`: a dashboard
+  such as tpm_mesh_dash wants the frame without `typetag`, `inventory` and tokio. The order is
+  `ve_theme` ← `ve_dash` ← `ve_frame` ← `ve_widget` ← `ve_app`.
+- **Builder** (draws one frame, owns nothing):
+  `WidgetFrame::new(title).led(status, why).about(text).info(|ui| ..).sizes(hints).moves(&moves).menu(|ui| ..)`
+  `.footer(|ui| ..).left(|ui| ..).right(|ui| ..).shape(Shape::Hex).hex_side(face, items)`
+  `.show(ui, &mut state, |ui, size| ..) -> FrameResponse { inner, size, action, response }`.
+  The body gets the resolved `Size` (min / nom / wide) and arranges itself by it. `action` is what the user picked
+  in the menu (`FrameAction`); the frame never moves anything itself.
+- **State that travels**: `FrameState { size: SizeMode, placement: Placement, window_rect }`, serde. `Placement`
+  is `{ viewport: ViewportSlot, floating: bool }`: the main window or a numbered extra one, in its grid or as an
+  egui `Window` there. Inside one process a move carries the widget value itself (transient state stays alive)
+  plus its `FrameState`. To another machine goes a `Parcel`: the widget serialized (seed and visual, as the
+  layout is saved), its title and its size mode; transient state is rebuilt by `Widget::init` on arrival and the
+  placement starts in the grid there.
+- **Sizes**: the switch cycles auto / min / nom / wide. The widget gives `SizeHints { min, nom, wide }` (body
+  sizes). *min* is a fixed body of exactly `hints.min`; *nom* and *wide* are hints the body reads, their widths
+  what a layout should give. *auto* (simple and stable): the widest of the three whose width fits the room given,
+  with a hysteresis band (a step up needs `AUTO_HYSTERESIS` more room than the step down), so a frame on the
+  edge doesn't flip each frame. Pure function `auto_size(prev, width, hints)`, unit-tested.
+- **Moves**: `Dock<W>` owns the widgets with their `FrameState`, applies a `FrameAction`, shows the floating ones
+  as egui `Window`s and each extra viewport through `show_viewport_immediate` (egui embeds those as windows where
+  the backend has no multi-viewport, which is also how kittest drives them). The grid itself stays the host's:
+  the playground wraps rows, `ve_app` keeps one egui_tiles tree per OS window, ve_settle a `World` later.
+  Closing an extra OS window sends its widgets back to the main grid.
+- **Send to machine**: trait `Remote` the app implements (`machines() -> Vec<Machine>`,
+  `send(machine, Parcel) -> Result<(), String>`), handed in through `Moves::remote`. Without it the menu entry
+  stays visible, disabled, with the reason in its tooltip; a machine that is known but unreachable is a disabled
+  entry with its own reason.
+- **Fold-in without breaking tpm_mesh_dash**: `ve_dash::Panel`, `PanelSize` and `StatusLight` keep their API and
+  look (no `#[deprecated]`, tpm_mesh_dash lints with `-D warnings`). The frame draws its LED with `StatusLight`
+  and its ⓘ and size chip with `info_icon` / `ActionChip`; `SizeMode: From<PanelSize>` (compact = min) lets a
+  dash move over panel by panel. `Widget` gains frame hooks with defaults (`frame_spec`, `ui_sized`), so
+  existing widgets compile unchanged, and `ve_app` puts every pane into the frame: WID-10 becomes the frame's
+  pop-out. Porting tpm_mesh_dash is its own step (FRM-8), after the user has seen the playground.
+
+### Items
+
+- 📋 **FRM-1 Frame**: `WidgetFrame` with the header (optional LED, title, optional ⓘ with what-it-is text plus
+  the widget's own stats, size switch, ☰ menu), body and optional footer; every control has a tooltip.
+- 📋 **FRM-2 Sizes**: `SizeMode`, `Size`, `SizeHints`, `auto_size` with hysteresis.
+- 📋 **FRM-3 Sides and hexagons**: two sides for rectangles (left / right, laid out top to bottom); `Shape::Hex`
+  with header and footer on the flat faces and four item strips on the slanted faces, rotated along them.
+- 📋 **FRM-4 Moves**: `Placement`, `FrameAction`, `Dock<W>`: pop out as a window / back into the grid, send to a
+  new or existing OS window (multi-viewport), where it is again a window or in that window's grid.
+- 📋 **FRM-5 Send to another machine**: `Remote`, `Machine`, `Parcel`; disabled with the reason when the app
+  gives no transport.
+- 📋 **FRM-6 Playground and tests**: `cargo run -p ve_frame --example playground` spawns the matrix (every
+  combination of the options × tiny / medium / big); kittest drives the menu, the size switch, pop out and back;
+  snapshots with a failing-pixel tolerance (DASH-21).
+- 📋 **FRM-7 Widgets and the shell on the frame**: `Widget::frame_spec` / `ui_sized`, `ve_app` panes in the
+  frame, floating and in extra OS windows, persisted (closes WID-10).
+- 📋 **FRM-8 Port tpm_mesh_dash to the frame**: its `Panel`s become `WidgetFrame`s; then `Panel` and `PanelSize`
+  go to *Dropped and superseded*.
 
 ## Physics layout (`SETL`)
 
