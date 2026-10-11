@@ -8,9 +8,11 @@ authors.workspace = true
 repository.workspace = true
 
 [features]
-default = ["wgpu"]
+default = ["wgpu", "glass"]
 # The shader path: an egui_wgpu paint callback. Without it (glow, wasm without WebGPU) only the CPU painter exists.
 wgpu = ["dep:egui-wgpu", "dep:bytemuck"]
+# Emulated transparency: find, decode and blur the desktop wallpaper, ask Hyprland where the window is.
+glass = ["dep:image", "dep:serde_json"]
 # Serialize `Settings` (persisted app settings).
 serde = ["dep:serde"]
 
@@ -20,10 +22,12 @@ ve_theme = { path = "../ve_theme", version = "0.18", default-features = false }
 egui-wgpu = { workspace = true, optional = true }
 bytemuck = { version = "1.25", features = ["derive"], optional = true }
 serde = { workspace = true, optional = true }
+serde_json = { version = "1", optional = true }
+image = { version = "0.25", default-features = false, features = ["png", "jpeg", "webp"], optional = true }
 
 [dev-dependencies]
 eframe = { workspace = true, features = ["wgpu"] }
 egui_kittest = { workspace = true, features = ["snapshot", "wgpu"] }
 ve_theme = { path = "../ve_theme", version = "0.18" }
 egui-wgpu.workspace = true
-image = { version = "0.25", default-features = false }
+image = { version = "0.25", default-features = false, features = ["png"] }

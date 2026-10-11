@@ -15,6 +15,14 @@ versions follow [Semantic Versioning](https://semver.org/). Feature IDs refer to
   light, every tunable in `Settings` with `Settings::ui` as the form, `Settings::reduced_motion` freezes it.
   `paint`, `reserve` + `fill`, `paint_background`, `light` / `take_lit`; the `backdrop_playground` example has
   a slider for every parameter (BACK-1).
+- ve_backdrop: emulated transparency: `Settings::glass` draws a blurred, dimmed copy of the desktop wallpaper
+  under the grid (`glass_dim`, `glass_blur`), for desktops that do not blur what is behind a window;
+  `Settings::background_opacity` lets a really transparent window show through instead. The wallpaper is found
+  per desktop (omarchy, hyprpaper, swaybg, KDE, GNOME, Windows, macOS; `Backdrop::set_wallpaper` or
+  `VE_WALLPAPER` name it) and read on a worker thread; `Backdrop::glass_status` says what is shown or why not.
+  It lines up with the real wallpaper where the window's position is known: X11, Windows, macOS, and Hyprland
+  through its IPC sockets (`ve_backdrop::Hyprland`, live from the event socket); other compositors through the
+  `PositionProvider` trait; fitted to the window otherwise. Feature `glass`, on by default (BACK-2).
 
 ## [0.18.0] - 2026-10-11
 

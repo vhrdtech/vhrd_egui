@@ -43,6 +43,23 @@
 //! }
 //! ```
 //!
+//! # Transparency
+//!
+//! Two ways to let the desktop show through, both settings:
+//! - **Real**: [`Settings::background_opacity`] below 1 in a transparent window
+//!   (`ViewportBuilder::with_transparent(true)` and a clear colour of zero). The compositor shows what is
+//!   behind the window and blurs it where it does that (Hyprland and KDE with blur on; GNOME and sway show
+//!   it sharp; an X11 desktop without a compositor shows black).
+//! - **Emulated** ([`Settings::glass`]): a blurred, dimmed copy of the desktop wallpaper is drawn under
+//!   the grid, so the window looks like frosted glass also where nothing blurs. The wallpaper is looked up
+//!   per desktop (omarchy, hyprpaper, swaybg, KDE, GNOME; Windows; macOS; or name it:
+//!   [`Backdrop::set_wallpaper`], the `VE_WALLPAPER` variable) and read on a worker thread;
+//!   [`Backdrop::glass_status`] says what is shown or why not. The copy lines up with the real wallpaper
+//!   where the window's position is known: X11, Windows and macOS report it, on Hyprland it is asked over
+//!   the compositor's sockets ([`Hyprland`]), and a [`PositionProvider`] can supply it elsewhere; on other
+//!   Wayland compositors the wallpaper is fitted to the window instead. Only the wallpaper is copied,
+//!   never other windows.
+//!
 //! Widgets deep in the tree can announce their frame without a reference to the [`Backdrop`]:
 //! [`light`] collects, [`take_lit`] hands the frame's collection to the app.
 //!
@@ -53,17 +70,27 @@
 
 mod cpu;
 mod field;
+mod glass;
 #[cfg(feature = "wgpu")]
 mod gpu;
+#[cfg(all(feature = "glass", unix))]
+mod hyprland;
 pub mod playground;
+mod position;
 mod settings;
+#[cfg(all(feature = "glass", not(target_arch = "wasm32")))]
+mod wallpaper;
 
 use egui::layers::ShapeIdx;
 use egui::{Context, Id, LayerId, Painter, Pos2, Rect, Shape};
 
 pub use field::{Colors, MAX_LIT, MAX_RIPPLES};
+pub use glass::GlassStatus;
 #[cfg(feature = "wgpu")]
 pub use gpu::ShaderTarget;
+#[cfg(all(feature = "glass", unix))]
+pub use hyprland::Hyprland;
+pub use position::{Placement, PositionProvider};
 pub use settings::{Mark, Settings};
 
 use field::{LitRect, Ring, Scene};
@@ -215,6 +242,7 @@ pub struct Backdrop {
     last_time: Option<f64>,
     ripples: Vec<Ripple>,
     fades: Vec<Fade>,
+    glass: glass::Glass,
 }
 
 impl Default for Backdrop {
@@ -237,6 +265,7 @@ impl Backdrop {
             last_time: None,
             ripples: Vec::new(),
             fades: Vec::new(),
+            glass: glass::Glass::default(),
         }
     }
 
@@ -323,18 +352,65 @@ impl Backdrop {
         if !rect.is_positive() || !rect.is_finite() {
             return Shape::Noop;
         }
-        let scene = self.advance(ctx, rect, lit);
+        let settings = self.settings.sanitized();
+        let wallpaper = settings
+            .glass
+            .then(|| self.glass.shape(ctx, rect, settings.glass_blur))
+            .flatten();
+        // Over the blurred wallpaper the background colour only dims; without it, it is the background.
+        let bg_alpha = if wallpaper.is_some() {
+            settings.glass_dim
+        } else {
+            settings.background_opacity
+        };
+        let scene = self.advance(ctx, rect, lit, bg_alpha);
+        let grid = self.grid(&scene);
+        match wallpaper {
+            Some(wallpaper) => Shape::Vec(vec![wallpaper, grid]),
+            None => grid,
+        }
+    }
+
+    fn grid(&self, scene: &Scene) -> Shape {
         #[cfg(feature = "wgpu")]
         if self.renderer == Renderer::Shader
             && let Some(gpu) = &self.gpu
         {
-            return gpu.shape(&scene);
+            return gpu.shape(scene);
         }
-        cpu::shape(&scene)
+        cpu::shape(scene)
+    }
+
+    /// What the emulated transparency ([`Settings::glass`]) is doing: which wallpaper is shown, or why none.
+    pub fn glass_status(&self, ctx: &Context) -> GlassStatus {
+        if self.settings.glass {
+            self.glass.status(ctx)
+        } else {
+            GlassStatus::Off
+        }
+    }
+
+    /// Name the wallpaper file for the emulated transparency instead of looking for the desktop's
+    /// (`None` looks again).
+    pub fn set_wallpaper(&mut self, path: Option<std::path::PathBuf>) {
+        self.glass.set_wallpaper(path);
+    }
+
+    /// Look for the desktop wallpaper again (it changed).
+    pub fn reload_wallpaper(&mut self) {
+        self.glass.reload();
+    }
+
+    /// Who knows where the window is on its monitor, so the blurred wallpaper lines up with the real one.
+    /// By default (`None`) Hyprland is asked over its sockets when the app runs under it, else what the
+    /// window system reports is used (nothing on other Wayland compositors: the wallpaper is then fitted to
+    /// the window). A [`Placement`] is a provider with a fixed answer.
+    pub fn set_position_provider(&mut self, provider: Option<Box<dyn PositionProvider>>) {
+        self.glass.set_position_provider(provider);
     }
 
     /// Step the clock, ripples and fades, ask for the next repaint and describe the frame.
-    fn advance(&mut self, ctx: &Context, rect: Rect, lit: &[Lit]) -> Scene {
+    fn advance(&mut self, ctx: &Context, rect: Rect, lit: &[Lit], bg_alpha: f32) -> Scene {
         let settings = self.settings.sanitized();
         let moving = !settings.reduced_motion;
 
@@ -426,6 +502,7 @@ impl Backdrop {
             rect,
             settings,
             colors,
+            bg_alpha,
             phase: self.phase,
             pointer: pointer_in_reach,
             lit: lit_rects,
@@ -498,7 +575,7 @@ mod tests {
         };
         let mut scene = None;
         let mut output = ctx.run_ui(input, |ui| {
-            scene = Some(backdrop.advance(ui.ctx(), rect(), lit));
+            scene = Some(backdrop.advance(ui.ctx(), rect(), lit, 1.0));
         });
         output.textures_delta.clear();
         scene.expect("the frame ran")

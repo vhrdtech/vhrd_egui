@@ -14,11 +14,11 @@ const MIN_HALF: f32 = 0.05;
 pub(crate) fn shape(scene: &Scene) -> Shape {
     let (cols, rows) = scene.cells();
     let mut shapes = Vec::with_capacity(cols * rows + 1);
-    if scene.settings.fill_background {
+    if scene.bg_alpha > 0.0 {
         shapes.push(Shape::rect_filled(
             scene.rect,
             CornerRadius::ZERO,
-            scene.colors.bg,
+            scene.colors.bg.gamma_multiply(scene.bg_alpha),
         ));
     }
     for row in 0..rows {
@@ -64,7 +64,7 @@ mod tests {
     fn invisible_marks_are_skipped() {
         let mut scene = test_scene();
         scene.settings.opacity = 0.0;
-        scene.settings.fill_background = false;
+        scene.bg_alpha = 0.0;
         assert_eq!(count(&shape(&scene)), 0);
     }
 }

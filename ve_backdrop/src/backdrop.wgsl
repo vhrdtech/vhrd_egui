@@ -13,7 +13,7 @@ struct Globals {
     base: vec4<f32>,
     // pointer.xy, lens on (0 / 1), lens radius
     pointer: vec4<f32>,
-    // push (peak-normalized), grow, light, fill background (0 / 1)
+    // push (peak-normalized), grow, light, background opacity
     lens: vec4<f32>,
     // light, push, width, ring count
     ripple: vec4<f32>,
@@ -119,13 +119,18 @@ fn fs_main(@builtin(position) frag: vec4<f32>) -> @location(0) vec4<f32> {
         / max(total, 0.000001);
     let alpha = clamp(total, 0.0, 1.0) * color.a;
 
-    let d = abs(p - (c + offset));
-    var sd = length(d) - half;
-    if g.grid.z > 0.5 {
-        sd = max(d.x, d.y) - half;
-    }
+    let center = c + offset;
+    let d = abs(p - center);
     // A mark thinner than a pixel dims instead of staying half a pixel bright.
-    let cover = clamp(0.5 - sd * ppp, 0.0, 1.0) * clamp(2.0 * half * ppp, 0.0, 1.0);
+    var cover = clamp(0.5 - (length(d) - half) * ppp, 0.0, 1.0) * clamp(2.0 * half * ppp, 0.0, 1.0);
+    if g.grid.z > 0.5 {
+        // Squares have their edges on pixel boundaries (as egui rounds rectangles), so they stay crisp
+        // and read as squares even when small.
+        let lo = round((center - vec2<f32>(half)) * ppp);
+        let hi = max(round((center + vec2<f32>(half)) * ppp), lo + vec2<f32>(1.0));
+        let inside = step(lo.x, frag.x) * step(frag.x, hi.x) * step(lo.y, frag.y) * step(frag.y, hi.y);
+        cover = inside * clamp(2.0 * half * ppp, 0.0, 1.0);
+    }
 
     let a = cover * alpha;
     let bg_a = g.bg_color.a * g.lens.w;

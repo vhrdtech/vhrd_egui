@@ -510,11 +510,36 @@ The app background as its own piece (tpm P2605#8oct-2316). Playground:
   both renderers render and agree, reduced motion freezes, motion moves, the form, snapshots with a tolerance in
   `tests/snapshots/`); `playground::Playground` and the `backdrop_playground` example. Limits: at most
   `MAX_LIT` (32) frames reach the renderer (the strongest), `MAX_RIPPLES` (4) rings; one `Backdrop` is painted
-  once per frame (one uniform buffer); the shader's picture is checked headless (wgpu test renderer); the
-  playground started in a window on Hyprland without wgpu errors (11 Oct 2026), but nobody has looked at it there
-  yet (the screen was locked). Not wired into `ve_app` or the template yet.
-- 📋 **BACK-2 Emulated transparency**: where the compositor does not blur or show what is behind the window,
-  fake the look: a blurred, dimmed copy of the wallpaper behind the backdrop, so apps look the same everywhere.
+  once per frame (one uniform buffer); the picture is checked headless (wgpu test renderer) and was
+  seen by the user in a window on the GPD (Hyprland, 11 Oct 2026). Shader squares have their edges on pixel
+  boundaries, so they read as squares at 2 pt too (test `squares_differ_from_dots`). Not wired into `ve_app` or the template yet.
+- 🚧 **BACK-2 Emulated transparency**: `Settings::glass` draws a blurred copy of the desktop wallpaper under the
+  grid, dimmed by the theme's background (`glass_dim`, `glass_blur`), so a window looks like frosted glass also
+  where the compositor does not blur; `Settings::background_opacity` below 1 is the real thing for a transparent
+  window. Per platform:
+  - *Wallpaper* (`wallpaper.rs`, `find`): `VE_WALLPAPER` or `Backdrop::set_wallpaper`, else Linux: omarchy's
+    `current/background` link, hyprpaper.conf (per output), a running swaybg's command line, KDE's appletsrc,
+    GNOME's gsettings (dark variant in dark theme); Windows: the `TranscodedWallpaper` file; macOS: System
+    Events through `osascript`; wasm: none. Decoded (png, jpeg, webp; size and memory limits), shrunk to 320 px
+    and blurred (three box blurs) off the UI thread; one textured rectangle, so it works on wgpu and glow.
+  - *Position* (`position.rs`): lined up with the real wallpaper where the window's place is known: egui's
+    `inner_rect` on X11, Windows and macOS; on Hyprland `ve_backdrop::Hyprland` asks the compositor's sockets
+    directly (`j/clients` by pid and `j/monitors`: position, scale, rotation, output name) from a thread that
+    listens on the event socket and asks again after every burst of events, a few times a second while the
+    window floats (dragging sends no event), once a second otherwise; other compositors plug in through the
+    `PositionProvider` trait (`Backdrop::set_position_provider`; a `Placement` is a fixed one). Unknown
+    position (GNOME, KDE, sway on Wayland): the wallpaper is fitted to the window, silently.
+  - `Backdrop::glass_status` (`GlassStatus`, `text()`) says which file is shown, lined up or fitted, or why
+    none; `reload_wallpaper` looks again. Feature `glass` (default; pulls `image` and `serde_json`).
+  Tests: parsers, blur, UV mapping, a fake Hyprland on Unix sockets (`hyprland.rs`), egui_kittest for fitted,
+  lined up, unreadable wallpaper and two snapshots; `real_hyprland` and `real_desktop` (ignored) ran against
+  gpd-omarchy (Hyprland, rotated 2x panel, omarchy wallpaper: 0.1 s to read in release, 4 s in debug), and the
+  playground with `--glass` showed the blurred wallpaper under the grid there (screenshot, 11 Oct 2026).
+  Missing: Windows and macOS lookups are written but never ran; swww / awww and sway position are not there;
+  a changed wallpaper is only picked up by `reload_wallpaper` (or a move to another output); whether the
+  compositor really blurs cannot be detected, so real or emulated is the app's or user's choice; only the
+  wallpaper is copied, windows behind ours are not (that needs a screen capture permission); several
+  monitors are assumed to show the same picture scaled to each (except hyprpaper's per-output lines).
 
 ## Extracted from apps (`EXT`)
 

@@ -11,8 +11,13 @@ use egui_kittest::kittest::Queryable;
 use egui_kittest::wgpu::{WgpuTestRenderer, create_render_state, default_wgpu_setup};
 use egui_kittest::{Harness, SnapshotOptions};
 use image::RgbaImage;
+use std::cell::RefCell;
+use std::path::PathBuf;
+use std::rc::Rc;
 use ve_backdrop::playground::Playground;
-use ve_backdrop::{Backdrop, Lit, Mark, Renderer, Settings};
+use ve_backdrop::{
+    Backdrop, GlassStatus, Lit, Mark, Placement, PositionProvider, Renderer, Settings,
+};
 
 const SIZE: egui::Vec2 = vec2(480.0, 320.0);
 
@@ -29,6 +34,15 @@ fn frames() -> [Lit; 2] {
 
 /// A harness that paints the backdrop over the whole window with the two frames outlined on top.
 fn harness(shader: bool, theme: Theme, settings: Settings) -> Harness<'static> {
+    shared_harness(shader, theme, settings).0
+}
+
+/// The same, with the backdrop reachable from the test.
+fn shared_harness(
+    shader: bool,
+    theme: Theme,
+    settings: Settings,
+) -> (Harness<'static>, Rc<RefCell<Backdrop>>) {
     let builder = Harness::builder().with_size(SIZE).with_theme(theme);
     let (builder, backdrop) = if shader {
         let render_state = create_render_state(
@@ -43,7 +57,7 @@ fn harness(shader: bool, theme: Theme, settings: Settings) -> Harness<'static> {
     } else {
         (builder.wgpu(), Backdrop::new())
     };
-    let mut backdrop = backdrop.with_settings(settings);
+    let backdrop = backdrop.with_settings(settings);
     assert_eq!(
         backdrop.renderer(),
         if shader {
@@ -52,10 +66,12 @@ fn harness(shader: bool, theme: Theme, settings: Settings) -> Harness<'static> {
             Renderer::Painter
         }
     );
+    let backdrop = Rc::new(RefCell::new(backdrop));
+    let painted = backdrop.clone();
     let h = builder.build_ui(move |ui| {
         let rect = ui.ctx().content_rect();
         let lit = frames();
-        backdrop.paint(ui.painter(), rect, &lit);
+        painted.borrow_mut().paint(ui.painter(), rect, &lit);
         let tokens = ve_theme::Tokens::of(ui.ctx(), theme);
         let painter = ui.painter().with_clip_rect(rect);
         for l in &lit {
@@ -68,7 +84,7 @@ fn harness(shader: bool, theme: Theme, settings: Settings) -> Harness<'static> {
         }
     });
     ve_theme::setup(&h.ctx);
-    h
+    (h, backdrop)
 }
 
 fn render(h: &mut Harness<'_>) -> RgbaImage {
@@ -259,7 +275,7 @@ fn snapshot_shader_pointer_and_ripple() {
 #[test]
 fn settings_form_has_tooltips_and_toggles() {
     let mut h = Harness::builder()
-        .with_size(vec2(360.0, 1100.0))
+        .with_size(vec2(360.0, 1300.0))
         .build_ui_state(
             |ui, settings: &mut Settings| {
                 settings.ui(ui);
@@ -272,6 +288,10 @@ fn settings_form_has_tooltips_and_toggles() {
         "Spacing",
         "Size",
         "Opacity",
+        "Background",
+        "Emulated transparency",
+        "Dim",
+        "Blur",
         "Drift",
         "Speed",
         "Frame rate",
@@ -337,4 +357,210 @@ fn snapshot_playground() {
         );
     }
     h.snapshot_options("backdrop_playground", &tolerant().max_failed_pixels(400));
+}
+
+/// A 2:1 wallpaper for the glass tests: the left half blue, the right half green.
+fn test_wallpaper(test: &str) -> PathBuf {
+    let dir = std::env::temp_dir().join(format!("ve_backdrop_ui_{}_{test}", std::process::id()));
+    std::fs::create_dir_all(&dir).expect("temp dir");
+    let path = dir.join("wallpaper.png");
+    image::RgbImage::from_fn(640, 320, |x, _| {
+        if x < 320 {
+            image::Rgb([30, 60, 220])
+        } else {
+            image::Rgb([40, 200, 80])
+        }
+    })
+    .save(&path)
+    .expect("write the test wallpaper");
+    path
+}
+
+/// A window system that does not say where the window is (Wayland without a compositor provider).
+struct Nowhere;
+
+impl PositionProvider for Nowhere {
+    fn placement(&self) -> Option<Placement> {
+        None
+    }
+}
+
+fn glass_settings() -> Settings {
+    Settings {
+        glass: true,
+        glass_dim: 0.3,
+        glass_blur: 0.0,
+        ..still()
+    }
+}
+
+/// A harness with the emulated transparency on, run until the wallpaper is read (or reading failed).
+fn glass_harness(
+    shader: bool,
+    settings: Settings,
+    wallpaper: PathBuf,
+    provider: impl PositionProvider + 'static,
+) -> (Harness<'static>, GlassStatus) {
+    let (mut h, backdrop) = shared_harness(shader, Theme::Dark, settings);
+    backdrop.borrow_mut().set_wallpaper(Some(wallpaper));
+    backdrop
+        .borrow_mut()
+        .set_position_provider(Some(Box::new(provider)));
+    let mut status = GlassStatus::Loading;
+    for _ in 0..500 {
+        h.step();
+        status = backdrop.borrow().glass_status(&h.ctx);
+        if status != GlassStatus::Loading {
+            break;
+        }
+        std::thread::sleep(std::time::Duration::from_millis(10));
+    }
+    h.step();
+    (h, status)
+}
+
+/// Mean red, green and blue of a region.
+fn mean_rgb(image: &RgbaImage, region: Rect) -> [f64; 3] {
+    let mut sum = [0u64; 3];
+    let mut n = 0u64;
+    for y in region.top() as u32..region.bottom() as u32 {
+        for x in region.left() as u32..region.right() as u32 {
+            let p = image.get_pixel(x, y);
+            for (s, c) in sum.iter_mut().zip(p.0) {
+                *s += u64::from(c);
+            }
+            n += 1;
+        }
+    }
+    sum.map(|s| s as f64 / n as f64)
+}
+
+fn left_and_right(image: &RgbaImage) -> ([f64; 3], [f64; 3]) {
+    (
+        mean_rgb(
+            image,
+            Rect::from_min_max(pos2(10.0, 170.0), pos2(200.0, 310.0)),
+        ),
+        mean_rgb(
+            image,
+            Rect::from_min_max(pos2(280.0, 10.0), pos2(470.0, 110.0)),
+        ),
+    )
+}
+
+/// Without a known position the wallpaper is fitted to the window: its left half behind the left half.
+#[test]
+fn glass_fits_the_wallpaper_to_the_window() {
+    for shader in [false, true] {
+        let wallpaper = test_wallpaper(&format!("fit{shader}"));
+        let (mut h, status) = glass_harness(shader, glass_settings(), wallpaper.clone(), Nowhere);
+        assert_eq!(
+            status,
+            GlassStatus::Shown {
+                path: wallpaper,
+                aligned: false
+            }
+        );
+        let (left, right) = left_and_right(&render(&mut h));
+        assert!(
+            left[2] > left[1] * 2.0,
+            "shader {shader}: blue on the left: {left:?}"
+        );
+        assert!(
+            right[1] > right[2] * 1.5,
+            "shader {shader}: green on the right: {right:?}"
+        );
+        // Dimmed by the theme's background: well below the wallpaper's own 220 and 200.
+        assert!(left[2] < 180.0 && right[1] < 170.0, "{left:?} {right:?}");
+    }
+}
+
+/// With the window known to sit on the right half of the monitor, only the green half is behind it.
+#[test]
+fn glass_lines_up_when_the_position_is_known() {
+    let place = Placement {
+        // Hyprland-style: any unit, here twice the points.
+        window: Rect::from_min_size(pos2(960.0, 160.0), SIZE * 2.0),
+        monitor: vec2(1920.0, 960.0),
+        output: Some("DP-1".to_owned()),
+    };
+    for shader in [false, true] {
+        let wallpaper = test_wallpaper(&format!("placed{shader}"));
+        let (mut h, status) = glass_harness(shader, glass_settings(), wallpaper, place.clone());
+        assert!(
+            matches!(status, GlassStatus::Shown { aligned: true, .. }),
+            "{status:?}"
+        );
+        let (left, right) = left_and_right(&render(&mut h));
+        assert!(
+            left[1] > left[2] * 1.5,
+            "shader {shader}: green on the left too: {left:?}"
+        );
+        assert!(right[1] > right[2] * 1.5, "shader {shader}: {right:?}");
+    }
+}
+
+/// A wallpaper that cannot be read says so, and the backdrop is drawn as without glass.
+#[test]
+fn glass_without_a_wallpaper_falls_back() {
+    let missing = std::env::temp_dir().join("ve_backdrop_ui_no_such_wallpaper.png");
+    let (mut h, status) = glass_harness(false, glass_settings(), missing.clone(), Nowhere);
+    assert!(
+        matches!(&status, GlassStatus::Failed { path, .. } if *path == missing),
+        "{status:?}"
+    );
+    assert!(status.text().contains("could not read"));
+    let mut plain = harness(false, Theme::Dark, still());
+    plain.run();
+    assert_eq!(mean_diff(&render(&mut h), &render(&mut plain)), 0.0);
+}
+
+/// The look: the blurred wallpaper under the grid, dimmed by the theme.
+fn glass_snapshot(theme: Theme, name: &str) {
+    let settings = Settings {
+        glass: true,
+        ..still()
+    };
+    let (mut h, status) = glass_harness(true, settings, test_wallpaper(name), Nowhere);
+    assert!(matches!(status, GlassStatus::Shown { .. }), "{status:?}");
+    // `glass_harness` is dark; the theme is the harness's to switch.
+    h.ctx.set_theme(theme);
+    h.run_steps(2);
+    h.snapshot_options(name, &tolerant());
+}
+
+#[test]
+fn snapshot_glass_dark() {
+    glass_snapshot(Theme::Dark, "backdrop_glass_dark");
+}
+
+#[test]
+fn snapshot_glass_light() {
+    glass_snapshot(Theme::Light, "backdrop_glass_light");
+}
+
+/// Switching the mark from dots to squares changes the picture, in both renderers, also at the default
+/// (small) size and on a high-density screen.
+#[test]
+fn squares_differ_from_dots() {
+    for shader in [false, true] {
+        for (size, ppp) in [(2.0, 1.0), (2.0, 2.0), (6.0, 1.0)] {
+            let picture = |mark| {
+                let settings = Settings {
+                    mark,
+                    size,
+                    ..still()
+                };
+                let mut h = harness(shader, Theme::Dark, settings);
+                h.ctx.set_pixels_per_point(ppp);
+                h.run();
+                render(&mut h)
+            };
+            let diff = mean_diff(&picture(Mark::Dots), &picture(Mark::Squares));
+            assert!(
+                diff > 0.02,
+                "shader {shader}, size {size}, {ppp} px/pt: squares look like dots ({diff})"
+            );
+        }
+    }
 }

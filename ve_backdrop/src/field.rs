@@ -19,7 +19,7 @@ const PUSH_PEAK: f32 = 0.428_881_94;
 /// The backdrop's four colours.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct Colors {
-    /// Fill behind the marks (when [`Settings::fill_background`] is on).
+    /// Fill behind the marks.
     pub bg: Color32,
     /// A mark at rest.
     pub mark: Color32,
@@ -68,6 +68,8 @@ pub struct Scene {
     pub rect: Rect,
     pub settings: Settings,
     pub colors: Colors,
+    /// Opacity of the background fill (0 = none).
+    pub bg_alpha: f32,
     /// Phase of the drift wave.
     pub phase: f32,
     /// The pointer, when the lens is on.
@@ -192,6 +194,7 @@ pub(crate) fn test_scene() -> Scene {
         rect: Rect::from_min_size(Pos2::ZERO, vec2(400.0, 300.0)),
         settings: Settings::default(),
         colors: Colors::from_tokens(&ve_theme::Tokens::dark()),
+        bg_alpha: 1.0,
         phase: 0.0,
         pointer: None,
         lit: Vec::new(),

@@ -32,8 +32,18 @@ pub struct Settings {
     pub size: f32,
     /// Opacity of a mark at rest.
     pub opacity: f32,
-    /// Fill the rectangle with the theme's background colour before the marks.
-    pub fill_background: bool,
+    /// Opacity of the theme's background colour under the marks: 1 hides what is behind the window, less
+    /// lets a transparent window show the desktop (blurred, where the compositor does that), 0 paints none.
+    pub background_opacity: f32,
+
+    /// Emulated transparency: draw a blurred copy of the desktop wallpaper under the marks, for desktops
+    /// that do not blur what is behind a window.
+    pub glass: bool,
+    /// How much of the theme's background colour lies over the blurred wallpaper (0 = the bare wallpaper,
+    /// 1 = hidden).
+    pub glass_dim: f32,
+    /// How strongly the wallpaper is blurred (0 = sharp, 1 = strongest).
+    pub glass_blur: f32,
 
     /// Freeze the backdrop: no drift, no pointer lens, no ripples, no fades; frames still gather light.
     pub reduced_motion: bool,
@@ -89,7 +99,10 @@ impl Default for Settings {
             spacing: 22.0,
             size: 2.0,
             opacity: 0.5,
-            fill_background: true,
+            background_opacity: 1.0,
+            glass: false,
+            glass_dim: 0.72,
+            glass_blur: 0.7,
             reduced_motion: false,
             ambient: 0.3,
             speed: 0.15,
@@ -138,6 +151,13 @@ impl Settings {
         fix(&mut self.spacing, 6.0..=200.0, d.spacing);
         fix(&mut self.size, 0.0..=200.0, d.size);
         fix(&mut self.opacity, 0.0..=1.0, d.opacity);
+        fix(
+            &mut self.background_opacity,
+            0.0..=1.0,
+            d.background_opacity,
+        );
+        fix(&mut self.glass_dim, 0.0..=1.0, d.glass_dim);
+        fix(&mut self.glass_blur, 0.0..=1.0, d.glass_blur);
         fix(&mut self.ambient, 0.0..=1.0, d.ambient);
         fix(&mut self.speed, 0.0..=10.0, d.speed);
         fix(&mut self.wave_length, 20.0..=10_000.0, d.wave_length);
@@ -198,10 +218,47 @@ impl Settings {
             "",
             "opacity of a mark at rest: 0 invisible, 1 the full mark colour",
         );
-        ui.checkbox(&mut self.fill_background, "Fill background")
+        slider(
+            ui,
+            &mut self.background_opacity,
+            0.0..=1.0,
+            "Background",
+            "",
+            "opacity of the theme's background colour under the marks: below 1 a transparent window shows \
+             the desktop behind it (blurred where the compositor does that)",
+        );
+
+        ui.section_header(
+            "Glass",
+            "emulated transparency: a blurred copy of the desktop wallpaper under the marks, for desktops \
+             that do not blur what is behind a window",
+        );
+        ui.checkbox(&mut self.glass, "Emulated transparency")
             .on_hover_text(
-                "paint the theme's background colour under the marks; off when something else is behind them",
+                "draw a blurred, dimmed copy of the desktop wallpaper behind the grid, so the window looks \
+                 like frosted glass also where the compositor does not blur",
             );
+        ui.add_enabled_ui(self.glass, |ui| {
+            slider(
+                ui,
+                &mut self.glass_dim,
+                0.0..=1.0,
+                "Dim",
+                "",
+                "how much of the theme's background colour lies over the wallpaper: 0 the bare wallpaper, \
+                 1 hidden",
+            );
+            slider(
+                ui,
+                &mut self.glass_blur,
+                0.0..=1.0,
+                "Blur",
+                "",
+                "how strongly the wallpaper is blurred: 0 sharp, 1 strongest",
+            );
+        })
+        .response
+        .on_disabled_hover_text("off: emulated transparency is not turned on");
 
         ui.section_header("Motion", "the slow drift and how often it repaints");
         ui.checkbox(&mut self.reduced_motion, "Reduced motion")

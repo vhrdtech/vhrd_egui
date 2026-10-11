@@ -91,6 +91,24 @@ impl Playground {
             );
 
         self.backdrop.settings.ui(ui);
+
+        ui.section_header(
+            "Glass status",
+            "what the emulated transparency is doing: which wallpaper it shows, or why none",
+        );
+        let status = self.backdrop.glass_status(ui.ctx());
+        ui.add_enabled_ui(self.backdrop.settings.glass, |ui| {
+            ui.muted_label(status.text());
+            if ui
+                .button("Look again")
+                .on_hover_text("look for the desktop wallpaper again and reload it (it changed)")
+                .clicked()
+            {
+                self.backdrop.reload_wallpaper();
+            }
+        })
+        .response
+        .on_disabled_hover_text("off: turn on Emulated transparency under Glass");
     }
 
     /// The floating windows; returns what the backdrop should react to.

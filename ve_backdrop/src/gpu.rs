@@ -85,7 +85,7 @@ impl Globals {
                 s.lens_push / PUSH_PEAK,
                 s.lens_grow,
                 s.lens_light,
-                flag(s.fill_background),
+                scene.bg_alpha,
             ],
             ripple: [
                 s.ripple_light,
