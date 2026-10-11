@@ -3690,6 +3690,7 @@ dependencies = [
  "eframe",
  "egui",
  "egui_kittest",
+ "image",
  "serde",
  "serde_json",
  "ve_dash",

@@ -14,7 +14,7 @@ use serde::{Deserialize, Serialize};
 use ve_dash::{Meter, Sparkline, StatusLight, Theme};
 use ve_frame::{
     Applied, Dock, FrameAction, FrameState, HexFace, Machine, Moves, Parcel, Remote, Shape,
-    SideItem, Size, SizeHints, Slot, SlotId, Status, ViewportSlot, WidgetFrame, outer_width,
+    SideItem, Size, SizeHints, Slot, SlotId, Status, ViewportSlot, WidgetFrame, Wing, outer_width,
 };
 
 #[allow(dead_code)] // the UI tests include this file as a module and start their own harness
@@ -133,6 +133,9 @@ pub struct Demo {
     pub opts: Opts,
     pub scale: Scale,
     pub clicks: u32,
+    /// Whether a hexagon asks for the wings beside its body and draws into them (the playground's toggle).
+    #[serde(default)]
+    pub wings: bool,
 }
 
 impl Demo {
@@ -141,6 +144,7 @@ impl Demo {
             opts,
             scale,
             clicks: 0,
+            wings: false,
         }
     }
 
@@ -214,6 +218,51 @@ impl Demo {
         }
     }
 
+    /// What the widget puts into a hexagon's wings: a level made of rows that follow the left wing's outline,
+    /// and the count in the largest rectangle the right wing holds.
+    fn wings(&self, ui: &mut Ui, [left, right]: &[Wing; 2]) {
+        let theme = Theme::from_tokens(&ve_theme::Tokens::of_ui(ui));
+        let rows = ((left.rect.height() - 4.0) / 6.0).floor().max(0.0) as u32;
+        let lit = self.clicks.min(rows);
+        for row in 0..rows {
+            let y = left.rect.bottom() - 4.0 - 6.0 * row as f32;
+            let Some(span) = left.span_at(y - 2.0) else {
+                continue;
+            };
+            let color = if row < lit {
+                theme.accent
+            } else {
+                theme.border
+            };
+            let bar =
+                egui::Rect::from_x_y_ranges(span, (y - 4.0)..=y).shrink2(egui::vec2(2.0, 0.0));
+            if bar.width() > 2.0 {
+                ui.painter().rect_filled(bar, 1.0, color);
+            }
+        }
+        let level = ui.interact(left.rect, ui.id().with("left wing"), egui::Sense::hover());
+        level.widget_info(|| {
+            egui::WidgetInfo::labeled(egui::WidgetType::Label, true, format!("wing level {lit}"))
+        });
+        level.on_hover_text(format!(
+            "Left wing: one row per click, {lit} of {rows} lit; the rows follow the hexagon's faces"
+        ));
+        let mut ui = ui.new_child(
+            egui::UiBuilder::new()
+                .max_rect(right.inscribed())
+                .layout(Layout::top_down(Align::Center)),
+        );
+        ui.add(
+            egui::Label::new(
+                RichText::new(format!("count {}", self.clicks))
+                    .monospace()
+                    .size(10.0),
+            )
+            .extend(),
+        )
+        .on_hover_text("Right wing: clicks, in the largest rectangle that fits into the wing");
+    }
+
     fn status(&self) -> (Status, String) {
         match self.clicks {
             0 => (Status::Off, "idle: no clicks yet".to_owned()),
@@ -227,12 +276,8 @@ impl Demo {
     }
 }
 
-/// Draw one demo widget in its frame, with the options it was made with. Returns the menu pick.
-pub fn draw(ui: &mut Ui, slot: &mut Slot<Demo>, moves: &Moves) -> Option<FrameAction> {
-    draw_at(ui, slot, moves).0
-}
-
-/// [`draw`], also telling where the frame was drawn.
+/// Draw one demo widget in its frame, with the options it was made with. Returns the menu pick and where the
+/// frame was drawn.
 pub fn draw_at(
     ui: &mut Ui,
     slot: &mut Slot<Demo>,
@@ -326,7 +371,12 @@ pub fn draw_at(
                 }
             });
     }
-    let r = f.show(ui, frame, |ui, size| widget.body(ui, size));
+    let r = f.hex_wings(widget.wings).show_area(ui, frame, |ui, area| {
+        if let Some(wings) = &area.wings {
+            widget.wings(ui, wings);
+        }
+        widget.body(ui, area.size);
+    });
     if reset {
         widget.clicks = 0;
     }
@@ -368,11 +418,15 @@ pub struct Playground {
     pub show_scale: [bool; 3],
     pub show_rect: bool,
     pub show_hex: bool,
+    /// Whether hexagons use the wings beside their body for content instead of items on their faces.
+    pub wings: bool,
     /// The last thing that happened, shown in the bar.
     pub message: String,
     /// Where the main grid's frames were drawn last frame, and the room they had (for the tests).
     pub drawn: Vec<egui::Rect>,
     pub room: egui::Rect,
+    /// Where each floating frame was drawn last frame, in every window (for the tests).
+    pub floated: Vec<(SlotId, egui::Rect)>,
 }
 
 impl Playground {
@@ -390,9 +444,11 @@ impl Playground {
             show_scale: [true; 3],
             show_rect: true,
             show_hex: true,
+            wings: false,
             message: String::new(),
             drawn: Vec::new(),
             room: egui::Rect::NOTHING,
+            floated: Vec::new(),
         }
     }
 
@@ -419,6 +475,9 @@ impl Playground {
     pub fn ui(&mut self, ui: &mut Ui) {
         self.controls(ui);
         ui.separator();
+        for slot in self.dock.iter_mut() {
+            slot.widget.wings = self.wings;
+        }
         let remote = self.transport.then_some(&self.loopback as &dyn Remote);
         let moves = self.dock.moves(remote);
         let room = self.auto_room;
@@ -446,10 +505,13 @@ impl Playground {
                 });
             });
         self.drawn = drawn;
-        picked.extend(
-            self.dock
-                .show_windows(ui, ViewportSlot::MAIN, |ui, slot| draw(ui, slot, &moves)),
-        );
+        let mut floated = Vec::new();
+        let mut float = |ui: &mut Ui, slot: &mut Slot<Demo>| {
+            let (action, rect) = draw_at(ui, slot, &moves);
+            floated.push((slot.id, rect));
+            action
+        };
+        picked.extend(self.dock.show_windows(ui, ViewportSlot::MAIN, &mut float));
         self.dock
             .show_viewports(ui.ctx(), "Frame playground", |dock, ui, viewport| {
                 grid(
@@ -460,8 +522,9 @@ impl Playground {
                     (&moves, room),
                     (&mut picked, &mut Vec::new()),
                 );
-                picked.extend(dock.show_windows(ui, viewport, |ui, slot| draw(ui, slot, &moves)));
+                picked.extend(dock.show_windows(ui, viewport, &mut float));
             });
+        self.floated = floated;
         for (id, action) in picked {
             self.apply(id, action);
         }
@@ -523,6 +586,11 @@ impl Playground {
                 .on_hover_text("Show the rectangular frames");
             ui.checkbox(&mut self.show_hex, "hexagons")
                 .on_hover_text("Show the hexagonal frames");
+            ui.checkbox(&mut self.wings, "wings")
+                .on_hover_text(
+                    "Hexagons give the regions between their body and the slanted faces to the widget's \
+                     content (a level and the count here) instead of the items along the faces",
+                );
             ui.separator();
             ui.checkbox(&mut self.transport, "transport")
                 .on_hover_text(

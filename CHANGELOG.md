@@ -62,6 +62,16 @@ versions follow [Semantic Versioning](https://semver.org/). Feature IDs refer to
   (`FrameState::land`, `FrameState::glow`, `GLOW_SECS`); off when `Style::animation_time` is 0 (FRM-4).
 - ve_frame: the faces of a hexagon that carry items are panels of their own (lighter fill, thin rules,
   `hex::band`); the ☰ menu button has no box and lights up only under the pointer (FRM-1, FRM-3).
+- ve_frame: popping a widget out opens its window on the rectangle it had in the grid and makes it hop for
+  0.3 s (`FrameState::pluck_out`, `pluck`, `PLUCK_SECS`, `window_pos`); off when `Style::animation_time` is 0
+  (FRM-4).
+- ve_frame: floating hexagons resize (right vertex, bottom face, lower right face; grips under the pointer) and
+  have a shadow (FRM-4).
+- ve_frame: `WidgetFrame::hex_wings(true)` and `show_area` give a hexagon's body the regions beside it as
+  `BodyArea::wings` (`Wing`: `polygon`, `rect`, `span_at`, `inscribed`, `contains`); off by default; playground
+  toggle *wings* (FRM-3).
+- ve_frame: a click on the size switch keeps the switch under the pointer: a floating window takes the size of
+  the next form and moves around it, a grid scrolls back (FRM-1).
 - ve_widget: `Widget::frame_spec` (`FrameSpec`: LED, ⓘ text and stats, sizes) and `Widget::ui_sized`, both with
   defaults; `ve_widget::ve_frame` re-export (FRM-7).
 - ve_app: every widget sits in a `ve_frame::WidgetFrame`; its ☰ menu pops it out as a floating window and back
@@ -71,11 +81,17 @@ versions follow [Semantic Versioning](https://semver.org/). Feature IDs refer to
 
 ### Changed
 
+- ve_frame: the header is the strongest band of a frame (`header_fill`, title in the text colour), the sides and
+  the footer a quiet one (`quiet_fill`); the faces of a hexagon that carry items use the quiet fill too (FRM-1).
+- ve_frame: a floating frame always has a size of its own: `FrameState::window_size` is set from the first frame
+  on (it was `None` until the user dragged), from the widget's rectangle in the grid when it pops out (FRM-4).
 - ve_app: saved layouts from before this version are dropped once (shell state version 2: widgets are kept with
   their frame state, tiles name them). The pane of a tile now starts with the frame's header row (FRM-7).
 
 ### Fixed
 
+- ve_frame: a popped-out rectangle with sides and no size switch no longer grows by itself until it hits the
+  window's edge (FRM-4).
 - ve_frame playground: a large *Auto room* pushed frames past the right edge; a cell is never wider than its
   row now, and a hexagon on auto is chosen by its whole outline (FRM-2, FRM-6).
 - ve_dash: the three UI snapshots are compared with a budget of 20 failing pixels, so `cargo test -p ve_dash`

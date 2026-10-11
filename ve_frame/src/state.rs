@@ -70,6 +70,10 @@ pub struct FrameState {
     /// The size the user dragged the floating window to, in points; `None` until then: the window is as big
     /// as the widget's content. Never smaller than the frame needs.
     pub window_size: Option<[f32; 2]>,
+    /// Where the floating window's top left corner is, in points of its OS window; `None` until it floated.
+    /// [`crate::Dock`] sets it when the widget pops out (where it sat in the grid) and follows the user's
+    /// drags.
+    pub window_pos: Option<[f32; 2]>,
     /// The size shown last frame: auto's memory for its hysteresis. Not saved.
     #[serde(skip)]
     pub(crate) last_size: Option<Size>,
@@ -82,10 +86,39 @@ pub struct FrameState {
     /// its shape).
     #[serde(skip)]
     pub(crate) resizable: bool,
+    /// Whether the frame drawn last is a hexagon (its resize handles sit on its faces).
+    #[serde(skip)]
+    pub(crate) hex: bool,
+    /// The frame drawn last was still learning what its sides and footer take: its size is not one to keep.
+    #[serde(skip)]
+    pub(crate) settling: bool,
+    /// Where the frame was drawn last, in screen points: a pop-out opens there.
+    #[serde(skip)]
+    pub(crate) drawn: Option<egui::Rect>,
+    /// The pop-out animation ([`FrameState::pluck`]).
+    #[serde(skip)]
+    pub(crate) plucking: Landing,
+    #[serde(skip)]
+    pub(crate) pluck: f32,
+    /// Where the size switch was drawn last, if the frame has one.
+    #[serde(skip)]
+    pub(crate) switch_at: Option<egui::Pos2>,
+    /// The size switch was clicked at this screen point: it should be there again once the frame has its new
+    /// size (the window moves, or the grid scrolls). `anchor_fresh` in the frame of the click, `anchor_due` in
+    /// the one after, when the new layout is known.
+    #[serde(skip)]
+    pub(crate) anchor: Option<egui::Pos2>,
+    #[serde(skip)]
+    pub(crate) anchor_fresh: bool,
+    #[serde(skip)]
+    pub(crate) anchor_due: bool,
 }
 
 /// How long the glow around a frame that just landed takes to fade, in seconds.
 pub const GLOW_SECS: f64 = 0.6;
+
+/// How long the lift of a widget that was just plucked out of the grid takes, in seconds.
+pub const PLUCK_SECS: f64 = 0.3;
 
 impl FrameState {
     /// A frame in the main grid with its size switch on `size` (a widget that arrived in a
@@ -112,6 +145,34 @@ impl FrameState {
     /// How strong the landing glow was drawn last frame: 1 right after a move, 0 when it is over.
     pub fn glow(&self) -> f32 {
         self.glow
+    }
+
+    /// The widget was just taken out of the grid: its window opens where it sat (same place, same size, unless
+    /// the user gave it a size before) and hops up a little for [`PLUCK_SECS`]. [`crate::Dock::apply`] calls
+    /// this on a pop-out. With animations off it just sits there.
+    pub fn pluck_out(&mut self) {
+        if let Some(rect) = self.drawn {
+            self.window_pos = Some(rect.min.into());
+            if self.window_size.is_none() {
+                self.window_size = Some(rect.size().into());
+            }
+        }
+        self.plucking = Landing::Pending;
+    }
+
+    /// How far the pop-out animation is: 1 right after the widget was plucked out, 0 when it rests.
+    pub fn pluck(&self) -> f32 {
+        self.pluck
+    }
+
+    /// Where the frame was drawn last, in screen points.
+    pub fn drawn_rect(&self) -> Option<egui::Rect> {
+        self.drawn
+    }
+
+    /// Where the size switch was drawn last, if the frame has one.
+    pub fn switch_pos(&self) -> Option<egui::Pos2> {
+        self.switch_at
     }
 
     /// Whether the frame, floating, can be resized by the user (set when it is drawn).

@@ -7,7 +7,7 @@ use egui::{
 use ve_dash::{ActionChip, Status, StatusLight, Theme, info_icon};
 use ve_theme::Tokens;
 
-use crate::hex::{self, HexFace, SideItem};
+use crate::hex::{self, HexFace, SideItem, Wing};
 use crate::menu::{self, Moves};
 use crate::size::{Size, SizeHints, SizeMode};
 use crate::state::{FrameAction, FrameState, GLOW_SECS, Landing};
@@ -36,6 +36,19 @@ pub enum Shape {
 }
 
 type UiFn<'a> = Box<dyn FnOnce(&mut Ui) + 'a>;
+
+/// What a body is given to lay itself out ([`WidgetFrame::show_area`]).
+#[derive(Clone, Debug, PartialEq)]
+pub struct BodyArea {
+    /// The size to arrange for.
+    pub size: Size,
+    /// The body's own rectangle: where the `Ui` lays out.
+    pub rect: Rect,
+    /// The regions left and right of a hexagon's body, when the frame offers them
+    /// ([`WidgetFrame::hex_wings`]): the `Ui` may paint and place things there too (its clip rectangle covers
+    /// them), keeping inside each [`Wing`]'s outline itself. `None` for rectangles and when the option is off.
+    pub wings: Option<[Wing; 2]>,
+}
 
 /// What [`WidgetFrame::show`] returns.
 pub struct FrameResponse<R> {
@@ -100,6 +113,7 @@ pub struct WidgetFrame<'a> {
     fill: bool,
     bare: bool,
     title_shown: bool,
+    hex_wings: bool,
 }
 
 impl<'a> WidgetFrame<'a> {
@@ -122,6 +136,7 @@ impl<'a> WidgetFrame<'a> {
             fill: false,
             bare: false,
             title_shown: true,
+            hex_wings: false,
         }
     }
 
@@ -219,18 +234,53 @@ impl<'a> WidgetFrame<'a> {
         self
     }
 
+    /// Give a hexagon's body the two regions beside it, between the body and the slanted faces (off by
+    /// default). The body then gets them as [`BodyArea::wings`] in [`Self::show_area`] and lays content into
+    /// them; the items of [`Self::hex_side`] are not drawn, since they would sit in the same place. A body
+    /// that doesn't use them leaves the option off and keeps the usual look. Ignored by rectangles.
+    pub fn hex_wings(mut self, wings: bool) -> Self {
+        self.hex_wings = wings;
+        self
+    }
+
     /// Draw the frame. `body` gets the size to arrange itself for.
     pub fn show<R>(
-        mut self,
+        self,
         ui: &mut Ui,
         state: &mut FrameState,
         body: impl FnOnce(&mut Ui, Size) -> R,
     ) -> FrameResponse<R> {
+        self.show_area(ui, state, |ui, area| body(ui, area.size))
+    }
+
+    /// Draw the frame. `body` gets its [`BodyArea`]: the size to arrange for, its rectangle and, in a hexagon
+    /// with [`Self::hex_wings`], the regions beside it.
+    pub fn show_area<R>(
+        mut self,
+        ui: &mut Ui,
+        state: &mut FrameState,
+        body: impl FnOnce(&mut Ui, &BodyArea) -> R,
+    ) -> FrameResponse<R> {
         let theme = Theme::from_tokens(&Tokens::of_ui(ui));
         let salt = self.id_salt.unwrap_or_else(|| Id::new(&self.title));
         let mem = ui.id().with(("ve_frame::learned", salt));
-        let learned: Learned = ui.data(|d| d.get_temp(mem)).unwrap_or_default();
-        let avail = ui.available_size();
+        // What this frame took the last time it was drawn here; in a new place (just popped out, just put
+        // back) what it took wherever it was drawn last, so it doesn't start a frame too large.
+        let last_place = Id::new(("ve_frame::learned", salt));
+        let learned: Learned = ui
+            .data(|d| d.get_temp(mem).or_else(|| d.get_temp(last_place)))
+            .unwrap_or_default();
+        let floating = state.placement.floating;
+        // A floating frame defines its window, so it never takes "the room given" from it: it has the size
+        // in `window_size`, or (until the first pass set one) the size its hints and content ask for.
+        let avail = if floating && state.window_size.is_none() {
+            Vec2::INFINITY
+        } else {
+            ui.available_size()
+        };
+        state.switch_at = None;
+        state.settling = false;
+        state.anchor_due = std::mem::take(&mut state.anchor_fresh);
         let border = if self.bare { 0.0 } else { 1.0 };
         // What the body can have of the room the frame was given.
         let room = vec2(
@@ -238,14 +288,18 @@ impl<'a> WidgetFrame<'a> {
             finite(avail.y - 2.0 * border - HEADER_H - learned.footer_h - 2.0 * PAD),
         );
         let shape = self.shape;
-        let sized = shape == Shape::Rect && state.placement.floating && state.window_size.is_some();
-        self.fill |= sized;
-        state.resizable = shape == Shape::Rect;
+        let sized = floating && state.window_size.is_some();
+        self.fill |= sized && shape == Shape::Rect;
+        state.resizable = true;
+        state.hex = shape == Shape::Hex;
+        let hex_room = self.hex_room(state);
         let size = match &self.sizes {
-            Some(hints) if avail.x.is_finite() => match shape {
-                Shape::Rect => state.size.resolve(state.last_size, room.x, hints),
+            Some(hints) if avail.x.is_finite() => match (shape, hex_room) {
+                (Shape::Rect, _) => state.size.resolve(state.last_size, room.x, hints),
+                // a floating hexagon was given a size: choose by the body that leaves
+                (Shape::Hex, Some(room)) => state.size.resolve(state.last_size, room.x, hints),
                 // a hexagon is as wide as its body makes it: choose by the whole outline
-                Shape::Hex => {
+                (Shape::Hex, None) => {
                     let header_min = self.header_min_width(ui, &theme);
                     let outer = |size| self.hex_outer(hints.of(size), header_min);
                     let outline = SizeHints {
@@ -264,13 +318,49 @@ impl<'a> WidgetFrame<'a> {
         let r = ui
             .push_id(("ve_frame", salt), |ui| match shape {
                 Shape::Rect => {
+                    let mem = (mem, last_place);
                     self.show_rect(ui, &theme, state, (size, room, avail), (mem, learned), body)
                 }
                 Shape::Hex => self.show_hex(ui, &theme, state, size, body),
             })
             .inner;
         landing_glow(ui, &theme, state, r.response.rect, shape);
+        state.drawn = Some(r.response.rect);
+        if !floating && state.anchor_due {
+            // The size switch was clicked last frame and the frame has its new size now: scroll so the
+            // switch is where it was, ready for the next click. A floating frame's window moves instead
+            // (`Dock::show_windows`).
+            if let (Some(anchor), Some(now)) = (state.anchor.take(), state.switch_at) {
+                let back = anchor - now;
+                if back.length() > 0.5 {
+                    ui.scroll_with_delta_animation(back, egui::style::ScrollAnimation::none());
+                    ui.ctx()
+                        .request_discard("ve_frame: keep the size switch in place");
+                }
+            }
+        }
         r
+    }
+
+    /// The body a floating hexagon has room for in the window size it was given; `None` when it isn't
+    /// floating with a size (then its hints make its outline).
+    fn hex_room(&self, state: &FrameState) -> Option<Vec2> {
+        if self.shape != Shape::Hex || !state.placement.floating {
+            return None;
+        }
+        let [w, h] = state.window_size?;
+        let footer_h = if self.footer.is_some() {
+            HEX_FOOTER_H
+        } else {
+            0.0
+        };
+        let least = self.sizes.map_or(HEX_BODY * 0.5, |hints| hints.min);
+        let body_h = (h - HEADER_H - 2.0 * PAD - footer_h).max(least.y);
+        let outer_h = HEADER_H + body_h + 2.0 * PAD + footer_h;
+        let body_w = (w - 2.0 * hex::slant(outer_h) - 2.0 * PAD).max(least.x);
+        // to an eighth of a point: the way back from the outline must not lose the hint by a rounding error
+        let snap = |x: f32| (x * 8.0).round() / 8.0;
+        Some(vec2(snap(body_w), snap(body_h)))
     }
 
     /// The outline of a hexagon around a body of `content`: width and height.
@@ -291,8 +381,8 @@ impl<'a> WidgetFrame<'a> {
         theme: &Theme,
         state: &mut FrameState,
         (size, room, avail): (Size, Vec2, Vec2),
-        (mem, learned): (Id, Learned),
-        body: impl FnOnce(&mut Ui, Size) -> R,
+        ((mem, last_place), learned): ((Id, Id), Learned),
+        body: impl FnOnce(&mut Ui, &BodyArea) -> R,
     ) -> FrameResponse<R> {
         let header_min = self.header_min_width(ui, theme);
         let border = if self.bare { 0.0 } else { 1.0 };
@@ -319,9 +409,12 @@ impl<'a> WidgetFrame<'a> {
         }
         let spacing = ui.spacing().item_spacing;
         let (left, right, footer) = (self.left.take(), self.right.take(), self.footer.take());
+        let (has_left, has_right) = (left.is_some(), right.is_some());
         let fill = self.fill;
         let out = frame.show(ui, |ui| {
             ui.spacing_mut().item_spacing = Vec2::ZERO;
+            // the fills of the header, the sides and the footer go under the content, once its rects are known
+            let fills = ui.painter().add(egui::Shape::Noop);
             if fill {
                 ui.set_min_size(vec2(
                     finite(avail.x - 2.0 * border),
@@ -373,12 +466,22 @@ impl<'a> WidgetFrame<'a> {
                 mid: mid.response.rect,
                 dividers,
                 footer_top,
+                fills,
                 learned: Learned { sides_w, footer_h },
             }
         });
         let laid = out.inner;
+        ui.data_mut(|d| {
+            d.insert_temp(mem, laid.learned);
+            d.insert_temp(last_place, laid.learned);
+        });
         if laid.learned != learned {
-            ui.data_mut(|d| d.insert_temp(mem, laid.learned));
+            state.settling = true;
+            if state.placement.floating {
+                // a window drawn with the wrong size would show for a frame: lay this pass out again
+                ui.ctx()
+                    .request_discard("ve_frame: sides and footer learned");
+            }
             ui.ctx().request_repaint();
         }
 
@@ -389,11 +492,59 @@ impl<'a> WidgetFrame<'a> {
             pos2(inside.right(), laid.top.y + HEADER_H),
         );
         let painter = ui.painter();
+        // The header is the strongest band; the sides and the footer are a quiet step off the body.
+        let round = if self.bare { 0 } else { 5 };
+        let bottom = laid.footer_top.unwrap_or(inside.bottom());
+        let mut fills = vec![egui::Shape::rect_filled(
+            header_rect,
+            CornerRadius {
+                nw: round,
+                ne: round,
+                sw: 0,
+                se: 0,
+            },
+            header_fill(theme),
+        )];
+        let quiet = quiet_fill(theme);
+        let mut edges = laid.dividers.iter();
+        let band = |x: egui::Rangef, radius: CornerRadius| {
+            egui::Shape::rect_filled(
+                Rect::from_x_y_ranges(x, header_rect.bottom()..=bottom),
+                radius,
+                quiet,
+            )
+        };
+        let no_footer = laid.footer_top.is_none();
+        if has_left && let Some(x) = edges.next() {
+            let radius = CornerRadius {
+                sw: if no_footer { round } else { 0 },
+                ..CornerRadius::ZERO
+            };
+            fills.push(band((inside.left()..=*x).into(), radius));
+        }
+        if has_right && let Some(x) = edges.next() {
+            let radius = CornerRadius {
+                se: if no_footer { round } else { 0 },
+                ..CornerRadius::ZERO
+            };
+            fills.push(band((*x..=inside.right()).into(), radius));
+        }
+        if let Some(y) = laid.footer_top {
+            fills.push(egui::Shape::rect_filled(
+                Rect::from_min_max(pos2(inside.left(), y), inside.max),
+                CornerRadius {
+                    sw: round,
+                    se: round,
+                    ..CornerRadius::ZERO
+                },
+                quiet,
+            ));
+        }
+        painter.set(laid.fills, egui::Shape::Vec(fills));
         painter.hline(inside.x_range(), header_rect.bottom(), line);
         if let Some(y) = laid.footer_top {
             painter.hline(inside.x_range(), y, line);
         }
-        let bottom = laid.footer_top.unwrap_or(inside.bottom());
         for x in &laid.dividers {
             painter.vline(
                 *x,
@@ -417,9 +568,11 @@ impl<'a> WidgetFrame<'a> {
         theme: &Theme,
         state: &mut FrameState,
         size: Size,
-        body: impl FnOnce(&mut Ui, Size) -> R,
+        body: impl FnOnce(&mut Ui, &BodyArea) -> R,
     ) -> FrameResponse<R> {
-        let content = self.sizes.map_or(HEX_BODY, |h| h.of(size));
+        let hinted = self.sizes.map_or(HEX_BODY, |h| h.of(size));
+        // floating with a size of its own: the body is what that leaves; else the hint makes the outline
+        let content = self.hex_room(state).unwrap_or(hinted);
         let header_min = self.header_min_width(ui, theme);
         let footer_h = if self.footer.is_some() {
             HEX_FOOTER_H
@@ -437,54 +590,101 @@ impl<'a> WidgetFrame<'a> {
         };
         let outline = hex::points(rect).to_vec();
         let painter = ui.painter();
+        if state.placement.floating && !self.bare {
+            // a soft shadow, as the window of a rectangle has
+            for (grow, alpha) in [(6.0, 18), (3.0, 34), (1.0, 50)] {
+                let under = rect.expand(grow).translate(vec2(0.0, 4.0));
+                painter.add(egui::Shape::convex_polygon(
+                    hex::points(under).to_vec(),
+                    Color32::from_black_alpha(alpha),
+                    Stroke::NONE,
+                ));
+            }
+        }
         painter.add(egui::Shape::convex_polygon(
             outline.clone(),
             fill,
             Stroke::NONE,
         ));
-        // Each face with items is a panel of its own: a slightly different fill and a rule toward the body.
-        let band_fill = theme.panel_bg.lerp_to_gamma(theme.border, 0.4);
-        for (face, _) in &self.hex_sides {
-            let [from, to, inner] = hex::band(rect, *face);
-            painter.add(egui::Shape::convex_polygon(
-                vec![from, to, inner],
-                band_fill,
-                Stroke::NONE,
-            ));
-            let (tip, corner) = if from.y == inner.y {
-                (from, to)
-            } else {
-                (to, from)
-            };
-            painter.line_segment([corner, inner], line);
-            painter.line_segment([tip, inner], line);
-        }
-        painter.add(egui::Shape::closed_line(outline, line));
-
         let header_rect = Rect::from_min_max(
             pos2(rect.left() + slant, rect.top()),
             pos2(rect.right() - slant, rect.top() + HEADER_H),
         );
+        let footer_top = rect.bottom() - footer_h;
+        // The header is the strongest band; the faces with items and the footer are a quiet step off the body.
+        let band = |top: f32, bottom: f32, fill: Color32| {
+            let (a, b) = (hex::span_at(rect, top), hex::span_at(rect, bottom));
+            let points = vec![
+                pos2(a.min, top),
+                pos2(a.max, top),
+                pos2(b.max, bottom),
+                pos2(b.min, bottom),
+            ];
+            egui::Shape::convex_polygon(points, fill, Stroke::NONE)
+        };
+        painter.add(band(rect.top(), header_rect.bottom(), header_fill(theme)));
+        if footer_h > 0.0 {
+            painter.add(band(footer_top, rect.bottom(), quiet_fill(theme)));
+        }
+        let wings_on = self.hex_wings;
+        if !wings_on {
+            // Each face with items is a panel of its own: a quiet fill and a rule toward the body.
+            for (face, _) in &self.hex_sides {
+                let [from, to, inner] = hex::band(rect, *face);
+                painter.add(egui::Shape::convex_polygon(
+                    vec![from, to, inner],
+                    quiet_fill(theme),
+                    Stroke::NONE,
+                ));
+                let (tip, corner) = if from.y == inner.y {
+                    (from, to)
+                } else {
+                    (to, from)
+                };
+                painter.line_segment([corner, inner], line);
+                painter.line_segment([tip, inner], line);
+            }
+        }
+        painter.add(egui::Shape::closed_line(outline, line));
         let y = header_rect.bottom();
-        ui.painter().hline(hex::span_at(rect, y), y, line);
+        painter.hline(hex::span_at(rect, y), y, line);
 
-        let body_rect = Rect::from_min_size(
+        let column = Rect::from_min_size(
             pos2(rect.left() + slant + PAD, header_rect.bottom() + PAD),
             content,
         );
+        // min is the widget's fixed form, however large the hexagon was dragged
+        let body_rect = match (size, self.sizes) {
+            (Size::Min, Some(hints)) => Rect::from_min_size(column.min, hints.min),
+            _ => column,
+        };
+        let wings = wings_on.then(|| {
+            let between = egui::Rangef::new(header_rect.bottom() + 2.0, footer_top - 2.0);
+            let inner = egui::Rangef::new(column.left() - PAD / 2.0, column.right() + PAD / 2.0);
+            hex::wings(rect, between.min, between.max, inner)
+        });
         let mut child = ui.new_child(
             UiBuilder::new()
                 .max_rect(body_rect)
                 .layout(Layout::top_down(Align::Min)),
         );
-        child.shrink_clip_rect(body_rect);
-        let inner = body(&mut child, size);
+        let clip = match &wings {
+            Some([left, right]) => body_rect.union(left.rect).union(right.rect),
+            None => body_rect,
+        };
+        child.shrink_clip_rect(clip);
+        let area = BodyArea {
+            size,
+            rect: body_rect,
+            wings,
+        };
+        let inner = body(&mut child, &area);
 
         if let Some(add) = self.footer.take() {
-            let y = rect.bottom() - footer_h;
-            ui.painter().hline(hex::span_at(rect, y), y, line);
+            ui.painter()
+                .hline(hex::span_at(rect, footer_top), footer_top, line);
             let footer_rect = Rect::from_min_max(
-                pos2(rect.left() + slant + PAD, y),
+                pos2(rect.left() + slant + PAD, footer_top),
                 pos2(rect.right() - slant - PAD, rect.bottom()),
             );
             let mut child = ui.new_child(
@@ -496,7 +696,9 @@ impl<'a> WidgetFrame<'a> {
             add(&mut child);
         }
         for (face, items) in std::mem::take(&mut self.hex_sides) {
-            hex::side(ui, theme, rect, (HEADER_H, footer_h), face, &items);
+            if !wings_on {
+                hex::side(ui, theme, rect, (HEADER_H, footer_h), face, &items);
+            }
         }
         let action = self.header(ui, theme, state, header_rect);
         FrameResponse {
@@ -619,8 +821,12 @@ impl<'a> WidgetFrame<'a> {
                     mode.next().label()
                 ))
                 .show(h);
+                state.switch_at = Some(chip.rect.center());
                 if chip.clicked() {
                     state.size = mode.next();
+                    // the switch should be under the pointer again once the frame has its new size
+                    state.anchor = state.switch_at;
+                    state.anchor_fresh = true;
                 }
             }
             if has_info {
@@ -641,9 +847,7 @@ impl<'a> WidgetFrame<'a> {
                 }
                 h.add(
                     Label::new(
-                        RichText::new(&title)
-                            .font(title_font())
-                            .color(theme.title),
+                        RichText::new(&title).font(title_font()).color(theme.text),
                     )
                     .selectable(false)
                     .truncate(),
@@ -652,6 +856,16 @@ impl<'a> WidgetFrame<'a> {
         });
         action
     }
+}
+
+/// The fill of the header band: the strongest of the frame's bands, so the eye lands on the title first.
+pub fn header_fill(theme: &Theme) -> Color32 {
+    theme.panel_bg.lerp_to_gamma(theme.border, 0.6)
+}
+
+/// The fill of the side bands and the footer: a quiet step off the body, well below the header.
+pub fn quiet_fill(theme: &Theme) -> Color32 {
+    theme.panel_bg.lerp_to_gamma(theme.border, 0.16)
 }
 
 /// Button visuals without a box at rest: a soft fill and outline only under the pointer or while open.
@@ -769,6 +983,8 @@ struct Laid<R> {
     mid: Rect,
     dividers: Vec<f32>,
     footer_top: Option<f32>,
+    /// The reserved shape the fills are painted into.
+    fills: egui::layers::ShapeIdx,
     learned: Learned,
 }
 
@@ -827,8 +1043,16 @@ impl BodyPlan {
         ui: &mut Ui,
         spacing: Vec2,
         size: Size,
-        body: impl FnOnce(&mut Ui, Size) -> R,
+        body: impl FnOnce(&mut Ui, &BodyArea) -> R,
     ) -> (R, Rect) {
+        let body = |ui: &mut Ui, rect: Rect| {
+            let area = BodyArea {
+                size,
+                rect,
+                wings: None,
+            };
+            body(ui, &area)
+        };
         let out = Frame::new().inner_margin(PAD).show(ui, |ui| {
             ui.spacing_mut().item_spacing = spacing;
             match self {
@@ -840,18 +1064,22 @@ impl BodyPlan {
                             .layout(Layout::top_down(Align::Min)),
                     );
                     child.shrink_clip_rect(rect);
-                    (body(&mut child, size), rect)
+                    (body(&mut child, rect), rect)
                 }
                 Self::AtLeast(least) => {
                     let r = ui.allocate_ui_with_layout(least, Layout::top_down(Align::Min), |ui| {
                         ui.set_min_size(least);
                         ui.set_max_width(least.x);
-                        body(ui, size)
+                        let rect = ui.max_rect();
+                        body(ui, rect)
                     });
                     (r.inner, r.response.rect)
                 }
                 Self::Natural => {
-                    let r = ui.vertical(|ui| body(ui, size));
+                    let r = ui.vertical(|ui| {
+                        let rect = ui.max_rect();
+                        body(ui, rect)
+                    });
                     (r.inner, r.response.rect)
                 }
             }
@@ -880,6 +1108,27 @@ mod tests {
 
     fn hints() -> SizeHints {
         SizeHints::new([80.0, 40.0], [200.0, 100.0], [400.0, 120.0])
+    }
+
+    /// The header stands out from the body at least three times as much as the sides and the footer do, in
+    /// both themes, and those are still told apart from the body.
+    #[test]
+    fn header_is_the_strongest_band() {
+        for theme in [Theme::dark(), Theme::light()] {
+            let off_body = |c: Color32| ve_theme::hue::delta_e(c, theme.panel_bg);
+            let (header, quiet) = (off_body(header_fill(&theme)), off_body(quiet_fill(&theme)));
+            assert!(
+                quiet > 0.0,
+                "sides and footer differ from the body: {quiet}"
+            );
+            assert!(
+                header > 3.0 * quiet,
+                "header {header}, sides and footer {quiet}"
+            );
+            // the title is still easy to read on its band
+            let contrast = ve_theme::contrast::contrast(theme.text, header_fill(&theme));
+            assert!(contrast >= 7.0, "title contrast {contrast}");
+        }
     }
 
     #[test]

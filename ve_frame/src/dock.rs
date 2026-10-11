@@ -5,7 +5,9 @@ use serde::{Deserialize, Serialize};
 
 use crate::menu::Moves;
 use crate::remote::{Parcel, Remote};
-use crate::state::{FrameAction, FrameState, Placement, ViewportSlot, ViewportTarget};
+use crate::state::{
+    FrameAction, FrameState, Landing, PLUCK_SECS, Placement, ViewportSlot, ViewportTarget,
+};
 
 /// Names a widget in a [`Dock`]; stable while it lives there, whatever its placement.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
@@ -145,7 +147,10 @@ impl<W> Dock<W> {
         };
         let place = &mut slot.frame.placement;
         match action {
-            FrameAction::PopOut => place.floating = true,
+            FrameAction::PopOut => {
+                place.floating = true;
+                slot.frame.pluck_out();
+            }
             FrameAction::DockBack => place.floating = false,
             FrameAction::SendToViewport(target) => {
                 *place = Placement {
@@ -195,10 +200,19 @@ impl<W> Dock<W> {
     }
 
     /// The floating widgets of `viewport`, each as an egui `Window` without chrome of its own: the frame
-    /// `add` draws is the window, and dragging its header or body moves it. Its right edge, bottom edge and
-    /// corner resize it (a rectangle; a hexagon keeps its shape): the size is kept in
-    /// [`FrameState::window_size`] and never goes below what the frame needs. Returns the menu picks, for
-    /// [`Dock::apply`].
+    /// `add` draws is the window, and dragging its header or body moves it.
+    ///
+    /// - A window has a size of its own ([`FrameState::window_size`]), never "the room given": it opens with
+    ///   the rectangle the widget had in the grid, at that place ([`FrameState::pluck_out`]), and hops up for
+    ///   a moment (not with animations off).
+    /// - Its right edge, bottom edge and corner resize it; on a hexagon these are the right vertex, the bottom
+    ///   face and the lower right face, with grips that show under the pointer. The size never goes below
+    ///   what the frame needs.
+    /// - A click on the size switch gives the window the size of that form and moves it so that the switch
+    ///   stays under the pointer; at the edge of the screen, where the window can't go further, the pointer is
+    ///   moved instead (where the platform allows it: not on Wayland).
+    ///
+    /// Returns the menu picks, for [`Dock::apply`].
     pub fn show_windows(
         &mut self,
         ui: &mut Ui,
@@ -206,41 +220,75 @@ impl<W> Dock<W> {
         mut add: impl FnMut(&mut Ui, &mut Slot<W>) -> Option<FrameAction>,
     ) -> Vec<(SlotId, FrameAction)> {
         let mut picked = Vec::new();
+        let ctx = ui.ctx().clone();
         let origin = ui.max_rect().min;
+        let screen = ctx.content_rect();
         for (n, id) in self.ids(viewport, true).into_iter().enumerate() {
             let Some(slot) = self.get_mut(id) else {
                 continue;
             };
-            let step = 28.0 * (n % 8) as f32;
             let window_id = Id::new(("ve_frame::window", id.0));
-            let action = egui::Window::new("")
+            let step = 28.0 * (n % 8) as f32;
+            let mut window = egui::Window::new("")
                 .id(window_id)
                 .title_bar(false)
                 .resizable(false)
-                .frame(egui::Frame::NONE)
-                .default_pos(origin + egui::vec2(48.0 + step, 48.0 + step))
-                .show(ui.ctx(), |ui| {
-                    let resizable = slot.frame.is_resizable();
-                    let wanted = slot.frame.window_size.filter(|_| resizable);
-                    if let Some([w, h]) = wanted {
-                        ui.set_min_size(egui::vec2(w, h));
-                        ui.set_max_size(egui::vec2(w, h));
-                    }
-                    let action = add(ui, slot);
-                    let drawn = ui.min_rect();
-                    if resizable {
-                        if let Some(size) = resize_handles(ui, drawn, window_id) {
-                            slot.frame.window_size = Some(size.into());
-                        } else if wanted.is_some() {
-                            // the frame needed more than was asked: that is the size now
-                            slot.frame.window_size = Some(drawn.size().into());
-                        }
-                    }
-                    action
-                })
-                .and_then(|r| r.inner)
-                .flatten();
-            if let Some(action) = action {
+                .frame(egui::Frame::NONE);
+            window = match slot.frame.window_pos {
+                Some(pos) => window.current_pos(pos),
+                None => window.default_pos(origin + egui::vec2(48.0 + step, 48.0 + step)),
+            };
+            pluck(&ctx, &mut slot.frame, window_id);
+            let shown = window.show(&ctx, |ui| {
+                let wanted = slot.frame.window_size;
+                if let Some([w, h]) = wanted {
+                    ui.set_min_size(egui::vec2(w, h));
+                    ui.set_max_size(egui::vec2(w, h));
+                }
+                let action = add(ui, slot);
+                let frame = &mut slot.frame;
+                let drawn = frame.drawn.unwrap_or(ui.min_rect());
+                let dragged = resize_handles(ui, drawn, window_id, frame.hex);
+                frame.window_size = if frame.anchor_fresh {
+                    // the size switch was clicked: next pass the frame takes the size of that form
+                    None
+                } else if frame.settling && wanted.is_some() {
+                    // drawn before the frame knew its sides and footer: not a size to keep
+                    wanted
+                } else {
+                    // a size of its own from the first pass on; what the frame needs wins over what was asked
+                    Some(dragged.unwrap_or(drawn.size()).into())
+                };
+                action
+            });
+            let Some(shown) = shown else {
+                continue;
+            };
+            let frame = &mut slot.frame;
+            let mut at = shown.response.rect.min;
+            if frame.anchor_due
+                && let (Some(anchor), Some(now)) = (frame.anchor.take(), frame.switch_at)
+            {
+                let wanted = at + (anchor - now);
+                let size = frame
+                    .window_size
+                    .map_or(shown.response.rect.size(), Into::into);
+                let fits = keep_inside(wanted, size, screen);
+                if (fits - at).length() > 0.5 {
+                    at = fits;
+                    ctx.request_discard("ve_frame: keep the size switch in place");
+                }
+                // The window can't follow all the way (an edge of the screen): bring the pointer to the
+                // switch instead. Quietly does nothing where the platform can't warp the pointer (Wayland).
+                let short = fits - wanted;
+                if short.length() > 0.5
+                    && let Some(pointer) = ctx.pointer_latest_pos()
+                {
+                    ctx.send_viewport_cmd(egui::ViewportCommand::CursorPosition(pointer + short));
+                }
+            }
+            frame.window_pos = Some(at.into());
+            if let Some(action) = shown.inner.flatten() {
                 picked.push((id, action));
             }
         }
@@ -280,25 +328,106 @@ impl<W> Dock<W> {
     }
 }
 
+/// `pos` for a window of `size`, moved as little as needed to lie inside `screen` (top left wins when it is
+/// larger than the screen).
+fn keep_inside(pos: egui::Pos2, size: egui::Vec2, screen: egui::Rect) -> egui::Pos2 {
+    let max = (screen.max - size).max(screen.min);
+    pos.clamp(screen.min, max)
+}
+
+/// The hop of a window that was just plucked out of the grid ([`FrameState::pluck_out`]): for
+/// [`PLUCK_SECS`] it is lifted and a touch larger, then it rests. Done with a transform of the window's layer,
+/// so its place and size stay what they are. With animations off (`egui::Style::animation_time` 0, the
+/// reduced-motion setting) it rests at once.
+fn pluck(ctx: &egui::Context, frame: &mut FrameState, window_id: Id) {
+    let layer = egui::LayerId::new(egui::Order::Middle, window_id);
+    let now = ctx.input(|i| i.time);
+    if frame.plucking == Landing::Pending {
+        frame.plucking = if ctx.global_style().animation_time > 0.0 {
+            Landing::Since(now)
+        } else {
+            Landing::No
+        };
+    }
+    let was = frame.pluck;
+    frame.pluck = match frame.plucking {
+        Landing::Since(since) => (1.0 - ((now - since) / PLUCK_SECS) as f32).max(0.0),
+        _ => 0.0,
+    };
+    if frame.pluck <= 0.0 {
+        frame.plucking = Landing::No;
+        if was > 0.0 {
+            ctx.set_transform_layer(layer, egui::emath::TSTransform::IDENTITY);
+        }
+        return;
+    }
+    // up and back down: nothing at both ends, the most in the middle
+    let hop = (std::f32::consts::PI * (1.0 - frame.pluck)).sin();
+    let scale = 1.0 + PLUCK_SCALE * hop;
+    let center = match (frame.window_pos, frame.window_size) {
+        (Some(pos), Some(size)) => egui::Pos2::from(pos) + egui::Vec2::from(size) / 2.0,
+        _ => egui::Pos2::ZERO,
+    };
+    let offset = center.to_vec2() * (1.0 - scale) + egui::vec2(0.0, -PLUCK_LIFT * hop);
+    ctx.set_transform_layer(layer, egui::emath::TSTransform::new(offset, scale));
+    ctx.request_repaint();
+}
+
+/// How far a plucked window is lifted at the top of its hop, in points, and how much larger it is there.
+const PLUCK_LIFT: f32 = 10.0;
+const PLUCK_SCALE: f32 = 0.04;
+
 /// Width of the strips along the right and bottom edge that resize a floating frame, and the corner's size.
 const RESIZE_EDGE: f32 = 5.0;
 const RESIZE_CORNER: f32 = 12.0;
 /// The least a floating frame can be dragged to; the frame's own needs come on top.
 const RESIZE_LEAST: egui::Vec2 = egui::vec2(60.0, 40.0);
 
-/// The resize handles of a floating frame drawn in `rect`: the right edge, the bottom edge and the corner
-/// (with a small grip). Returns the new size while one is dragged.
-fn resize_handles(ui: &mut Ui, rect: egui::Rect, id: Id) -> Option<egui::Vec2> {
+/// The resize handles of a floating frame drawn in `rect`. A rectangle has them on the right edge, the bottom
+/// edge and the corner, with a small grip there. A hexagon (`hex`) has them on its right vertex (width), its
+/// bottom face (height) and its lower right face (both), where the grip shows while the pointer is over the
+/// hexagon. Returns the new size while one is dragged.
+fn resize_handles(ui: &mut Ui, rect: egui::Rect, id: Id, hex: bool) -> Option<egui::Vec2> {
     use egui::{CursorIcon, Rect, Sense, pos2, vec2};
-    let corner = Rect::from_min_max(rect.max - vec2(RESIZE_CORNER, RESIZE_CORNER), rect.max);
-    let right = Rect::from_min_max(
-        pos2(rect.right() - RESIZE_EDGE, rect.top() + RESIZE_CORNER),
-        pos2(rect.right(), corner.top()),
+    let slant = if hex {
+        crate::hex::slant(rect.height())
+    } else {
+        0.0
+    };
+    // the middle of the hexagon's lower right face, a little inside
+    let face = pos2(
+        rect.right() - slant / 2.0 - 4.0,
+        rect.bottom() - rect.height() / 4.0 - 2.0,
     );
-    let bottom = Rect::from_min_max(
-        pos2(rect.left() + RESIZE_CORNER, rect.bottom() - RESIZE_EDGE),
-        pos2(corner.left(), rect.bottom()),
-    );
+    let (corner, right, bottom) = if hex {
+        (
+            Rect::from_center_size(face, vec2(16.0, 16.0)),
+            Rect::from_center_size(
+                pos2(rect.right() - RESIZE_EDGE, rect.center().y),
+                vec2(2.0 * RESIZE_EDGE, 24.0),
+            ),
+            Rect::from_min_max(
+                pos2(
+                    rect.left() + slant + RESIZE_CORNER,
+                    rect.bottom() - RESIZE_EDGE,
+                ),
+                pos2(rect.right() - slant - RESIZE_CORNER, rect.bottom()),
+            ),
+        )
+    } else {
+        let corner = Rect::from_min_max(rect.max - vec2(RESIZE_CORNER, RESIZE_CORNER), rect.max);
+        (
+            corner,
+            Rect::from_min_max(
+                pos2(rect.right() - RESIZE_EDGE, rect.top() + RESIZE_CORNER),
+                pos2(rect.right(), corner.top()),
+            ),
+            Rect::from_min_max(
+                pos2(rect.left() + RESIZE_CORNER, rect.bottom() - RESIZE_EDGE),
+                pos2(corner.left(), rect.bottom()),
+            ),
+        )
+    };
     let handles = [
         (
             right,
@@ -338,17 +467,41 @@ fn resize_handles(ui: &mut Ui, rect: egui::Rect, id: Id) -> Option<egui::Vec2> {
         r.on_hover_cursor(cursor)
             .on_hover_text(format!("Drag to change the window's {what}"));
     }
-    // the grip: two short diagonal strokes in the corner
     let color = if lit {
         ui.visuals().text_color()
     } else {
         ui.visuals().weak_text_color()
     };
     let stroke = egui::Stroke::new(1.0, color);
-    for inset in [4.0, 8.0] {
-        let a = pos2(rect.right() - inset, rect.bottom() - 3.0);
-        let b = pos2(rect.right() - 3.0, rect.bottom() - inset);
-        ui.painter().line_segment([a, b], stroke);
+    if hex {
+        // the grips show while the pointer is over the hexagon: two strokes along the lower right face, a
+        // tick at the right vertex and one on the bottom face
+        if dragged || ui.rect_contains_pointer(rect) {
+            let along = vec2(0.5, -3f32.sqrt() / 2.0);
+            let inward = vec2(-3f32.sqrt() / 2.0, -0.5);
+            let on_face = pos2(
+                rect.right() - slant / 2.0,
+                rect.bottom() - rect.height() / 4.0,
+            );
+            for inset in [4.0, 7.0] {
+                let mid = on_face + inward * inset;
+                ui.painter()
+                    .line_segment([mid - along * 6.0, mid + along * 6.0], stroke);
+            }
+            let vertex = pos2(rect.right() - 6.0, rect.center().y);
+            ui.painter()
+                .line_segment([vertex - vec2(0.0, 5.0), vertex + vec2(0.0, 5.0)], stroke);
+            let foot = pos2(rect.center().x, rect.bottom() - 4.0);
+            ui.painter()
+                .line_segment([foot - vec2(6.0, 0.0), foot + vec2(6.0, 0.0)], stroke);
+        }
+    } else {
+        // the grip: two short diagonal strokes in the corner
+        for inset in [4.0, 8.0] {
+            let a = pos2(rect.right() - inset, rect.bottom() - 3.0);
+            let b = pos2(rect.right() - 3.0, rect.bottom() - inset);
+            ui.painter().line_segment([a, b], stroke);
+        }
     }
     dragged.then(|| (rect.size() + delta).max(RESIZE_LEAST))
 }

@@ -336,6 +336,15 @@ switch (P2605#8oct-1205). ve_settle (SETL-5, SETL-7) later reads the same shapes
   `ve_frame/src/frame.rs`, kittest in `ve_frame/tests/ui.rs`.
   The ☰ has no box of its own: like the ⓘ and the size switch it lights up only under the pointer (user,
   11 Oct 2026).
+  The header is the strongest band (`header_fill`, the title in the text colour); the sides and the footer are
+  a quiet step off the body (`quiet_fill`), in rectangles and hexagons (user, round 3). Unit test
+  `header_is_the_strongest_band` (both themes), kittest `the_header_stands_out_from_sides_and_footer` (reads
+  the rendered pixels).
+  A click on the size switch keeps the switch where it is, so it can be clicked again at once: a floating
+  window takes the size of the next form and moves around the switch (staying on screen; where it can't follow,
+  the pointer is moved with `ViewportCommand::CursorPosition`, which Wayland ignores), and in a grid the
+  enclosing scroll area scrolls back by what the switch moved. kittest `the_size_switch_stays_under_the_pointer`,
+  `the_size_switch_anchor_keeps_the_window_on_screen`, `the_size_switch_stays_put_in_a_scrolled_grid`.
 - ✅ **FRM-2 Sizes**: `SizeMode` (auto / min / nom / wide, the switch cycles them), `Size` (what the body is
   told), `SizeHints { min, nom, wide }` (body sizes; `width_for`, `outer_width` for layouts), `auto_size(prev,
   width, hints)`: the widest that fits, a step up needing `AUTO_HYSTERESIS` (24 pt) to spare. min is exactly
@@ -351,6 +360,14 @@ switch (P2605#8oct-1205). ve_settle (SETL-5, SETL-7) later reads the same shapes
   Each face with items is a panel of its own: the triangle between the face and the body (`hex::band`) has a
   slightly lighter fill and thin rules toward the body. On auto a hexagon is chosen by its whole outline, so
   it never gets wider than the room.
+  Wings, an option per frame, off by default: `.hex_wings(true)` gives the body the two regions between it and
+  the slanted faces. `show_area(ui, &mut state, |ui, area| ..)` hands over a `BodyArea { size, rect, wings }`;
+  each `Wing` has its `polygon`, its `rect`, `span_at(y)` (the usable width of a row), `inscribed()` (the
+  largest upright rectangle) and `contains(p)`. The body's clip rectangle covers the wings; egui clips to
+  rectangles only, so the content keeps inside the outline with those helpers. The face items are not drawn
+  then (same place). Without the option nothing changes. Playground toggle *wings* (a level whose rows follow
+  the left wing, the count in the right one); unit test `wings_narrow_to_the_vertex_and_hold_their_rectangle`,
+  kittest `hexagon_wings_hold_content_when_asked_for`, snapshot `hex_wings`.
 - ✅ **FRM-4 Moves**: `FrameState { size, placement }` (serde) with `Placement { viewport: ViewportSlot,
   floating }`; the menu reports a `FrameAction` (pop out / back into the grid / send to a new or an open OS
   window / send to a machine / close) and `Dock<W>` carries it out: it owns the widgets (`Slot`), `ids(viewport,
@@ -366,6 +383,18 @@ switch (P2605#8oct-1205). ve_settle (SETL-5, SETL-7) later reads the same shapes
   landed (`FrameState::land`, the theme accent, fading over `GLOW_SECS` 0.6 s; nothing when
   `Style::animation_time` is 0, the reduced-motion setting). kittest
   `a_floating_window_resizes_within_its_minimum`, `a_moved_widget_glows_where_it_landed_then_stops`.
+  Round 3 (user, 11 Oct 2026): a floating frame has a size and a place of its own (`FrameState::window_size`,
+  `window_pos`) and never takes "the room given" from the window it defines. Popping out
+  (`FrameState::pluck_out`) opens the window on the rectangle the widget had in the grid and makes it hop for
+  `PLUCK_SECS` 0.3 s (lifted 10 pt and 4 % larger at the top, a transform of the window's layer; with
+  `animation_time` 0 it just sits there). Hexagons resize too: the right vertex changes the width, the bottom
+  face the height, the lower right face both, the faces stay at 60°, the body never goes below `hints.min`, and
+  the grips show while the pointer is over the hexagon; a floating hexagon has a soft shadow. kittest
+  `a_popped_out_widget_opens_where_it_sat`, `a_floating_hexagon_resizes`.
+  🐛 fixed: a popped-out rectangle with sides and no size switch (`medium -----X` and the like, 32 of the 384
+  kinds) grew by the width of its sides every frame until it hit the window's edge: its body took the window's
+  whole width and the sides came on top. kittest `a_floating_window_does_not_grow_by_itself` pops out all 384
+  kinds and compares their sizes after 60 frames.
 - ✅ **FRM-5 Send to another machine**: trait `Remote { machines(), send(machine, Parcel) }` the app implements,
   offered through `Moves::remote` / `Dock::moves(Some(&remote))`; `Dock::send` packs the widget into a `Parcel`
   (title, serialized widget, size switch) and removes it only when the send worked. Without a `Remote` the entry
@@ -377,7 +406,7 @@ switch (P2605#8oct-1205). ve_settle (SETL-5, SETL-7) later reads the same shapes
   options (`tiny LISMFX`); an *Auto room* slider to watch auto step between the sizes, filters, a loopback
   "machine" with *Receive*, and a transport switch that shows the disabled entry. `ve_frame/tests/ui.rs` drives
   it headless (size switch, menu moves, machine, tooltips, sides) and compares four snapshots (`frames_rect`,
-  `frames_hex`, `moved`, `matrix`) with a budget of 40 failing pixels.
+  `frames_hex`, `moved`, `matrix`, later `hex_wings`) with a budget of 40 failing pixels.
   A cell is never wider than its row, so a large *Auto room* can't push a frame past the right edge (bug
   found by the user, 11 Oct 2026; kittest `nothing_goes_past_the_right_edge`).
 - ✅ **FRM-7 Widgets and the shell on the frame**: `Widget` gained `frame_spec() -> FrameSpec { led, about,
@@ -395,9 +424,10 @@ switch (P2605#8oct-1205). ve_settle (SETL-5, SETL-7) later reads the same shapes
   `ve_app/tests/ui.rs`. Not checked on a real second monitor: the tests run with egui's embedded viewports.
 - 📋 **FRM-8 Port tpm_mesh_dash to the frame**: its `Panel`s become `WidgetFrame`s; then `Panel` and `PanelSize`
   go to *Dropped and superseded*.
-- 💡 **FRM-9 Open ends of the frame**: a floating widget opens at a fixed offset, not where it sat in the grid;
-  a hexagon can't `fill`, can't be resized and has no shadow when floating; egui 0.36 has no reduced-motion
-  flag of its own, so the glow follows `animation_time`; a second chrome in the style of `Panel` (title on the
+- 💡 **FRM-9 Open ends of the frame**: a hexagon can't `fill` a tile; egui 0.36 has no reduced-motion flag of
+  its own, so the glow and the hop follow `animation_time`; in a wrapping grid the size switch can still move
+  sideways when its cell changes row (only scrolling keeps it); the pointer fallback at a screen edge was not
+  tried on X11 or Windows, and does nothing on Wayland; a second chrome in the style of `Panel` (title on the
   border line) if the dash wants to keep that look; ve_settle bodies taking `SizeHints` and `Shape` (SETL-4,
   SETL-5, SETL-7).
 

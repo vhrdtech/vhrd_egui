@@ -103,6 +103,103 @@ pub fn band(rect: Rect, face: HexFace) -> [Pos2; 3] {
     [from, to, pos2(inner_x, cy)]
 }
 
+/// One of the two regions of a hexagon beside its body: between the body's side and the two slanted faces that
+/// meet at the left or right vertex. A body that asked for them ([`crate::WidgetFrame::hex_wings`]) lays
+/// content into them; egui clips to rectangles only, so the content keeps inside the outline itself, with
+/// [`Wing::span_at`], [`Wing::inscribed`] and [`Wing::contains`].
+#[derive(Clone, Debug, PartialEq)]
+pub struct Wing {
+    /// The outline, clockwise: a triangle with its tip at the hexagon's vertex, cut off at the header and the
+    /// footer, a few points in from the faces.
+    pub polygon: Vec<Pos2>,
+    /// The rectangle around [`Self::polygon`].
+    pub rect: Rect,
+    tip: Pos2,
+    /// The side toward the body.
+    inner_x: f32,
+    /// How fast the wing narrows: points of width lost per point away from the tip's height.
+    slope: f32,
+}
+
+impl Wing {
+    /// The usable extent in x at height `y`; `None` above or below the wing.
+    pub fn span_at(&self, y: f32) -> Option<Rangef> {
+        if y < self.rect.top() || y > self.rect.bottom() {
+            return None;
+        }
+        let reach = (y - self.tip.y).abs() * self.slope;
+        let (a, b) = if self.tip.x < self.inner_x {
+            (self.tip.x + reach, self.inner_x)
+        } else {
+            (self.inner_x, self.tip.x - reach)
+        };
+        (b > a).then(|| Rangef::new(a, b))
+    }
+
+    /// The largest upright rectangle that fits into the wing, for a label or a small control.
+    pub fn inscribed(&self) -> Rect {
+        let half_x = (self.tip.x + self.inner_x) / 2.0;
+        let dy = if self.slope > 0.0 {
+            (half_x - self.tip.x).abs() / self.slope
+        } else {
+            0.0
+        };
+        let rows = Rangef::new(
+            (self.tip.y - dy).max(self.rect.top()),
+            (self.tip.y + dy).min(self.rect.bottom()),
+        );
+        let cols = Rangef::new(half_x.min(self.inner_x), half_x.max(self.inner_x));
+        Rect::from_x_y_ranges(cols, rows)
+    }
+
+    /// Whether `p` lies in the wing.
+    pub fn contains(&self, p: Pos2) -> bool {
+        self.span_at(p.y).is_some_and(|span| span.contains(p.x))
+    }
+}
+
+/// Distance of a wing from the slanted faces.
+const WING_MARGIN: f32 = 5.0;
+
+/// The left and the right wing of the hexagon in `rect`, between the heights `top` and `bottom` (under the
+/// header, above the footer); `body` is the column the body takes.
+pub fn wings(rect: Rect, top: f32, bottom: f32, body: Rangef) -> [Wing; 2] {
+    let half = rect.height() / 2.0;
+    let slope = if half > 0.0 {
+        slant(rect.height()) / half
+    } else {
+        0.0
+    };
+    let cy = rect.center().y;
+    let make = |tip_x: f32, inner_x: f32| {
+        let dir = (inner_x - tip_x).signum();
+        let edge = |y: f32| tip_x + dir * (y - cy).abs() * slope;
+        let tip = pos2(tip_x, cy);
+        let mut polygon = vec![
+            pos2(edge(top), top),
+            pos2(inner_x, top),
+            pos2(inner_x, bottom),
+            pos2(edge(bottom), bottom),
+            tip,
+        ];
+        if dir < 0.0 {
+            polygon.reverse();
+        }
+        let rect = Rect::from_points(&polygon);
+        Wing {
+            polygon,
+            rect,
+            tip,
+            inner_x,
+            slope,
+        }
+    };
+    [
+        make(rect.left() + WING_MARGIN, body.min),
+        make(rect.right() - WING_MARGIN, body.max),
+    ]
+}
+
 /// The two ends of `face`, ordered so that text along it reads left to right.
 fn ends(rect: Rect, face: HexFace) -> (Pos2, Pos2) {
     let [tl, tr, r, br, bl, l] = points(rect);
@@ -237,6 +334,36 @@ mod tests {
         assert!((top.min - s).abs() < 1e-3 && (top.max - (300.0 - s)).abs() < 1e-3);
         let quarter = span_at(rect, 90.0);
         assert!((quarter.min - s / 2.0).abs() < 1e-3);
+    }
+
+    #[test]
+    fn wings_narrow_to_the_vertex_and_hold_their_rectangle() {
+        let rect = Rect::from_min_size(pos2(0.0, 0.0), vec2(300.0, 160.0));
+        let s = slant(160.0);
+        let [left, right] = wings(rect, 26.0, 136.0, Rangef::new(s, 300.0 - s));
+        for wing in [&left, &right] {
+            assert_eq!(wing.polygon.len(), 5);
+            assert!(wing.span_at(10.0).is_none() && wing.span_at(150.0).is_none());
+            let mid = wing.span_at(80.0).expect("widest at the vertex").span();
+            let high = wing.span_at(40.0).expect("inside").span();
+            assert!(mid > high && high > 0.0, "{mid} {high}");
+            let inner = wing.inscribed();
+            assert!(inner.width() > 10.0 && inner.height() > 20.0, "{inner:?}");
+            for corner in [
+                inner.left_top(),
+                inner.right_top(),
+                inner.left_bottom(),
+                inner.right_bottom(),
+            ] {
+                assert!(wing.contains(corner), "{corner:?} in {:?}", wing.polygon);
+            }
+            // inside the hexagon: never past the slanted faces
+            for p in &wing.polygon {
+                assert!(span_at(rect, p.y).contains(p.x), "{p:?}");
+            }
+        }
+        assert!(left.rect.right() <= s + 0.01 && right.rect.left() >= 300.0 - s - 0.01);
+        assert!(!left.contains(pos2(150.0, 80.0)));
     }
 
     #[test]
