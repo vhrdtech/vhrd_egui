@@ -2,12 +2,31 @@ pub mod context;
 pub mod util;
 
 pub use erased_serde;
+pub use ve_frame;
 pub use ve_macro::svt;
 
 use egui::{Id, Ui, WidgetText};
 use erased_serde::{Deserializer, Serialize};
 
+use ve_frame::{Size, SizeHints, Status};
+
 use crate::context::Context;
+
+/// What the frame around a widget shows beside its title ([`Widget::frame_spec`]): everything is optional, and
+/// a part that is not given is not drawn. The frame is `ve_frame::WidgetFrame`; the host (`ve_app::Shell`)
+/// builds it and adds the menu.
+#[derive(Clone, Debug, Default, PartialEq)]
+pub struct FrameSpec {
+    /// The LED left of the title and its state in words (the LED's tooltip).
+    pub led: Option<(Status, String)>,
+    /// What the widget is, in a sentence: the first part of the ⓘ tooltip.
+    pub about: String,
+    /// The widget's own stats in the ⓘ tooltip, as label and value rows ("samples", "1204").
+    pub stats: Vec<(String, String)>,
+    /// The sizes the widget offers; turns the size switch on and makes [`Widget::ui_sized`] worth
+    /// implementing.
+    pub sizes: Option<SizeHints>,
+}
 
 #[typetag::serde(tag = "type")]
 pub trait Widget {
@@ -26,6 +45,20 @@ pub trait Widget {
 
     /// Render the widget's UI.
     fn ui(&mut self, ui: &mut Ui, cx: &Context, id: Id);
+
+    /// Render the widget's UI arranged for `size`: min (exactly [`FrameSpec::sizes`]' `min`), nom or wide.
+    /// Hosts call this one; by default it ignores the size and calls [`Self::ui`]. Implement it together with
+    /// [`FrameSpec::sizes`].
+    fn ui_sized(&mut self, ui: &mut Ui, cx: &Context, id: Id, size: Size) {
+        let _ = size;
+        self.ui(ui, cx, id);
+    }
+
+    /// What the frame around the widget shows: LED, ⓘ text and stats, sizes. Asked every frame; nothing by
+    /// default.
+    fn frame_spec(&self) -> FrameSpec {
+        FrameSpec::default()
+    }
 
     /// Return whether tile or window containing this widget is currently closeable.
     fn is_closeable(&self) -> bool {

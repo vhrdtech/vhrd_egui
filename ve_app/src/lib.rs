@@ -24,6 +24,10 @@
 //!   [`ShellOptions::settings`]), Debug (tile tree, tab bar settings, egui inspection).
 //! - Quit (WID-9): when a widget says it is not closeable ([`Widget::is_closeable`]), quitting asks first and
 //!   names the busy widgets.
+//! - Frames (FRM-7): every widget sits in a `ve_frame::WidgetFrame`. Its ☰ menu pops the widget out as a
+//!   floating window and back into the tiles, sends it to another OS window (which has tiles of its own), or to
+//!   another machine when the app gives a transport ([`ShellOptions::remote`], [`Shell::receive`]). What
+//!   [`Widget::frame_spec`] returns adds an LED, an ⓘ and the size switch.
 //! - [`Repainter`]: a cheap handle background tasks use to wake the UI.
 //! - [`prelude`]: what a widget implementation needs in one `use`.
 //!
@@ -44,12 +48,13 @@ pub use widget_menu::registered_widgets;
 
 use egui::{CentralPanel, MenuBar, Panel, Ui};
 use ve_basics::BuildInfo;
+use ve_frame::{Applied, FrameAction, FrameState, Parcel, Remote, SlotId, ViewportSlot};
 use ve_widget::Widget;
 use ve_widget::context::Context;
 
 use crate::close_dialog::CloseDialog;
 use crate::state::State;
-use crate::tiles::Behavior;
+use crate::tiles::{Behavior, Pass};
 
 /// Draws a part of the shell the app fills in (side panel, app settings).
 pub type UiFn = Box<dyn FnMut(&mut Ui, &Context)>;
@@ -75,6 +80,9 @@ pub struct ShellOptions {
     pub side_panel: Option<UiFn>,
     /// The app's part of the Settings window, below the theme switch.
     pub settings: Option<UiFn>,
+    /// The app's transport to other machines: with it the widgets' menus offer *Send to another machine*;
+    /// without it the entry is disabled and says why. The receiving side calls [`Shell::receive`].
+    pub remote: Option<Box<dyn Remote>>,
 }
 
 impl ShellOptions {
@@ -90,6 +98,7 @@ impl ShellOptions {
             widget_filter: |_| true,
             side_panel: None,
             settings: None,
+            remote: None,
         }
     }
 
@@ -134,6 +143,12 @@ impl ShellOptions {
         self.settings = Some(Box::new(ui));
         self
     }
+
+    /// See [`Self::remote`].
+    pub fn remote(mut self, remote: impl Remote + 'static) -> Self {
+        self.remote = Some(Box::new(remote));
+        self
+    }
 }
 
 /// The app shell. Implements [`eframe::App`]; apps with more around it call [`Shell::ui`] themselves.
@@ -144,6 +159,8 @@ pub struct Shell {
     behavior: Behavior,
     close: CloseDialog,
     repainter: Repainter,
+    /// How the last send to another machine went, for the status bar.
+    notice: String,
 }
 
 impl Shell {
@@ -160,6 +177,7 @@ impl Shell {
             state,
             close: CloseDialog::default(),
             repainter: Repainter::new(cc.egui_ctx.clone()),
+            notice: String::new(),
         };
         shell.init_widgets();
         shell
@@ -178,23 +196,38 @@ impl Shell {
     /// Open `widget` as a new tab next to the others and make it the active one; calls [`Widget::init`].
     pub fn open_widget(&mut self, mut widget: Box<dyn Widget>) {
         widget.init(&self.cx);
-        tiles::open(&mut self.state.tree, widget, None);
+        let id = self.state.widgets.add(widget);
+        tiles::open(&mut self.state.tree, id, None);
     }
 
-    /// Every open widget, in no particular order.
+    /// Open a widget that another machine sent ([`ShellOptions::remote`] on that side): it is rebuilt from
+    /// what was saved of it, [`Widget::init`] runs, and it shows up as a new tab with its size switch as it
+    /// was. `Err` when this build doesn't know the widget type or can't read it.
+    pub fn receive(&mut self, parcel: Parcel) -> Result<(), String> {
+        let mut widget: Box<dyn Widget> = serde_json::from_str(&parcel.widget)
+            .map_err(|e| format!("{}: unreadable widget, {e}", parcel.title))?;
+        widget.init(&self.cx);
+        self.state
+            .widgets
+            .add_with(widget, FrameState::sized(parcel.size));
+        Ok(())
+    }
+
+    /// Every open widget, in the order they were opened: tiles, floating windows and other OS windows alike.
     pub fn widgets(&self) -> impl Iterator<Item = &dyn Widget> {
-        self.state.tree.tiles.tiles().filter_map(|t| match t {
-            egui_tiles::Tile::Pane(w) => Some(w.as_ref()),
-            egui_tiles::Tile::Container(_) => None,
-        })
+        self.state.widgets.iter().map(|s| s.widget.as_ref())
     }
 
-    /// Draw the whole shell into the root `ui`: menu bar, status bar, side panel, windows, tiles, quit dialog.
+    /// Where each open widget sits and what its size switch is set to, in the order of [`Self::widgets`].
+    pub fn frames(&self) -> impl Iterator<Item = &FrameState> {
+        self.state.widgets.iter().map(|s| &s.frame)
+    }
+
+    /// Draw the whole shell into the root `ui`: menu bar, status bar, side panel, windows, tiles, floating
+    /// widgets, the other OS windows, quit dialog.
     pub fn ui(&mut self, ui: &mut Ui) {
-        for (_, tile) in self.state.tree.tiles.iter_mut() {
-            if let egui_tiles::Tile::Pane(w) = tile {
-                w.logic(&self.cx);
-            }
+        for slot in self.state.widgets.iter_mut() {
+            slot.widget.logic(&self.cx);
         }
 
         Panel::top("ve_app_menu_bar").show(ui, |ui| {
@@ -217,33 +250,118 @@ impl Shell {
             &self.cx,
         );
 
+        let moves = self.state.widgets.moves(self.options.remote.as_deref());
+        let mut picked = Vec::new();
+        let State {
+            widgets,
+            tree,
+            extra,
+            ..
+        } = &mut self.state;
+        let (behavior, cx) = (&mut self.behavior, &self.cx);
+        tiles::sync(tree, widgets, ViewportSlot::MAIN);
         CentralPanel::default().show(ui, |ui| {
-            if self.state.tree.is_empty() {
+            if tree.is_empty() {
                 empty_hint(ui);
             } else {
-                self.state.tree.ui(&mut self.behavior, ui);
+                let mut pass = Pass {
+                    behavior: &mut *behavior,
+                    widgets: &mut *widgets,
+                    moves: &moves,
+                    picked: &mut picked,
+                    viewport: ViewportSlot::MAIN,
+                };
+                tree.ui(&mut pass, ui);
             }
+            let floating = widgets.show_windows(ui, ViewportSlot::MAIN, |ui, slot| {
+                tiles::framed(ui, slot, cx, &moves, false)
+            });
+            picked.extend(floating);
         });
-        if let Some((info, parent)) = self.behavior.open_request.take() {
+
+        // The other OS windows: each has tiles of its own and lives while a widget is in it.
+        let open = widgets.viewports();
+        extra.retain(|n, _| open.contains(&ViewportSlot(*n)));
+        widgets.show_viewports(ui.ctx(), &self.options.app_name, |widgets, ui, viewport| {
+            let tree = extra
+                .entry(viewport.0)
+                .or_insert_with(|| egui_tiles::Tree::empty(format!("ve_app_tiles_{}", viewport.0)));
+            tiles::sync(tree, widgets, viewport);
+            if !tree.is_empty() {
+                let mut pass = Pass {
+                    behavior: &mut *behavior,
+                    widgets: &mut *widgets,
+                    moves: &moves,
+                    picked: &mut picked,
+                    viewport,
+                };
+                tree.ui(&mut pass, ui);
+            }
+            let floating = widgets.show_windows(ui, viewport, |ui, slot| {
+                tiles::framed(ui, slot, cx, &moves, false)
+            });
+            picked.extend(floating);
+        });
+
+        for (id, action) in picked {
+            self.apply(id, action);
+        }
+        if let Some((info, parent, viewport)) = self.behavior.open_request.take() {
             let mut widget = (info.spawn_fn)();
             widget.init(&self.cx);
-            tiles::open(&mut self.state.tree, widget, parent);
+            let mut frame = FrameState::default();
+            frame.placement.viewport = viewport;
+            let id = self.state.widgets.add_with(widget, frame);
+            let tree = match viewport.is_main() {
+                true => Some(&mut self.state.tree),
+                false => self.state.extra.get_mut(&viewport.0),
+            };
+            if let Some(tree) = tree {
+                tiles::open(tree, id, parent);
+            }
         }
 
         let busy = busy_widgets(&self.state);
         self.close.ui(ui.ctx(), &self.options.app_name, busy);
     }
 
-    fn init_widgets(&mut self) {
-        for (_, tile) in self.state.tree.tiles.iter_mut() {
-            if let egui_tiles::Tile::Pane(w) = tile {
-                w.init(&self.cx);
+    /// Carry out what a widget's menu picked.
+    fn apply(&mut self, id: SlotId, action: FrameAction) {
+        match self.state.widgets.apply(id, action) {
+            Applied::Moved | Applied::Gone => {}
+            Applied::Close => {
+                let closeable = self.state.widgets.get(id).map(|s| s.widget.is_closeable());
+                if closeable == Some(true) {
+                    self.state.widgets.remove(id);
+                }
+            }
+            Applied::Send(machine) => {
+                let Some(remote) = self.options.remote.as_deref_mut() else {
+                    return;
+                };
+                let sent = self.state.widgets.send(id, &machine, remote, |w| {
+                    let json = serde_json::to_string(w).map_err(|e| e.to_string())?;
+                    Ok((w.widget_text().text().to_owned(), json))
+                });
+                self.notice = match sent {
+                    Ok(()) => format!("Widget sent to {machine}"),
+                    Err(e) => format!("Widget not sent to {machine}: {e}"),
+                };
             }
         }
     }
 
+    fn init_widgets(&mut self) {
+        for slot in self.state.widgets.iter_mut() {
+            slot.widget.init(&self.cx);
+        }
+    }
+
     fn reset_layout(&mut self) {
-        self.state.tree = state::default_tree(&self.options);
+        let (widgets, tree) = state::default_layout(&self.options);
+        self.state.widgets = widgets;
+        self.state.tree = tree;
+        self.state.extra.clear();
         self.init_widgets();
     }
 
@@ -274,7 +392,7 @@ impl Shell {
         ui.menu_button("View", |ui| {
             ui.menu_button("Open widget", |ui| {
                 if let Some(info) = widget_menu::ui(ui, self.options.widget_filter) {
-                    self.behavior.open_request = Some((info, None));
+                    self.behavior.open_request = Some((info, None, ViewportSlot::MAIN));
                 }
             })
             .response
@@ -336,6 +454,11 @@ impl Shell {
         ui.horizontal(|ui| {
             ui.label(&self.options.app_name)
                 .on_hover_text(&self.options.description);
+            if !self.notice.is_empty() {
+                ui.separator();
+                ui.weak(&self.notice)
+                    .on_hover_text("How the last send of a widget to another machine went");
+            }
             ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                 let r = ve_basics::build_info_label(ui, &self.options.build_info);
                 ve_basics::hover_link(ui, "ve_app::build_info", &r);
@@ -367,15 +490,10 @@ impl eframe::App for Shell {
 /// Titles of the open widgets that say they must not be closed now.
 fn busy_widgets(state: &State) -> Vec<String> {
     state
-        .tree
-        .tiles
-        .tiles()
-        .filter_map(|t| match t {
-            egui_tiles::Tile::Pane(w) if !w.is_closeable() => {
-                Some(w.widget_text().text().to_owned())
-            }
-            _ => None,
-        })
+        .widgets
+        .iter()
+        .filter(|s| !s.widget.is_closeable())
+        .map(|s| s.widget.widget_text().text().to_owned())
         .collect()
 }
 

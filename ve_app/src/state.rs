@@ -1,6 +1,10 @@
-//! What the shell persists: the tile tree, the side panel and which windows are open.
+//! What the shell persists: the widgets with their frame state, the tile trees, the side panel and which
+//! windows are open.
+
+use std::collections::BTreeMap;
 
 use serde::{Deserialize, Serialize};
+use ve_frame::{Dock, SlotId};
 use ve_widget::Widget;
 
 use crate::ShellOptions;
@@ -10,15 +14,25 @@ use crate::ShellOptions;
 const KEY: &str = "ve_app_shell";
 
 /// Bump when [`State`] changes shape in a way old saves can't be read into.
-const SHELL_VERSION: u32 = 1;
+/// 2: widgets live in a dock with their frame state, the trees name them (FRM-7).
+const SHELL_VERSION: u32 = 2;
 
-pub(crate) type Tree = egui_tiles::Tree<Box<dyn Widget>>;
+/// A tile tree; its panes name widgets of [`State::widgets`].
+pub(crate) type Tree = egui_tiles::Tree<SlotId>;
+
+/// Every open widget with its frame state (size switch, placement).
+pub(crate) type Widgets = Dock<Box<dyn Widget>>;
 
 #[derive(Serialize, Deserialize)]
 pub(crate) struct State {
     /// `SHELL_VERSION` and the app's `layout_version` this was saved with.
     pub(crate) version: (u32, u32),
+    pub(crate) widgets: Widgets,
+    /// The tiles of the main window.
     pub(crate) tree: Tree,
+    /// The tiles of each extra OS window, by its `ViewportSlot` number.
+    #[serde(default)]
+    pub(crate) extra: BTreeMap<u32, Tree>,
     #[serde(default)]
     pub(crate) side_panel_open: bool,
     #[serde(default)]
@@ -36,9 +50,12 @@ pub(crate) struct OpenWindows {
 
 impl State {
     pub(crate) fn new(options: &ShellOptions) -> Self {
+        let (widgets, tree) = default_layout(options);
         Self {
             version: (SHELL_VERSION, options.layout_version),
-            tree: default_tree(options),
+            widgets,
+            tree,
+            extra: BTreeMap::new(),
             side_panel_open: options.side_panel.is_some(),
             windows: OpenWindows::default(),
         }
@@ -83,7 +100,12 @@ impl State {
     }
 }
 
-/// A tree with the app's default widgets as tabs (or an empty one).
-pub(crate) fn default_tree(options: &ShellOptions) -> Tree {
-    egui_tiles::Tree::new_tabs("ve_app_tiles", (options.default_widgets)())
+/// The app's default widgets as tabs of the main window (or nothing).
+pub(crate) fn default_layout(options: &ShellOptions) -> (Widgets, Tree) {
+    let mut widgets = Dock::new();
+    let ids = (options.default_widgets)()
+        .into_iter()
+        .map(|w| widgets.add(w))
+        .collect();
+    (widgets, egui_tiles::Tree::new_tabs("ve_app_tiles", ids))
 }

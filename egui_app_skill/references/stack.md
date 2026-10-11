@@ -6,7 +6,7 @@ alone; bumping the pin is a vhrd_egui change that says which apps then need port
 
 | Repo | Role | egui |
 |---|---|---|
-| vhrd_egui | the platform: ve_basics, ve_theme, ve_dash, ve_widget, ve_app, ve_template | 0.36 (pin) |
+| vhrd_egui | the platform: ve_basics, ve_theme, ve_dash, ve_frame, ve_widget, ve_app, ve_template | 0.36 (pin) |
 | egui_tabular | table widget (crates.io 0.2) | 0.36 |
 | eventfull | timeline widget | 0.36 (port P2605#1) |
 | mx3 | app | 0.36 |

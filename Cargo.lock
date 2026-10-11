@@ -3645,6 +3645,7 @@ dependencies = [
  "serde_json",
  "typetag",
  "ve_basics",
+ "ve_frame",
  "ve_theme",
  "ve_widget",
 ]
@@ -3746,6 +3747,7 @@ dependencies = [
  "inventory",
  "tokio",
  "typetag",
+ "ve_frame",
  "ve_macro",
 ]
 

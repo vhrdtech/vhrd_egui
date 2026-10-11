@@ -56,6 +56,18 @@ versions follow [Semantic Versioning](https://semver.org/). Feature IDs refer to
 - ve_frame: `cargo run -p ve_frame --example playground`, the matrix of every option combination in three widget
   sizes, with a loopback machine; headless tests and snapshots (FRM-6).
 
+- ve_widget: `Widget::frame_spec` (`FrameSpec`: LED, ⓘ text and stats, sizes) and `Widget::ui_sized`, both with
+  defaults; `ve_widget::ve_frame` re-export (FRM-7).
+- ve_app: every widget sits in a `ve_frame::WidgetFrame`; its ☰ menu pops it out as a floating window and back
+  into the tiles, sends it to another OS window with tiles of its own, closes it, or sends it to another machine
+  (`ShellOptions::remote`, `Shell::receive`); `Shell::frames`; the prelude exports `FrameSpec`, `Size`,
+  `SizeHints`, `Status` (FRM-7, WID-10).
+
+### Changed
+
+- ve_app: saved layouts from before this version are dropped once (shell state version 2: widgets are kept with
+  their frame state, tiles name them). The pane of a tile now starts with the frame's header row (FRM-7).
+
 ### Fixed
 
 - ve_dash: the three UI snapshots are compared with a budget of 20 failing pixels, so `cargo test -p ve_dash`

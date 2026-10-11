@@ -99,6 +99,7 @@ pub struct WidgetFrame<'a> {
     hex_sides: Vec<(HexFace, Vec<SideItem>)>,
     fill: bool,
     bare: bool,
+    title_shown: bool,
 }
 
 impl<'a> WidgetFrame<'a> {
@@ -120,6 +121,7 @@ impl<'a> WidgetFrame<'a> {
             hex_sides: Vec::new(),
             fill: false,
             bare: false,
+            title_shown: true,
         }
     }
 
@@ -207,6 +209,13 @@ impl<'a> WidgetFrame<'a> {
     /// No background and border of its own, for a place that has them already (a tile).
     pub fn bare(mut self, bare: bool) -> Self {
         self.bare = bare;
+        self
+    }
+
+    /// Leave the title out of the header, for a place that shows it already (a tab). The title still names
+    /// the frame in the ⓘ tooltip.
+    pub fn title_shown(mut self, shown: bool) -> Self {
+        self.title_shown = shown;
         self
     }
 
@@ -454,6 +463,7 @@ impl<'a> WidgetFrame<'a> {
             .layout_no_wrap(self.title.clone(), title_font(), theme.title)
             .size()
             .x;
+        let title = if self.title_shown { title } else { 0.0 };
         let mut width = 2.0 * PAD + title.min(TITLE_KEEP) + 2.0;
         if self.led.is_some() {
             width += LED + GAP;
@@ -501,6 +511,7 @@ impl<'a> WidgetFrame<'a> {
             r.on_hover_text(why);
         }
         let title = self.title;
+        let title_shown = self.title_shown;
         let (about, info, sizes, moves, extra) =
             (self.about, self.info, self.sizes, self.moves, self.menu);
         h.with_layout(Layout::right_to_left(Align::Center), |h| {
@@ -558,6 +569,9 @@ impl<'a> WidgetFrame<'a> {
                 });
             }
             h.with_layout(Layout::left_to_right(Align::Center), |h| {
+                if !title_shown {
+                    return;
+                }
                 h.add(
                     Label::new(
                         RichText::new(&title)

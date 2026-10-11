@@ -2,13 +2,13 @@
 
 use egui::{Ui, Window};
 use egui_tiles::Behavior as _;
+use ve_frame::{SlotId, ViewportSlot};
 use ve_theme::UiExt as _;
-use ve_widget::Widget;
 use ve_widget::context::Context;
 
 use crate::ShellOptions;
-use crate::state::State;
-use crate::tiles::Behavior;
+use crate::state::{State, Widgets};
+use crate::tiles::{Behavior, Pass};
 
 /// Draw whichever windows are open.
 pub(crate) fn show(
@@ -33,7 +33,9 @@ pub(crate) fn show(
         .open(&mut open.debug)
         .collapsible(true)
         .scroll([true, true])
-        .show(ctx, |ui| debug(ui, &mut state.tree, behavior));
+        .show(ctx, |ui| {
+            debug(ui, &mut state.tree, &mut state.widgets, behavior)
+        });
 }
 
 fn about(ui: &mut Ui, options: &ShellOptions) {
@@ -72,17 +74,31 @@ fn settings(ui: &mut Ui, options: &mut ShellOptions, cx: &Context) {
     }
 }
 
-fn debug(ui: &mut Ui, tree: &mut crate::state::Tree, behavior: &mut Behavior) {
+fn debug(
+    ui: &mut Ui,
+    tree: &mut crate::state::Tree,
+    widgets: &mut Widgets,
+    behavior: &mut Behavior,
+) {
     ui.collapsing("Tab bars", |ui| behavior.settings_ui(ui));
+    // Only the titles are asked of this pass; nothing is drawn or picked through it.
+    let (moves, mut picked) = (ve_frame::Moves::default(), Vec::new());
+    let mut pass = Pass {
+        behavior,
+        widgets,
+        moves: &moves,
+        picked: &mut picked,
+        viewport: ViewportSlot::MAIN,
+    };
     ui.collapsing("Active tiles", |ui| {
         for tile_id in tree.active_tiles() {
-            let name = behavior.tab_title_for_tile(&tree.tiles, tile_id);
+            let name = pass.tab_title_for_tile(&tree.tiles, tile_id);
             ui.label(format!("{} - {tile_id:?}", name.text()));
         }
     });
     ui.collapsing("Tile tree", |ui| {
         if let Some(root) = tree.root() {
-            tree_ui(ui, behavior, &mut tree.tiles, root);
+            tree_ui(ui, &mut pass, &mut tree.tiles, root);
         }
     });
     ui.collapsing("egui", |ui| ui.ctx().clone().inspection_ui(ui));
@@ -91,8 +107,8 @@ fn debug(ui: &mut Ui, tree: &mut crate::state::Tree, behavior: &mut Behavior) {
 /// One tile with its visibility and container kind, then its children.
 fn tree_ui(
     ui: &mut Ui,
-    behavior: &mut Behavior,
-    tiles: &mut egui_tiles::Tiles<Box<dyn Widget>>,
+    behavior: &mut Pass<'_>,
+    tiles: &mut egui_tiles::Tiles<SlotId>,
     tile_id: egui_tiles::TileId,
 ) {
     // The title before the tile is taken out below.

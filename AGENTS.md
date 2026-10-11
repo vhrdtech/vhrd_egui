@@ -44,7 +44,8 @@ The tpm repo's `/sync-repos` reads this file to log progress, so a missing entry
 Cargo workspace, edition 2024, one shared version (`[workspace.package]`).
 
 - `ve_widget/` — the `Widget` trait (serializable with `typetag`, registered with `inventory` through
-  `WidgetInfo`), `Context` (shared user state behind a tokio `RwLock`).
+  `WidgetInfo`; `frame_spec` and `ui_sized` for the frame around it), `Context` (shared user state behind a
+  tokio `RwLock`).
 - `ve_macro/` — proc macros for widget implementations (`svt!` destructures `self` into seed / visual /
   transient).
 - `ve_theme/` — the design system: brand `Tokens` (colors, spacing, radii, strokes, shadows, type scale) applied
@@ -112,6 +113,10 @@ reads before writing UI is `egui_app_skill/references/ui-guide.md`, kept in step
   orange or red-ish brown hues (OKLCH 5°-85°, `ve_theme::hue::ALERT_HUES`); those are reserved for error and
   warning (`crit`, `warn`, `red`). Colours that share a view must be clearly distinct (OKLab ΔE, hue gap), and a
   unit test says so (`hue::is_alert_hue`, `hue::delta_e`, `hue::hue_gap`) in both themes (user, 9 Oct 2026).
+- **Every widget sits in the frame** (`ve_frame::WidgetFrame`, FRM-1 frame): no home-made title bars, panel
+  borders or size toggles in app code. What a widget has to say goes into the frame's parts: its state on the
+  LED, what it is and its stats in the ⓘ, its smallest fixed form and its normal and wide arrangements as
+  sizes, extra controls on the sides or in the footer. Widgets hosted by `ve_app` return a `FrameSpec`.
 - **Reusable UI lands here, not in the app**: a widget, layout helper or fix that another app could use goes into
   vhrd_egui (ve_dash, ve_basics, ve_theme) with a doc example, and the app just calls it.
 

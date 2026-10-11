@@ -31,11 +31,11 @@ in tpm (P2605). Statuses were checked against the code.
 
 | Crate | Role |
 |---|---|
-| `ve_widget` | `Widget` trait, `WidgetInfo` registry, shared `Context`. |
+| `ve_widget` | `Widget` trait (with its frame hooks), `WidgetInfo` registry, shared `Context`. |
 | `ve_macro` | Proc macros for widget implementations (`svt!`). |
 | `ve_basics` | Small basics every app wants: build info, label selectability, hover cross-reference highlight. |
 | `ve_theme` | The design system: brand tokens, dark and light egui styles, fonts and type scale, `UiExt` helpers, gallery. |
-| `ve_app` | The application shell: menu bar, tiles of widgets, About / Settings / Debug windows, persisted layout, quit dialog. |
+| `ve_app` | The application shell: menu bar, tiles of framed widgets that can float or move to other OS windows, About / Settings / Debug windows, persisted layout, quit dialog. |
 | `ve_dash` | btop-style dashboard building blocks: theme, sparkline, meter, status light, stat tile, titled panel. |
 | `ve_backdrop` | Animated app background: a grid of dots or squares reacting to the pointer and to widget frames; wgpu shader with a CPU-painted fallback. |
 | `ve_frame` | The frame every widget sits in: header (LED, title, ⓘ, size switch, menu), footer, sides, hexagon shape, moves between grid, window, OS window and machine. |
@@ -78,7 +78,8 @@ in tpm (P2605). Statuses were checked against the code.
 
 - ✅ **WID-1 `Widget` trait**: `init` (rebuild transient state after load), `base_title` / `widget_text`, `ui`,
   `is_closeable`, `logic` (runs before `ui` and on repaint while hidden), `seed` / `set_seed`. Serialized through
-  `typetag` (`#[typetag::serde(tag = "type")]`). `ve_widget/src/lib.rs`.
+  `typetag` (`#[typetag::serde(tag = "type")]`). `ve_widget/src/lib.rs`. Since FRM-7 also `frame_spec` (LED,
+  ⓘ, sizes for the frame around it) and `ui_sized` (the body arranged for min / nom / wide), with defaults.
 - ✅ **WID-2 Widget registry**: `WidgetInfo` (title, group path for menus, tags, `spawn_fn`) collected with
   `inventory`. `ve_widget/src/lib.rs`.
 - ✅ **WID-3 Hosting widgets in tiles**: `ve_app::Shell` shows widgets as egui_tiles panes (tabs, splits,
@@ -87,7 +88,8 @@ in tpm (P2605). Statuses were checked against the code.
   (e.g. by tags), calls `logic` on every widget each frame and saves / restores the layout through eframe
   storage (JSON), dropping saves that no longer deserialize or carry another `layout_version`. Ported from
   eframe_template (`src/main_window`, `src/tabs`). `ve_app/src/tiles.rs`, `ve_app/src/widget_menu.rs`,
-  `ve_app/src/state.rs`, kittest in `ve_app/tests/ui.rs`. Widgets in floating windows: WID-10.
+  `ve_app/src/state.rs`, kittest in `ve_app/tests/ui.rs`. Since FRM-7 each pane sits in a `ve_frame::WidgetFrame`
+  and can leave the tiles (floating window, other OS window).
 - ✅ **WID-4 Shared context**: `Context` holds app state as `Arc<RwLock<Box<dyn Any>>>`. `ve_widget/src/context.rs`.
 - ✅ **WID-5 `svt!` macro**: destructures `self` into `seed: s`, `visual: v`, `transient` and returns early when
   `transient` is `None`. Kept (decided 8 Oct 2026): the shell persists exactly the seed / visual split and
@@ -111,8 +113,8 @@ in tpm (P2605). Statuses were checked against the code.
   open widget's `is_closeable()` is false; then a modal names the busy widgets with *Cancel* / *Quit anyway*
   (Esc cancels). Busy widgets' tabs have no close button. `ve_app/src/close_dialog.rs`, kittest in
   `ve_app/tests/ui.rs`.
-- 💡 **WID-10 Widgets in floating windows**: open a registered widget in an egui `Window` instead of a tile
-  (and move it between the two), persisted with the layout. eframe_template didn't have it either.
+- ✅ **WID-10 Widgets in floating windows**: a widget's ☰ menu moves it between its tile and a floating egui
+  `Window` (and other OS windows), persisted with the layout. Done as part of the widget frame: FRM-4, FRM-7.
 
 ## Dashboard building blocks (`DASH`)
 
@@ -133,6 +135,7 @@ chart must carry a direct text label (they all do); status colors always ship wi
 - ✅ **DASH-4 Meter**: segmented block meter, heat gradient by position or fixed color, optional value text.
   `ve_dash/src/meter.rs`.
 - ✅ **DASH-5 Status light**: glowing dot + label (`Status`: good / warn / crit / off). `ve_dash/src/status.rs`.
+  The LED of a widget frame is this dot (FRM-1).
 - ✅ **DASH-6 Stat tile**: small label over big monospace value with unit. `ve_dash/src/stat.rs`.
 - ✅ **DASH-7 Titled panel**: rounded border with the title set into the top border line. `ve_dash/src/panel.rs`.
 - 💡 **DASH-8 More blocks as demand appears**: braille-density graph, arc gauge, mini table, log tail view;
@@ -179,7 +182,8 @@ Small helpers every app uses, crate `ve_basics`. UI rules that go with them: AGE
   left, at the right an ⓘ (`.info(|ui| ..)` fills its tooltip) and the auto / compact / wide size switch
   (`.size_switch(key)`, read with `PanelSize::of(ctx, key)`; the layout decides what it means: auto leaves it to the
   layout, compact one narrow column, wide the whole row), so neither takes a row of its own. `panel()` is a `Panel`
-  without controls. `ve_dash/src/panel.rs`, kittest in `ve_dash/tests/ui.rs`.
+  without controls. `ve_dash/src/panel.rs`, kittest in `ve_dash/tests/ui.rs`. New code uses `ve_frame::WidgetFrame`
+  (FRM-1, FRM-2); `Panel` stays, unchanged, until tpm_mesh_dash is ported (FRM-8).
 - ✅ **DASH-18 Sparkline colour by value**: `Sparkline::color_by(|v| colour)` — the line, its fill and the hover dot
   change colour smoothly along the line with the value (a colour table sampled over the range, a path stroke
   coloured by height), so any chart can show green→red or any ramp. `ve_dash/src/sparkline.rs`, snapshot
@@ -318,7 +322,8 @@ switch (P2605#8oct-1205). ve_settle (SETL-5, SETL-7) later reads the same shapes
   and its ⓘ and size chip with `info_icon` / `ActionChip`; `SizeMode: From<PanelSize>` (compact = min) lets a
   dash move over panel by panel. `Widget` gains frame hooks with defaults (`frame_spec`, `ui_sized`), so
   existing widgets compile unchanged, and `ve_app` puts every pane into the frame: WID-10 becomes the frame's
-  pop-out. Porting tpm_mesh_dash is its own step (FRM-8), after the user has seen the playground.
+  pop-out. (As built, the stats are rows in `FrameSpec::stats` rather than a closure: the ⓘ closure would
+  borrow the widget while its body is drawn.) Porting tpm_mesh_dash is its own step (FRM-8), after the user has seen the playground.
 
 ### Items
 
@@ -362,8 +367,19 @@ switch (P2605#8oct-1205). ve_settle (SETL-5, SETL-7) later reads the same shapes
   "machine" with *Receive*, and a transport switch that shows the disabled entry. `ve_frame/tests/ui.rs` drives
   it headless (size switch, menu moves, machine, tooltips, sides) and compares four snapshots (`frames_rect`,
   `frames_hex`, `moved`, `matrix`) with a budget of 40 failing pixels.
-- 📋 **FRM-7 Widgets and the shell on the frame**: `Widget::frame_spec` / `ui_sized`, `ve_app` panes in the
-  frame, floating and in extra OS windows, persisted (closes WID-10).
+- ✅ **FRM-7 Widgets and the shell on the frame**: `Widget` gained `frame_spec() -> FrameSpec { led, about,
+  stats, sizes }` and `ui_sized(ui, cx, id, size)`, both with defaults, so existing widgets compile unchanged.
+  `ve_app::Shell` keeps its widgets in a `Dock<Box<dyn Widget>>` and draws each in a `WidgetFrame`: in a tile
+  the frame fills the pane without a border and leaves the title to the tab; the ☰ menu pops the widget out
+  as a floating window and back, sends it to another OS window (tiles of its own, `State::extra`), closes it
+  (disabled with the reason while busy) or sends it to another machine through `ShellOptions::remote`
+  (`Shell::receive(parcel)` on the other side; the status bar says how the send went). Placements, size
+  switches and the extra windows' tiles are persisted (shell state version 2: older saved layouts are dropped).
+  `Shell::frames()` lists the frame states. The demo's `Level` widget fills in LED, ⓘ and three sizes.
+  `ve_widget/src/lib.rs`, `ve_app/src/tiles.rs` (`Pass`, `framed`, `sync`), `state.rs`, `lib.rs`; kittest
+  `widget_pops_out_of_the_tiles_and_back`, `widget_goes_to_another_os_window_and_is_restored_there`,
+  `widget_goes_to_another_machine_and_is_received`, `unavailable_menu_entries_stay_visible_and_disabled` in
+  `ve_app/tests/ui.rs`. Not checked on a real second monitor: the tests run with egui's embedded viewports.
 - 📋 **FRM-8 Port tpm_mesh_dash to the frame**: its `Panel`s become `WidgetFrame`s; then `Panel` and `PanelSize`
   go to *Dropped and superseded*.
 - 💡 **FRM-9 Open ends of the frame**: a floating widget opens at a fixed offset, not where it sat in the grid;

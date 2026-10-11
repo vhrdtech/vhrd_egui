@@ -70,7 +70,8 @@ const LEVEL_INFO: WidgetInfo = WidgetInfo {
 };
 inventory::submit!(LEVEL_INFO);
 
-/// A slider with a "busy" switch: while busy it can't be closed and quitting asks first.
+/// A slider with a "busy" switch: while busy it can't be closed and quitting asks first. It also fills in the
+/// frame around it: an LED, the ⓘ text and stats, and three sizes it arranges itself for.
 #[derive(Default, Serialize, Deserialize)]
 pub struct Level {
     level: f32,
@@ -89,12 +90,48 @@ impl Widget for Level {
         format!("Level {:.1}", self.level).into()
     }
 
-    fn ui(&mut self, ui: &mut Ui, _cx: &Context, _id: Id) {
-        ui.add(egui::Slider::new(&mut self.level, 0.0..=10.0).suffix(" V"))
-            .on_hover_text("Output level in volts, 0 to 10 V");
-        ui.checkbox(&mut self.busy, "Busy").on_hover_text(
-            "Pretend a transfer is running: the tab can't be closed, quitting asks first",
-        );
+    fn ui(&mut self, ui: &mut Ui, cx: &Context, id: Id) {
+        self.ui_sized(ui, cx, id, Size::Nom);
+    }
+
+    fn ui_sized(&mut self, ui: &mut Ui, _cx: &Context, _id: Id, size: Size) {
+        let mut slider = |ui: &mut Ui| {
+            ui.add(egui::Slider::new(&mut self.level, 0.0..=10.0).suffix(" V"))
+                .on_hover_text("Output level in volts, 0 to 10 V");
+        };
+        let busy = |ui: &mut Ui, busy: &mut bool| {
+            ui.checkbox(busy, "Busy").on_hover_text(
+                "Pretend a transfer is running: the tab can't be closed, quitting asks first",
+            );
+        };
+        match size {
+            // the smallest form is the slider alone
+            Size::Min => slider(ui),
+            Size::Nom => {
+                slider(ui);
+                busy(ui, &mut self.busy);
+            }
+            Size::Wide => {
+                ui.horizontal(|ui| {
+                    slider(ui);
+                    busy(ui, &mut self.busy);
+                });
+            }
+        }
+    }
+
+    fn frame_spec(&self) -> FrameSpec {
+        let led = if self.busy {
+            (Status::Warn, "busy: a transfer is running".to_owned())
+        } else {
+            (Status::Good, "idle".to_owned())
+        };
+        FrameSpec {
+            led: Some(led),
+            about: "An output level with a busy switch.".to_owned(),
+            stats: vec![("level".to_owned(), format!("{:.1} V", self.level))],
+            sizes: Some(SizeHints::new([190.0, 22.0], [220.0, 48.0], [320.0, 22.0])),
+        }
     }
 
     fn is_closeable(&self) -> bool {

@@ -7,7 +7,8 @@ pub use egui::{self, Id, Ui, WidgetText};
 pub use inventory;
 pub use serde::{Deserialize, Serialize};
 pub use typetag;
+pub use ve_frame::{Size, SizeHints, Status};
 pub use ve_widget::context::Context;
-pub use ve_widget::{Widget, WidgetInfo, erased_serde, svt};
+pub use ve_widget::{FrameSpec, Widget, WidgetInfo, erased_serde, svt};
 
 pub use crate::{Repainter, Shell, ShellOptions};
