@@ -5,6 +5,8 @@ versions follow [Semantic Versioning](https://semver.org/). Feature IDs refer to
 
 ## [Unreleased]
 
+## [0.19.0] - 2026-10-11
+
 ### Added
 
 - ve_backdrop (new crate): an animated app background. `Backdrop` draws a calm grid of dots or small squares
