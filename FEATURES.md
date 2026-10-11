@@ -411,7 +411,7 @@ switch (P2605#8oct-1205). ve_settle (SETL-5, SETL-7) later reads the same shapes
   kinds) grew by the width of its sides every frame until it hit the window's edge: its body took the window's
   whole width and the sides came on top. kittest `a_floating_window_does_not_grow_by_itself` pops out all 384
   kinds and compares their sizes after 60 frames.
-  Round 4 (user, 12 Oct 2026):
+  Round 4 (user, 11 Oct 2026):
   - Floating windows stand out, each part an option (`WidgetFrame::float_look(FloatLook { elevation, focus })`,
     both on by default): *elevation* is the theme's raised surface as fill, a stronger 1 px border
     (`line_strong`) and the new token `Tokens::shadow.floating` (wide and soft; dark and light); *focus* puts
