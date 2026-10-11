@@ -1301,8 +1301,16 @@ impl Sandbox {
                 .on_hover_text("Frame times show once two frames have been drawn.");
             return;
         };
-        ui.monospace(format!("fps {:>6.1}  frames {:>4}", s.fps, s.frames))
-            .on_hover_text("Frames per second: 1000 over the mean frame time of the last ten seconds, and how many frames that is. A frame longer than 250 ms is the app waiting (at rest it draws nothing) and is not counted.");
+        ui.horizontal(|ui| {
+            ui.monospace(format!("fps {:>6.1}  frames {:>4}", s.fps, s.frames))
+                .on_hover_text("Frames per second: 1000 over the mean frame time of the last ten seconds, and how many frames that is. A frame longer than 250 ms is the app waiting (at rest it draws nothing) and is not counted.");
+            let (profile, why) = if cfg!(debug_assertions) {
+                ("debug", "A debug build (the dev profile: our code at opt-level 1, the dependencies at 3): slower than a release build. For real numbers run it with --release: cargo run --release -p ve_settle --example sandbox -- frames")
+            } else {
+                ("release", "A release build: these are the real numbers.")
+            };
+            ui.monospace(profile).on_hover_text(why);
+        });
         let times = self.perf.frame_times();
         let accent = ui.tokens().colors.accent;
         ui.add(ve_dash::Sparkline::new(&times).height(36.0).color(accent))

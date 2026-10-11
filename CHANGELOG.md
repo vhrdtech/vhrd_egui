@@ -53,6 +53,14 @@ versions follow [Semantic Versioning](https://semver.org/). Feature IDs refer to
 - ve_frame: `FrameState::set_layout_size` / `layout_size`: a layout gives a hexagon in a grid its whole size, as
   a floating one has its window's (FRM-2, SETL-20).
 
+### Changed
+
+- build: the workspace's dev profile builds our crates at `opt-level = 1` and every dependency at 3: debug builds
+  with many widgets (egui, wgpu) run near release speed and stay debuggable; `just test` (warm) went from about
+  2 minutes to under 25 s. Apps on vhrd_egui may want the same in their own `Cargo.toml` (a dependency's profile
+  is not inherited). The ve_settle sandbox shows the build profile (debug / release) next to its frames per
+  second.
+
 ### Fixed
 
 - ve_settle: `Frames::clear` keeps handing out new ids, so a new scene's frames no longer start from what the last
