@@ -3637,6 +3637,20 @@ dependencies = [
 ]
 
 [[package]]
+name = "ve_backdrop"
+version = "0.18.0"
+dependencies = [
+ "bytemuck",
+ "eframe",
+ "egui",
+ "egui-wgpu",
+ "egui_kittest",
+ "image",
+ "serde",
+ "ve_theme",
+]
+
+[[package]]
 name = "ve_basics"
 version = "0.18.0"
 dependencies = [

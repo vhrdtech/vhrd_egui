@@ -5,6 +5,17 @@ versions follow [Semantic Versioning](https://semver.org/). Feature IDs refer to
 
 ## [Unreleased]
 
+### Added
+
+- ve_backdrop (new crate): an animated app background. `Backdrop` draws a calm grid of dots or small squares
+  that reacts to the pointer (soft lens, a ripple from a click) and to widget frames passed as `Lit` (light
+  gathers under and around them, more under the focused or floating one; with an id the light fades in and
+  out). Drawn by a wgpu shader through an `egui_wgpu` paint callback (`Backdrop::with_wgpu`), with a
+  CPU-painted fallback for glow and wasm (`Backdrop::new`). Colours from the ve_theme tokens for dark and
+  light, every tunable in `Settings` with `Settings::ui` as the form, `Settings::reduced_motion` freezes it.
+  `paint`, `reserve` + `fill`, `paint_background`, `light` / `take_lit`; the `backdrop_playground` example has
+  a slider for every parameter (BACK-1).
+
 ## [0.18.0] - 2026-10-11
 
 ### Added

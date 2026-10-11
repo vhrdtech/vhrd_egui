@@ -37,6 +37,7 @@ in tpm (P2605). Statuses were checked against the code.
 | `ve_theme` | The design system: brand tokens, dark and light egui styles, fonts and type scale, `UiExt` helpers, gallery. |
 | `ve_app` | The application shell: menu bar, tiles of widgets, About / Settings / Debug windows, persisted layout, quit dialog. |
 | `ve_dash` | btop-style dashboard building blocks: theme, sparkline, meter, status light, stat tile, titled panel. |
+| `ve_backdrop` | Animated app background: a grid of dots or squares reacting to the pointer and to widget frames; wgpu shader with a CPU-painted fallback. |
 | `ve_settle` | Physics layout prototype: bodies that settle under gravity, home springs, walls and contacts; no egui dependency. |
 | `ve_template` | The app template as a command: `new`, `check-answers`, `compare`, `version` (`egui_app_skill/`). |
 
@@ -485,6 +486,35 @@ up and Packery's "others flow around the dragged one". No app uses it yet.
   (friction 0) the tight scene with tiles dropped on it did not come to rest before the sleep rule; not rechecked.
 - 📋 **SETL-5 Sizes chosen by the layout**: a body offers several sizes (auto / compact / normal / wide,
   P2605#8oct-1205) and the layout picks the one that fits best, instead of only squeezing.
+
+## Backdrop (`BACK`)
+
+The app background as its own piece (tpm P2605#8oct-2316). Playground:
+`cargo run -p ve_backdrop --example backdrop_playground`.
+
+- ✅ **BACK-1 Animated grid backdrop**: `ve_backdrop::Backdrop` draws a calm grid of dots or small squares
+  (`Mark`) that reacts to the pointer (a soft lens that pushes, grows and lights marks; a ring that spreads from a
+  click) and to widget frames (`Lit`: rectangle, corner radius, strength, `focused`, `floating`, an optional id
+  so changes fade): light gathers under and around frames, more under the focused or floating one. Two renderers
+  with the same math (`field.rs`, mirrored in `backdrop.wgsl`): the wgpu shader as an `egui_wgpu` paint callback
+  (`Backdrop::with_wgpu(render_state)`, `with_wgpu_target` for multisampling or a depth buffer) and a CPU painter
+  of plain egui shapes for glow and wasm (`Backdrop::new()`, also `--no-default-features`); `set_renderer`
+  switches at run time. Colours from the `ve_theme` tokens of the current theme (`Colors::from_tokens`: marks
+  `line_strong` on `bg`, frames gather `accent`, the pointer `text_muted`), every number a field of `Settings`
+  (calm defaults, `sanitized`, optional `serde`), `Settings::ui` the form with a tooltip per control,
+  `Settings::reduced_motion` freezes it (no drift, lens, ripples or fades; frames still gather light). API for
+  whoever knows the frames (ve_frame later): `paint(painter, rect, &[Lit])`, `reserve` + `fill` (paint under
+  widgets laid out afterwards), `paint_background(ctx, ..)`, `shape`, and `light(ctx, Lit)` / `take_lit(ctx)` to
+  announce a frame from deep in the widget tree. Repaints are asked for only while something moves, at
+  `Settings::fps` for the drift. `ve_backdrop/src/`, unit tests there; `ve_backdrop/tests/ui.rs` (egui_kittest:
+  both renderers render and agree, reduced motion freezes, motion moves, the form, snapshots with a tolerance in
+  `tests/snapshots/`); `playground::Playground` and the `backdrop_playground` example. Limits: at most
+  `MAX_LIT` (32) frames reach the renderer (the strongest), `MAX_RIPPLES` (4) rings; one `Backdrop` is painted
+  once per frame (one uniform buffer); the shader's picture is checked headless (wgpu test renderer); the
+  playground started in a window on Hyprland without wgpu errors (11 Oct 2026), but nobody has looked at it there
+  yet (the screen was locked). Not wired into `ve_app` or the template yet.
+- 📋 **BACK-2 Emulated transparency**: where the compositor does not blur or show what is behind the window,
+  fake the look: a blurred, dimmed copy of the wallpaper behind the backdrop, so apps look the same everywhere.
 
 ## Extracted from apps (`EXT`)
 

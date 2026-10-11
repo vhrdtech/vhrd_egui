@@ -14,6 +14,7 @@ members = [
     "ve_settle",
     "ve_basics",
     "ve_theme",
+    "ve_backdrop",
     "ve_template",
     "ve_app",
 ]
@@ -22,6 +23,7 @@ members = [
 egui = "0.36"
 eframe = "0.36"
 egui_kittest = "0.36"
+egui-wgpu = { version = "0.36", default-features = false }
 egui_tiles = "0.17"
 log = "0.4"
 serde = { version = "1", features = ["derive"] }

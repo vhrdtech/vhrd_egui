@@ -52,6 +52,9 @@ Cargo workspace, edition 2024, one shared version (`[workspace.package]`).
   panel title bar, toolbar, muted label, badge), the gallery example.
 - `ve_dash/` — btop-style dashboard blocks (theme from `ve_theme` tokens, sparkline, meter, segmented bar,
   tiles).
+- `ve_backdrop/` — the animated app background: a grid of dots or squares reacting to the pointer and to widget
+  frames (`Backdrop`, `Lit`, `Settings`), a wgpu shader (`backdrop.wgsl`) with a CPU-painted fallback; the
+  math lives once in `field.rs` and the shader mirrors it, so change both together. The playground example.
 - `ve_app/` — the application shell apps are built on: `Shell` (an `eframe::App`) with menu bar, egui_tiles of
   widgets opened from the `WidgetInfo` registry, About / Settings / Debug windows, status bar, persisted
   layout, quit dialog for busy widgets; `ve_app::prelude` for widget code, the `shell_demo` example.
