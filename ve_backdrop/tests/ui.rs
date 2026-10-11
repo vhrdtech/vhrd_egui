@@ -376,6 +376,23 @@ fn test_wallpaper(test: &str) -> PathBuf {
     path
 }
 
+/// A wallpaper wide enough that a monitor-resolution target is not capped by the image's own size.
+fn wide_test_wallpaper(test: &str) -> PathBuf {
+    let dir = std::env::temp_dir().join(format!("ve_backdrop_ui_{}_{test}", std::process::id()));
+    std::fs::create_dir_all(&dir).expect("temp dir");
+    let path = dir.join("wallpaper.png");
+    image::RgbImage::from_fn(1280, 640, |x, _| {
+        if x < 640 {
+            image::Rgb([30, 60, 220])
+        } else {
+            image::Rgb([40, 200, 80])
+        }
+    })
+    .save(&path)
+    .expect("write the test wallpaper");
+    path
+}
+
 /// A window system that does not say where the window is (Wayland without a compositor provider).
 struct Nowhere;
 
@@ -454,12 +471,9 @@ fn glass_fits_the_wallpaper_to_the_window() {
     for shader in [false, true] {
         let wallpaper = test_wallpaper(&format!("fit{shader}"));
         let (mut h, status) = glass_harness(shader, glass_settings(), wallpaper.clone(), Nowhere);
-        assert_eq!(
-            status,
-            GlassStatus::Shown {
-                path: wallpaper,
-                aligned: false
-            }
+        assert!(
+            matches!(&status, GlassStatus::Shown { path, aligned: false, .. } if *path == wallpaper),
+            "{status:?}"
         );
         let (left, right) = left_and_right(&render(&mut h));
         assert!(
@@ -497,6 +511,29 @@ fn glass_lines_up_when_the_position_is_known() {
             "shader {shader}: green on the left too: {left:?}"
         );
         assert!(right[1] > right[2] * 1.5, "shader {shader}: {right:?}");
+    }
+}
+
+/// At no blur the wallpaper decodes at the monitor's resolution, not shrunk to a small fixed size.
+#[test]
+fn glass_at_no_blur_is_at_least_monitor_resolution() {
+    let place = Placement {
+        // Hyprland-style: any unit, here twice the points; the monitor is 1920x960 in that unit.
+        window: Rect::from_min_size(pos2(0.0, 0.0), SIZE * 2.0),
+        monitor: vec2(1920.0, 960.0),
+        output: Some("eDP-1".to_owned()),
+    };
+    let settings = Settings {
+        glass: true,
+        glass_blur: 0.0,
+        ..still()
+    };
+    let (_h, status) = glass_harness(true, settings, wide_test_wallpaper("resolution"), place);
+    // scale = SIZE.x / window.width() = 0.5, so the monitor is 960 points wide, 960 physical pixels at the
+    // harness's default 1 px/pt.
+    match status {
+        GlassStatus::Shown { working, .. } => assert!(working[0] >= 960, "{working:?}"),
+        other => panic!("expected the wallpaper to be shown: {other:?}"),
     }
 }
 

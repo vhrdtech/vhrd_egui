@@ -355,7 +355,7 @@ impl Backdrop {
         let settings = self.settings.sanitized();
         let wallpaper = settings
             .glass
-            .then(|| self.glass.shape(ctx, rect, settings.glass_blur))
+            .then(|| self.glass.shape(ctx, rect, &settings))
             .flatten();
         // Over the blurred wallpaper the background colour only dims; without it, it is the background.
         let bg_alpha = if wallpaper.is_some() {

@@ -9,6 +9,7 @@ use std::path::PathBuf;
 
 use egui::{Color32, Context, Rect, Shape, Vec2, pos2};
 
+use crate::Settings;
 use crate::position::{Placement, PositionProvider};
 
 /// What the emulated transparency is doing, for a settings window to show (`text` says it in words).
@@ -26,6 +27,9 @@ pub enum GlassStatus {
         path: PathBuf,
         /// Whether the window's position on the screen is known, so the copy lines up with the real one.
         aligned: bool,
+        /// Width and height the wallpaper was decoded at: the working resolution chosen for the current
+        /// blur and monitor (sharp and full size at no blur, smaller as the blur grows).
+        working: [usize; 2],
     },
     /// No wallpaper was found on this desktop; name one with `Backdrop::set_wallpaper` or `VE_WALLPAPER`.
     NoWallpaper,
@@ -48,9 +52,15 @@ impl GlassStatus {
                     .to_owned()
             }
             Self::Loading => "reading the wallpaper…".to_owned(),
-            Self::Shown { path, aligned } => format!(
-                "showing {} ({})",
+            Self::Shown {
+                path,
+                aligned,
+                working,
+            } => format!(
+                "showing {} at {}×{} ({})",
                 path.display(),
+                working[0],
+                working[1],
                 if *aligned {
                     "lined up with the desktop"
                 } else {
@@ -106,6 +116,16 @@ mod imp {
 
     /// Blur values closer than this share a texture.
     const BLUR_STEP: f32 = 0.02;
+    /// Working widths closer than this (pixels) share a decode: redecoding is comparatively expensive (a
+    /// worker thread, a full image decode), so a monitor estimate or a blur slider that only moved a little
+    /// does not restart it.
+    const WIDTH_STEP: u32 = 64;
+
+    /// `w` rounded to the nearest [`WIDTH_STEP`], so small changes in the desired working width do not
+    /// restart the decode.
+    fn quantize_width(w: u32) -> u32 {
+        ((w + WIDTH_STEP / 2) / WIDTH_STEP).max(1) * WIDTH_STEP
+    }
 
     /// The wallpaper behind the backdrop: lookup, the worker thread, the texture.
     #[derive(Default)]
@@ -116,10 +136,12 @@ mod imp {
         provider_tried: bool,
         /// The monitor the wallpaper was looked up for.
         output: Option<String>,
+        /// The working width ([`quantize_width`]-ed) of the job in flight or last loaded.
+        requested_width: Option<u32>,
         job: Option<Receiver<Loaded>>,
         loaded: Option<(PathBuf, Small)>,
         failure: Option<GlassStatus>,
-        texture: Option<(TextureHandle, f32)>,
+        texture: Option<(TextureHandle, f32, [usize; 2])>,
     }
 
     impl Glass {
@@ -145,6 +167,7 @@ mod imp {
             self.loaded = None;
             self.failure = None;
             self.texture = None;
+            self.requested_width = None;
         }
 
         fn placement(&self) -> Option<Placement> {
@@ -167,20 +190,36 @@ mod imp {
             ctx.input(|i| Some((i.viewport().monitor_size?, i.viewport().inner_rect?)))
         }
 
+        /// The monitor's width in physical pixels, when known (the provider's or the window system's
+        /// monitor size, in points, times `ctx.pixels_per_point()`), capped by `max_side`. Unknown (no
+        /// provider, no window-system report) falls back to `max_side`: [`wallpaper::load`] then clamps to
+        /// the image's own size, so the wallpaper decodes at its native resolution instead.
+        fn full_width_hint(&self, ctx: &Context, max_side: u32) -> u32 {
+            let physical = self
+                .placed(ctx)
+                .map(|(monitor, _)| monitor.x * ctx.pixels_per_point())
+                .filter(|px| px.is_finite() && *px >= 1.0)
+                .map(|px| px.round() as u32);
+            physical.unwrap_or(max_side).min(max_side)
+        }
+
         pub(crate) fn status(&self, ctx: &Context) -> GlassStatus {
             if let Some(failure) = &self.failure {
                 return failure.clone();
             }
             match &self.loaded {
-                Some((path, _)) => GlassStatus::Shown {
+                Some((path, small)) => GlassStatus::Shown {
                     path: path.clone(),
                     aligned: self.placed(ctx).is_some(),
+                    working: [small.size[0], small.size[1]],
                 },
                 None => GlassStatus::Loading,
             }
         }
 
-        fn start(&mut self, ctx: &Context) {
+        /// Start decoding the wallpaper at `width`, without disturbing what is already shown (if any):
+        /// callers keep drawing the current texture, if there is one, until this job replaces it.
+        fn start(&mut self, ctx: &Context, width: u32, max_side: u32, max_alloc: u64) {
             let (tx, rx) = channel();
             let explicit = self.wallpaper.clone();
             let output = self.output.clone();
@@ -190,7 +229,7 @@ mod imp {
                 let found = explicit.or_else(|| wallpaper::find(dark, output.as_deref()));
                 let loaded = match found {
                     None => Err(GlassStatus::NoWallpaper),
-                    Some(path) => match wallpaper::load(&path) {
+                    Some(path) => match wallpaper::load(&path, width, max_side, max_alloc) {
                         Ok(small) => Ok((path, small)),
                         Err(error) => Err(GlassStatus::Failed { path, error }),
                     },
@@ -203,7 +242,10 @@ mod imp {
                 .name("ve_backdrop wallpaper".to_owned())
                 .spawn(work)
             {
-                Ok(_) => self.job = Some(rx),
+                Ok(_) => {
+                    self.job = Some(rx);
+                    self.requested_width = Some(width);
+                }
                 Err(e) => self.failure = Some(self.failed(format!("no worker thread: {e}"))),
             }
         }
@@ -215,11 +257,9 @@ mod imp {
             }
         }
 
-        /// Take the worker's answer when it is there.
-        fn poll(&mut self, ctx: &Context) {
-            let Some(rx) = &self.job else {
-                return self.start(ctx);
-            };
+        /// Take the worker's answer when it is there; does nothing without a job in flight.
+        fn poll(&mut self) {
+            let Some(rx) = &self.job else { return };
             match rx.try_recv() {
                 Ok(Ok(loaded)) => self.loaded = Some(loaded),
                 Ok(Err(failure)) => self.failure = Some(failure),
@@ -231,8 +271,14 @@ mod imp {
             self.job = None;
         }
 
-        /// Poll the worker and return the blurred wallpaper for `rect`, once there is one.
-        pub(crate) fn shape(&mut self, ctx: &Context, rect: Rect, blur: f32) -> Option<Shape> {
+        /// Poll the worker, ask for a rescale if the blur or the monitor moved enough, and return the
+        /// blurred wallpaper for `rect`, once there is one.
+        pub(crate) fn shape(
+            &mut self,
+            ctx: &Context,
+            rect: Rect,
+            settings: &Settings,
+        ) -> Option<Shape> {
             #[cfg(unix)]
             if !self.provider_tried {
                 self.provider_tried = true;
@@ -248,18 +294,36 @@ mod imp {
                     self.reload();
                 }
             }
-            if self.loaded.is_none() && self.failure.is_none() {
-                self.poll(ctx);
+            self.poll();
+            if self.failure.is_none() && self.job.is_none() {
+                let full = self.full_width_hint(ctx, settings.glass_max_side);
+                let target = quantize_width(wallpaper::working_width(
+                    settings.glass_blur,
+                    full,
+                    settings.glass_min_width,
+                ));
+                if self.requested_width != Some(target) {
+                    self.start(
+                        ctx,
+                        target,
+                        settings.glass_max_side,
+                        settings.glass_max_alloc,
+                    );
+                }
             }
             let (_, small) = self.loaded.as_ref()?;
-            let blur = (blur / BLUR_STEP).round() * BLUR_STEP;
-            if self.texture.as_ref().is_none_or(|(_, b)| *b != blur) {
+            let blur = (settings.glass_blur / BLUR_STEP).round() * BLUR_STEP;
+            if self
+                .texture
+                .as_ref()
+                .is_none_or(|(_, b, size)| *b != blur || *size != small.size)
+            {
                 let frosted = small.frosted(blur);
                 let image = ColorImage::from_rgba_unmultiplied(frosted.size, &frosted.rgba);
                 let texture = ctx.load_texture("ve_backdrop_glass", image, TextureOptions::LINEAR);
-                self.texture = Some((texture, blur));
+                self.texture = Some((texture, blur, small.size));
             }
-            let (texture, _) = self.texture.as_ref()?;
+            let (texture, ..) = self.texture.as_ref()?;
             // `rect` is in window coordinates; the placement is that of the whole content.
             let area = rect.translate(-ctx.content_rect().min.to_vec2());
             let uv = wallpaper_uv(small.aspect, self.placed(ctx), area);
@@ -295,7 +359,12 @@ mod imp {
             GlassStatus::Unsupported
         }
 
-        pub(crate) fn shape(&mut self, _ctx: &Context, _rect: Rect, _blur: f32) -> Option<Shape> {
+        pub(crate) fn shape(
+            &mut self,
+            _ctx: &Context,
+            _rect: Rect,
+            _settings: &Settings,
+        ) -> Option<Shape> {
             let _ = (wallpaper_uv, Color32::WHITE, Placement::placement);
             None
         }
@@ -371,10 +440,12 @@ mod tests {
             GlassStatus::Shown {
                 path: path.clone(),
                 aligned: false,
+                working: [320, 180],
             },
             GlassStatus::Shown {
                 path: path.clone(),
                 aligned: true,
+                working: [1920, 1080],
             },
             GlassStatus::NoWallpaper,
             GlassStatus::Failed {

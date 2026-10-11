@@ -44,6 +44,14 @@ pub struct Settings {
     pub glass_dim: f32,
     /// How strongly the wallpaper is blurred (0 = sharp, 1 = strongest).
     pub glass_blur: f32,
+    /// Narrowest the wallpaper is ever decoded to, in pixels: the floor the working resolution shrinks
+    /// towards as [`Settings::glass_blur`] grows (it hides detail anyway, so there is no point decoding
+    /// finer than this).
+    pub glass_min_width: u32,
+    /// Widest side the wallpaper decoder ever reads, in pixels: a safety cap on a huge or corrupt file.
+    pub glass_max_side: u32,
+    /// Memory the wallpaper decoder may use, in bytes: a safety cap alongside [`Settings::glass_max_side`].
+    pub glass_max_alloc: u64,
 
     /// Freeze the backdrop: no drift, no pointer lens, no ripples, no fades; frames still gather light.
     pub reduced_motion: bool,
@@ -101,8 +109,11 @@ impl Default for Settings {
             opacity: 0.5,
             background_opacity: 1.0,
             glass: false,
-            glass_dim: 0.72,
-            glass_blur: 0.7,
+            glass_dim: 0.97,
+            glass_blur: 0.0,
+            glass_min_width: 320,
+            glass_max_side: 16_384,
+            glass_max_alloc: 768 * 1024 * 1024,
             reduced_motion: false,
             ambient: 0.3,
             speed: 0.15,
@@ -158,6 +169,11 @@ impl Settings {
         );
         fix(&mut self.glass_dim, 0.0..=1.0, d.glass_dim);
         fix(&mut self.glass_blur, 0.0..=1.0, d.glass_blur);
+        self.glass_min_width = self.glass_min_width.clamp(16, 4_096);
+        self.glass_max_side = self.glass_max_side.clamp(self.glass_min_width, 65_536);
+        self.glass_max_alloc = self
+            .glass_max_alloc
+            .clamp(16 * 1024 * 1024, 4 * 1024 * 1024 * 1024);
         fix(&mut self.ambient, 0.0..=1.0, d.ambient);
         fix(&mut self.speed, 0.0..=10.0, d.speed);
         fix(&mut self.wave_length, 20.0..=10_000.0, d.wave_length);
@@ -484,6 +500,8 @@ mod tests {
         let d = Settings::default();
         assert_eq!(d.sanitized(), d);
         assert!(d.opacity <= 0.6 && d.speed <= 0.3 && !d.reduced_motion);
+        // A faint hint of the wallpaper, sharp: no blur unless the user turns it up.
+        assert!(d.glass_dim > 0.9 && d.glass_blur == 0.0);
     }
 
     #[test]

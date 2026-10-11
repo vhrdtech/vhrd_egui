@@ -5,6 +5,17 @@ versions follow [Semantic Versioning](https://semver.org/). Feature IDs refer to
 
 ## [Unreleased]
 
+### Changed
+
+- ve_backdrop: emulated transparency defaults are calmer: `glass_dim` 0.97 (a faint hint of the wallpaper
+  through the theme, was 0.72), `glass_blur` 0.0 (no blur, was 0.7) (BACK-2).
+- ve_backdrop: the wallpaper's working resolution follows the blur instead of always shrinking to a fixed
+  320 px: sharp at no blur, it decodes at the window's monitor resolution in physical pixels, and shrinks only
+  as the blur grows enough to hide the lost detail; re-decoded on the worker thread when the blur or the
+  monitor estimate crosses a meaningful line, without losing the picture already shown. The old fixed numbers
+  are now `Settings` fields (`glass_min_width`, `glass_max_side`, `glass_max_alloc`). **Breaking:**
+  `GlassStatus::Shown` gains a `working: [usize; 2]` field with the resolution chosen (BACK-2).
+
 ## [0.19.0] - 2026-10-11
 
 ### Added

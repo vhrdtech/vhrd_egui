@@ -10,14 +10,27 @@ use std::path::{Path, PathBuf};
 /// Environment variable naming the wallpaper file; wins over every lookup.
 pub const WALLPAPER_ENV: &str = "VE_WALLPAPER";
 
-/// Width of the blurred copy in pixels: it is stretched over the window, so small is enough (and fast).
-const FROSTED_WIDTH: u32 = 320;
-/// Largest wallpaper side that is decoded.
-const MAX_SIDE: u32 = 16_384;
-/// Memory the decoder may use.
-const MAX_ALLOC: u64 = 768 * 1024 * 1024;
 /// Box-blur radius at `blur = 1`, as a fraction of the copy's width; three passes make it about a Gaussian.
 const MAX_BLUR: f32 = 0.06;
+/// A downsample that throws away less than this many pixels of the deliberate blur's own radius
+/// ([`MAX_BLUR`] * `blur`, itself a fraction of the width, so the radius in display pixels does not depend
+/// on the working resolution chosen) is not visible under it. Chosen close to the old fixed 320 px working
+/// width at the old default blur of 0.7, so [`working_width`] refines that behaviour rather than jumping it.
+const DOWNSAMPLE_MARGIN: f32 = 16.0;
+
+/// How wide to decode the wallpaper, in pixels, for a given [`crate::Settings::glass_blur`]: `full` (the
+/// window's monitor resolution, capped by [`crate::Settings::glass_max_side`]) when sharp, shrinking towards
+/// `min_width` ([`crate::Settings::glass_min_width`]) as the blur grows, since a stronger blur hides finer
+/// detail anyway. See [`DOWNSAMPLE_MARGIN`].
+pub(crate) fn working_width(blur: f32, full: u32, min_width: u32) -> u32 {
+    let full = full.max(1);
+    let floor = min_width.min(full);
+    if blur <= 0.0 {
+        return full;
+    }
+    let by_blur = (DOWNSAMPLE_MARGIN / (MAX_BLUR * blur)).round().max(1.0) as u32;
+    by_blur.clamp(floor, full)
+}
 
 /// A small copy of a wallpaper, not blurred yet.
 #[derive(Clone, Debug, PartialEq)]
@@ -41,16 +54,23 @@ pub struct Frosted {
     pub aspect: f32,
 }
 
-/// Decode the image at `path` and shrink it. This is the slow part (a big JPEG takes a moment).
-pub fn load(path: &Path) -> Result<Small, String> {
+/// Decode the image at `path` and shrink it to `target_width` (never upscaled past the image's own size).
+/// This is the slow part (a big JPEG takes a moment). `max_side` and `max_alloc` are decode safety caps
+/// ([`crate::Settings::glass_max_side`], [`crate::Settings::glass_max_alloc`]).
+pub fn load(
+    path: &Path,
+    target_width: u32,
+    max_side: u32,
+    max_alloc: u64,
+) -> Result<Small, String> {
     let mut reader = image::ImageReader::open(path)
         .map_err(|e| e.to_string())?
         .with_guessed_format()
         .map_err(|e| e.to_string())?;
     let mut limits = image::Limits::default();
-    limits.max_image_width = Some(MAX_SIDE);
-    limits.max_image_height = Some(MAX_SIDE);
-    limits.max_alloc = Some(MAX_ALLOC);
+    limits.max_image_width = Some(max_side);
+    limits.max_image_height = Some(max_side);
+    limits.max_alloc = Some(max_alloc);
     reader.limits(limits);
     let image = reader.decode().map_err(|e| e.to_string())?;
     let (w, h) = (image.width(), image.height());
@@ -58,8 +78,8 @@ pub fn load(path: &Path) -> Result<Small, String> {
         return Err("the image is empty".to_owned());
     }
     let aspect = w as f32 / h as f32;
-    let small_w = FROSTED_WIDTH.min(w);
-    let small_h = ((small_w as f32 / aspect).round() as u32).clamp(1, MAX_SIDE);
+    let small_w = target_width.max(1).min(w);
+    let small_h = ((small_w as f32 / aspect).round() as u32).clamp(1, max_side);
     let small = image.thumbnail_exact(small_w, small_h).to_rgb8();
     Ok(Small {
         size: [small_w as usize, small_h as usize],
@@ -447,7 +467,7 @@ mod tests {
         });
         image.save(&path).expect("write the test wallpaper");
 
-        let small = load(&path).expect("decodes");
+        let small = load(&path, 320, 16_384, 768 * 1024 * 1024).expect("decodes");
         let sharp = small.frosted(0.0);
         assert_eq!(sharp.size, [320, 160]);
         assert_eq!(sharp.aspect, 2.0);
@@ -460,10 +480,32 @@ mod tests {
             "blurred edge"
         );
 
-        assert!(load(&dir.join("missing.png")).is_err());
+        // Never upscaled past the image's own size.
+        let full = load(&path, 10_000, 16_384, 768 * 1024 * 1024).expect("decodes");
+        assert_eq!(full.size, [800, 400]);
+
+        assert!(load(&dir.join("missing.png"), 320, 16_384, 768 * 1024 * 1024).is_err());
         std::fs::write(dir.join("junk.png"), b"not an image").expect("write");
-        assert!(load(&dir.join("junk.png")).is_err());
+        assert!(load(&dir.join("junk.png"), 320, 16_384, 768 * 1024 * 1024).is_err());
         std::fs::remove_dir_all(&dir).expect("clean up");
+    }
+
+    #[test]
+    fn working_width_follows_the_blur() {
+        let (full, min_width) = (2560, 320);
+        assert_eq!(
+            working_width(0.0, full, min_width),
+            full,
+            "sharp: the full (monitor) resolution"
+        );
+        let default_blur = working_width(0.7, full, min_width);
+        assert!(
+            min_width <= default_blur && default_blur < full,
+            "{default_blur}"
+        );
+        // Blurrier shrinks further, never below the floor.
+        assert!(working_width(1.0, full, min_width) <= default_blur);
+        assert_eq!(working_width(1.0, min_width - 1, min_width), min_width - 1);
     }
 
     /// What this desktop gives: `cargo test -p ve_backdrop real_desktop -- --ignored --nocapture`
@@ -472,7 +514,7 @@ mod tests {
     fn real_desktop() {
         let path = find(true, None).expect("a wallpaper is found on this desktop");
         let start = std::time::Instant::now();
-        let small = load(&path).expect("it decodes");
+        let small = load(&path, 2560, 16_384, 768 * 1024 * 1024).expect("it decodes");
         println!(
             "{} -> {:?}, aspect {}, read in {:?}",
             path.display(),
