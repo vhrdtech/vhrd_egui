@@ -456,3 +456,55 @@ fn a_pile_seeded_tighter_than_it_fits_comes_apart_with_hexagons_in_it() {
     assert_eq!(world.max_overlap(), 0.0);
     assert!(world.bodies().iter().all(|b| !b.lifted));
 }
+
+/// SETL-20: two hexagons nested into each other, 6 points apart in height:
+/// the faces that lie against each other end vertex to vertex, the gap
+/// apart, so both end the same height.
+#[test]
+fn nested_hexagons_end_vertex_to_vertex() {
+    let run = |on: bool| {
+        let d = Params::default();
+        let p = Params {
+            home_stiffness: 0.0,
+            attract_range: if on { d.attract_range } else { 0.0 },
+            snap_range: if on { d.snap_range } else { 0.0 },
+            ..d
+        };
+        // wide: the lower one sits on the slope where it came down (friction)
+        let mut w = world(900.0, 800.0, p);
+        let mut add = |at: Vec2, h: f32| {
+            w.add(
+                BodyDesc::new(at, v(160.0, h))
+                    .home(None)
+                    .min_size(v(80.0, 70.0))
+                    .outline(Poly::unit_hexagon()),
+            )
+        };
+        let a = add(v(200.0, 76.0), 140.0);
+        let b = add(v(321.0, 260.0), 146.0);
+        settle(&mut w);
+        let (ra, rb) = (w.body(a).unwrap().rect, w.body(b).unwrap().rect);
+        // a's right vertex against b's top left one, across b's upper left face
+        let (sa, sb) = (w.body(a).unwrap().shape(), w.body(b).unwrap().shape());
+        let (right, top_left, left) = (sa.points()[2], sb.points()[0], sb.points()[5]);
+        let face = top_left - left;
+        let mut n = v(face.y, -face.x) * (1.0 / face.length());
+        if n.x > 0.0 {
+            n = -n;
+        }
+        let off = (top_left + n * p.gap - right).length();
+        (ra, rb, off)
+    };
+    let (ra, rb, off) = run(false);
+    assert!(rb.min.y < ra.max.y - 20.0, "nested: {ra:?} {rb:?}");
+    assert!(off > 6.0, "without attraction they do not meet: {off}");
+    let (ra, rb, off) = run(true);
+    assert!(rb.min.y < ra.max.y - 20.0, "nested: {ra:?} {rb:?}");
+    assert!(off < 0.5, "vertex to vertex: {off} off, {ra:?} {rb:?}");
+    assert!(
+        (ra.size().y - rb.size().y).abs() < 0.5,
+        "the same height: {ra:?} {rb:?}"
+    );
+    // the upper one lies on the wall and stays where it is: the lower one slides
+    assert!((ra.min.x - 120.0).abs() < 0.1, "no creep: {ra:?}");
+}

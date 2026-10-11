@@ -50,6 +50,7 @@ const ATTRACT_LANDS: f32 = 0.02;
 /// An edge that is pulled stays so up to this many times
 /// [`Params::attract_range`] (SETL-12).
 const ATTRACT_KEEPS: f32 = 1.1;
+
 /// An edge moved by vertex attraction keeps the world awake down to this
 /// share of [`Params::rest_eps`] per step (SETL-12).
 const ATTRACT_AWAKE: f32 = 0.2;
@@ -231,6 +232,12 @@ pub struct Body {
     /// Which edges vertex attraction pulled in the last step, per axis:
     /// [low, high].
     caught: [[bool; 2]; 2],
+    /// Whether it lay face to face with a neighbour's outline in range in
+    /// the last step (SETL-20).
+    faced: bool,
+    /// A slide along a face would have run into something: it waits until
+    /// something changes (SETL-20).
+    slide_blocked: bool,
     /// How deep contacts found the left and the top edge in something
     /// since the last attraction pass, points.
     pressed_lo: Vec2,
@@ -305,8 +312,13 @@ impl Body {
         }
     }
 
-    /// How much more it can be squeezed on `axis`.
+    /// How much more it can be squeezed on `axis`. An outline is not
+    /// squeezed: its shape is the user's, and the room between its size and
+    /// its minimum is vertex attraction's (SETL-20).
     fn give(&self, axis: Axis) -> f32 {
+        if self.outline.is_some() {
+            return 0.0;
+        }
         (self.rect.size()[axis] - self.min_size[axis]).max(0.0)
     }
 
@@ -592,6 +604,8 @@ impl World {
             attract_shift: Vec2::ZERO,
             seated: false,
             caught: [[false; 2]; 2],
+            faced: false,
+            slide_blocked: false,
             pressed_lo: Vec2::ZERO,
             pressed_hi: Vec2::ZERO,
             yielding: false,
@@ -671,6 +685,20 @@ impl World {
             b.outline = outline;
             changed
         });
+    }
+
+    /// Give a body's outline the shape it takes at the size the body has
+    /// now, when only that size changed it (a hexagon frame keeps its faces
+    /// at 60° while vertex attraction stretches it, SETL-20). Unlike
+    /// [`World::set_outline`] this is no change from outside: it neither
+    /// wakes a world at rest nor starts its cooling over. A body without an
+    /// outline keeps none.
+    pub fn follow_outline(&mut self, id: BodyId, outline: Poly) {
+        if let Some(b) = self.bodies.iter_mut().find(|b| b.id == id)
+            && b.outline.is_some()
+        {
+            b.outline = Some(outline);
+        }
     }
 
     /// Put a new vertex on a body's outline at the point of it nearest to
@@ -796,6 +824,9 @@ impl World {
     /// by itself.
     pub fn wake(&mut self) {
         self.at_rest = false;
+        for b in &mut self.bodies {
+            b.slide_blocked = false;
+        }
         self.calm = 0;
         self.quiet = 0;
         self.awake = 0;
@@ -931,7 +962,7 @@ impl World {
         let time = self.awake as f32 * dt;
         let cool = (1.0 - (time - COOL_AFTER) / COOL_SECS).clamp(0.0, 1.0);
         self.pick_yielder();
-        let pulled = self.attract_pass(dt);
+        let pulled = self.attract_pass(dt, cool);
         self.snap_pass();
         self.grid_pass();
         for b in &mut self.bodies {
@@ -1230,7 +1261,7 @@ impl World {
     /// it grew.
     ///
     /// Returns the farthest it moved an edge.
-    fn attract_pass(&mut self, dt: f32) -> f32 {
+    fn attract_pass(&mut self, dt: f32, cool: f32) -> f32 {
         let mut most_moved = 0.0f32;
         self.pulls.clear();
         let p = self.params;
@@ -1279,6 +1310,14 @@ impl World {
             // axis and how firmly, and whether that is into line with a
             // neighbour's edge.
             let mut edges: [[Option<(f32, f32)>; 2]; 2] = [[None; 2]; 2];
+            // Along a face of a neighbour, to line the vertices up (SETL-20).
+            let (mut slide, mut nearest) = (Vec2::ZERO, f32::INFINITY);
+            // the neighbours it lies face to face with
+            let mut partners: Vec<usize> = Vec::new();
+            // A slide that would have run into something (see below) waits
+            // until something changes.
+            let blocked = self.bodies[i].slide_blocked;
+            let homed = self.bodies[i].home.is_some() && p.home_stiffness > 0.0;
             let mut lined = [[false; 2]; 2];
             let mut held = [[false; 2]; 2];
             if on && free[i] {
@@ -1289,6 +1328,110 @@ impl World {
                     held[axis as usize][high as usize] = true;
                     let (wall, body) = room(&now, i, axis, high);
                     hangs = wall.min(body) > RESTS_SLACK;
+                }
+                // Faces of outlines that lie against each other (SETL-20):
+                // the vertices at the ends of a face meet those across, the
+                // gap away. What both ends are off alike along the face is
+                // a slide: the body moves along the face (the nearest
+                // neighbour's, by the mean of its ends). What is left is a
+                // difference in length, which no slide changes: each of the
+                // two takes half of it, through its height for a slanted
+                // face and its width for a flat one (a face grows with the
+                // size across it), on the edges that are free to move.
+                let mut faced = [[(0.0f32, 0.0f32); 2]; 2];
+                let shape_rest = self.bodies[i].shape_in(&rest[i]);
+                let shape_now = self.bodies[i].shape_in(&now[i]);
+                for j in 0..self.bodies.len() {
+                    let (a, o) = (&self.bodies[i], &self.bodies[j]);
+                    if j == i || !free[j] || a.outline.is_none() || o.outline.is_none() {
+                        continue;
+                    }
+                    let other_rest = o.shape_in(&rest[j]);
+                    let other_now = o.shape_in(&now[j]);
+                    let keeps = range * ATTRACT_KEEPS;
+                    let reach = if self.bodies[i].faced { keeps } else { range };
+                    let pairs: Vec<_> = face_pairs(&shape_rest, &other_rest, p.gap, reach)
+                        .into_iter()
+                        .map(|(ia, ib, n)| {
+                            let from = shape_now.points()[ia];
+                            let to = other_now.points()[ib] + n * p.gap;
+                            (ia, ib, n, from, to)
+                        })
+                        .collect();
+                    if pairs.is_empty() {
+                        continue;
+                    }
+                    partners.push(j);
+                    let mut along = Vec2::ZERO;
+                    let mut far = 0.0f32;
+                    for &(_, _, n, from, to) in &pairs {
+                        let error = to - from;
+                        along += (error - n * error.dot(n)) * (1.0 / pairs.len() as f32);
+                        far = far.max(error.length());
+                    }
+                    // One face slides the body: the nearest. Toward gravity's
+                    // side it is the other one's to slide: this one lies on
+                    // the wall or on what is under it, and would only creep.
+                    // Nor does a body held by its home slide: the home is
+                    // where the user put it, and a slide that took the home
+                    // along would walk it off.
+                    let mine = far < nearest;
+                    let sinks = toward.is_some_and(|side| {
+                        let (axis, sign) = (side.axis(), if side.is_low() { -1.0 } else { 1.0 });
+                        (now[i].center()[axis] - now[j].center()[axis]) * sign > 0.0
+                    });
+                    if mine {
+                        nearest = far;
+                        slide = if sinks || blocked || homed {
+                            Vec2::ZERO
+                        } else {
+                            along
+                        };
+                    }
+                    if let [(a0, b0, ..), (a1, b1, ..)] = pairs[..] {
+                        let (pa, pb) = (shape_now.points(), other_now.points());
+                        let face = pa[a1] - pa[a0];
+                        let len_a = face.length();
+                        let len_b = (pb[b1] - pb[b0]).length();
+                        if len_a > 1.0 {
+                            let axis = if face.y.abs() < 0.1 * len_a {
+                                Axis::X
+                            } else {
+                                Axis::Y
+                            };
+                            let x = axis as usize;
+                            let grow = (len_b - len_a) * 0.5 * now[i].size()[axis] / len_a;
+                            let free = [!held[x][0], !held[x][1]];
+                            let share = match free {
+                                [true, true] => 0.5,
+                                [false, false] => 0.0,
+                                _ => 1.0,
+                            };
+                            for h in 0..2 {
+                                if free[h] && share > 0.0 {
+                                    let outward = if h == 1 { 1.0 } else { -1.0 };
+                                    faced[x][h].0 += grow * share * outward;
+                                    faced[x][h].1 += 1.0;
+                                }
+                            }
+                        }
+                    }
+                    for (_, _, _, from, to) in pairs {
+                        // shown with the slide where it is done: by this body,
+                        // or by the one nested under it
+                        let to = if (mine && !blocked) || sinks {
+                            to
+                        } else {
+                            to - along
+                        };
+                        self.pulls.push(Pull {
+                            body: self.bodies[i].id,
+                            from,
+                            to,
+                            grip: 1.0,
+                            locked: (to - from).max_abs() < Pull::LOCKED,
+                        });
+                    }
                 }
                 for axis in Axis::BOTH {
                     for high in [false, true] {
@@ -1328,6 +1471,10 @@ impl World {
                             if let Some((_, error)) = best {
                                 line = (line.0 + error, line.1 + 1.0, line.2 + 1);
                             }
+                        }
+                        let (num, den) = faced[axis as usize][high as usize];
+                        if den > 0.0 {
+                            line = (line.0 + num / den, line.1 + 1.0, line.2 + 1);
                         }
                         let edge = &mut edges[axis as usize][high as usize];
                         if line.2 > 0 {
@@ -1386,9 +1533,89 @@ impl World {
                     }
                 }
             }
+            // The slide along a face: a share of the way per step, as the
+            // edges go, and no more than a glide; it fades out with the
+            // world's cooling, as the forces do. Only into free room: a
+            // slide that would take the body deeper into anything (the gap
+            // kept) or past a closed wall is blocked until something
+            // changes. Like a resize it gives the body no speed
+            // (`attract_shift`).
+            // An outline's edge does not grow into anything but the faces it
+            // lines up with (the gap kept): it would press what lies against
+            // it, which gives way and comes back, for ever (SETL-20).
+            let mut crowded = [[false; 2]; 2];
+            if self.bodies[i].outline.is_some() {
+                let a = &self.bodies[i];
+                for axis in Axis::BOTH {
+                    for high in [false, true] {
+                        let mut grown = a.rect;
+                        if high {
+                            grown.max[axis] += 0.5;
+                        } else {
+                            grown.min[axis] -= 0.5;
+                        }
+                        let depth = |r: &Rect, o: &Body| {
+                            outline_hit(a, r, o, &o.rect, p.gap, Vec2::ZERO)
+                                .map_or(0.0, |h| h.depth)
+                        };
+                        crowded[axis as usize][high as usize] =
+                            self.bodies.iter().enumerate().any(|(j, o)| {
+                                j != i
+                                    && !o.lifted
+                                    && !partners.contains(&j)
+                                    && depth(&grown, o) > depth(&a.rect, o) + 0.01
+                            });
+                    }
+                }
+            }
+            let mut slid = Vec2::ZERO;
+            if slide != Vec2::ZERO && cool > 0.0 {
+                let d = if slide.length() < ATTRACT_LANDS {
+                    slide
+                } else {
+                    (slide * ((p.attract_strength * dt).min(0.5) * cool))
+                        .clamp_length(p.glide_speed * dt)
+                };
+                let a = &self.bodies[i];
+                let moved = a.rect.translate(d);
+                let depth = |r: &Rect, o: &Body| {
+                    outline_hit(a, r, o, &o.rect, p.gap, Vec2::ZERO).map_or(0.0, |h| h.depth)
+                };
+                // (along the faces it lines up with it goes by them, a hair
+                // in or out as they meet: the contacts' to settle)
+                let into_body = self.bodies.iter().enumerate().any(|(j, o)| {
+                    j != i
+                        && !o.lifted
+                        && !partners.contains(&j)
+                        && depth(&moved, o) > depth(&a.rect, o) + 0.01
+                });
+                let past = |side: Side| {
+                    let out = |r: &Rect| match side {
+                        Side::Left => inner.min.x - r.min.x,
+                        Side::Right => r.max.x - inner.max.x,
+                        Side::Top => inner.min.y - r.min.y,
+                        Side::Bottom => r.max.y - inner.max.y,
+                    };
+                    p.walls.has(side) && out(&moved) > out(&a.rect).max(0.0) + 0.01
+                };
+                let into_wall = [Side::Left, Side::Right, Side::Top, Side::Bottom]
+                    .into_iter()
+                    .any(past);
+                if into_body || into_wall {
+                    self.bodies[i].slide_blocked = true;
+                } else {
+                    slid = d;
+                }
+            }
             let b = &mut self.bodies[i];
             b.caught = edges.map(|axis| axis.map(|edge| edge.is_some()));
+            b.faced = nearest.is_finite();
             let mut shift = Vec2::ZERO;
+            if slid != Vec2::ZERO {
+                b.rect = b.rect.translate(slid);
+                shift += slid;
+                most_moved = most_moved.max(slid.max_abs());
+            }
             for axis in Axis::BOTH {
                 // Pressed along this axis there is no room to grow into.
                 let load = if p.free_axis() == Some(axis) {
@@ -1427,6 +1654,9 @@ impl World {
                     let outward = if e == 0 { -1.0 } else { 1.0 };
                     let s = stretch[e];
                     let mut d = *go * outward;
+                    if d > 0.0 && crowded[axis as usize][e] {
+                        d = 0.0;
+                    }
                     if d > 0.0 {
                         d *= calm;
                     }
@@ -1435,8 +1665,10 @@ impl World {
                     }
                     // Grown flush against something that now pushes back
                     // (it moved, or the body was pressed onto it): the room
-                    // is gone, the growth is given back by as much.
-                    if !lined[axis as usize][e] {
+                    // is gone, the growth is given back by as much. So is an
+                    // outline's growth to line faces up (SETL-20): what it
+                    // presses is not the face it lines up with.
+                    if !lined[axis as usize][e] || b.outline.is_some() {
                         let pushed = if e == 0 {
                             b.pressed_lo[axis]
                         } else {
@@ -2408,6 +2640,59 @@ fn gapped(at: Vec2, ca: (bool, bool), cb: (bool, bool), gap: f32) -> Vec2 {
         to.y -= if ca.1 { gap } else { -gap };
     }
     to
+}
+
+/// The vertices of `a` that line up with vertices of `b` across two faces
+/// that lie against each other (SETL-20): faces turned toward each other
+/// (antiparallel), the gap apart within `reach`, side by side along their
+/// length. Each end of `a`'s face pairs with the end of `b`'s face across
+/// from it: (vertex of `a`, vertex of `b`, the outward normal of `b`'s
+/// face). Lined up, `a`'s vertex is `b`'s plus the normal times the gap.
+fn face_pairs(a: &Poly, b: &Poly, gap: f32, reach: f32) -> Vec<(usize, usize, Vec2)> {
+    let (pa, pb) = (a.points(), b.points());
+    let (na, nb) = (pa.len(), pb.len());
+    let mut out = Vec::new();
+    if na < 3 || nb < 3 {
+        return out;
+    }
+    let mid_b = b.centroid();
+    for i in 0..na {
+        let (a0, a1) = (pa[i], pa[(i + 1) % na]);
+        let la = (a1 - a0).length();
+        if la < 1e-3 {
+            continue;
+        }
+        let da = (a1 - a0) * (1.0 / la);
+        for j in 0..nb {
+            let (b0, b1) = (pb[j], pb[(j + 1) % nb]);
+            let lb = (b1 - b0).length();
+            if lb < 1e-3 {
+                continue;
+            }
+            let db = (b1 - b0) * (1.0 / lb);
+            if da.dot(db) > -0.98 {
+                continue;
+            }
+            let mut n = Vec2::new(-db.y, db.x);
+            if (mid_b - b0).dot(n) > 0.0 {
+                n = -n;
+            }
+            if ((a0 - b0).dot(n) - gap).abs() > reach {
+                continue;
+            }
+            // side by side: their extents along the face overlap
+            let (s0, s1) = ((a0 - b0).dot(db), (a1 - b0).dot(db));
+            if s0.max(s1) <= 0.0 || s0.min(s1) >= lb {
+                continue;
+            }
+            for (ia, ib) in [(i, (j + 1) % nb), ((i + 1) % na, j)] {
+                if (pb[ib] + n * gap - pa[ia]).length() < reach {
+                    out.push((ia, ib, n));
+                }
+            }
+        }
+    }
+    out
 }
 
 /// The two walls that meet at a corner.

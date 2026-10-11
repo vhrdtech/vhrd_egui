@@ -193,6 +193,8 @@ struct Cell {
     outer: [Option<egui::Vec2>; 3],
     /// The least width the frame needed per shown size, learned when it did not fit.
     least: [f32; 3],
+    /// The least size a hexagon could be drawn at per shown size, learned when it was given less.
+    hex_least: [egui::Vec2; 3],
     /// Where its body was last (world), and how big: where it comes back to.
     center: Vec2,
     size: Vec2,
@@ -220,6 +222,7 @@ impl Cell {
             chrome: None,
             outer: [None; 3],
             least: [0.0; 3],
+            hex_least: [egui::Vec2::ZERO; 3],
             center,
             size,
             mode: SizeMode::Auto,
@@ -421,6 +424,12 @@ pub struct Frames<W> {
     pub rehome_on_drop: bool,
     /// Where a widget that is put back lands.
     pub land_at: LandAt,
+    /// Whether a hexagon frame may be stretched by vertex attraction, up to its range around the size its
+    /// hints give it, to line its faces up with its neighbours' (off by default, SETL-20: with it on, a
+    /// hexagon that grows flush to a wall and one nested under it that slides back along its face can take
+    /// turns for ever, until the world cools). Off, hexagons are rigid and line up by sliding along each
+    /// other's faces only.
+    pub stretch_hexagons: bool,
     cells: HashMap<SlotId, Cell>,
     /// Counts the changes that give a frame held at a smaller size a new chance: a body added or removed,
     /// a size switch clicked, a drop, new bounds.
@@ -449,6 +458,7 @@ impl<W> Frames<W> {
             ghosts: false,
             rehome_on_drop: true,
             land_at: LandAt::default(),
+            stretch_hexagons: false,
             cells: HashMap::new(),
             epoch: 0,
             pick_clock: 0.0,
@@ -781,7 +791,10 @@ impl<W> Frames<W> {
         let rect = view.to_screen(world_rect);
         let hex = cell.seat.shape == Shape::Hex;
         if cell.ghost {
-            // the place of a widget that floats: a click puts it back
+            // the place of a widget that floats, kept as it is (vertex attraction does not stretch it): a
+            // click puts it back
+            let size = world_rect.size();
+            world.set_limits(body_id, size, size);
             let mut child = ui.new_child(
                 UiBuilder::new()
                     .id_salt(("ve_settle::ghost", id.0))
@@ -847,6 +860,19 @@ impl<W> Frames<W> {
         let clip = if fits { rect.expand(GLOW_ROOM) } else { rect };
         child.set_clip_rect(clip.intersect(view.clip));
         slot.frame.set_auto_pick(Some(cell.pick));
+        // A hexagon is drawn at the size of its body once that is near the size its hints give it (vertex
+        // attraction stretches it by up to its range, SETL-20); the size its hints give stays what it wants.
+        let stretch = if self.stretch_hexagons {
+            world.params().attract_range.max(0.0)
+        } else {
+            0.0
+        };
+        let natural = cell.outer[index(slot.frame.size.fixed().unwrap_or(cell.pick))];
+        let given = natural
+            .filter(|_| stretch > 0.0 && hex && cell.seat.hints.is_some() && !slot.frame.collapsed)
+            .filter(|n| (rect.size() - *n).abs().max_elem() <= stretch + 1.0)
+            .map(|_| [rect.width(), rect.height()]);
+        slot.frame.set_layout_size(given);
         if let Some(action) = draw(&mut child, slot) {
             shown.picked.push((id, action));
         }
@@ -869,12 +895,37 @@ impl<W> Frames<W> {
             && size != Size::Min
             && matches!(frame.size, SizeMode::Auto | SizeMode::Wide);
         let hints = cell.seat.hints.filter(|_| filling);
-        if open {
+        // (a hexagon drawn at its body's size does not teach the size its hints give)
+        if open && given.is_none() {
             cell.outer[index(size)] = Some(drawn);
         }
-        let limits = match hints {
-            None => Limits::rigid(drawn),
-            Some(hints) => {
+        let natural = cell.outer[index(size)]
+            .filter(|_| stretch > 0.0 && open && hex && cell.seat.hints.is_some());
+        if given.is_some() && open {
+            // drawn larger than it was given: its smallest body does not fit in less
+            let least = &mut cell.hex_least[index(size)];
+            if drawn.x > rect.width() + FIT_SLACK {
+                least.x = least.x.max(drawn.x);
+            }
+            if drawn.y > rect.height() + FIT_SLACK {
+                least.y = least.y.max(drawn.y);
+            }
+        }
+        let limits = match (hints, natural) {
+            (None, Some(natural)) => {
+                let natural = Vec2::new(natural.x, natural.y);
+                let least = cell.hex_least[index(size)];
+                let least = Vec2::new(least.x, least.y);
+                Limits {
+                    want: natural,
+                    min: (natural - Vec2::new(stretch, stretch))
+                        .max(least)
+                        .min(natural),
+                    max: natural + Vec2::new(stretch, stretch),
+                }
+            }
+            (None, None) => Limits::rigid(drawn),
+            (Some(hints), _) => {
                 if drawn.x > rect.width() + FIT_SLACK {
                     // it needed more than it was given: the header, or a body that does not shrink
                     cell.least[index(size)] = drawn.x;
@@ -917,9 +968,15 @@ impl<W> Frames<W> {
             // new outline wakes the world
             let same = |old: [f32; 4]| old.iter().zip(shape).all(|(a, b)| (a - b).abs() < 0.05);
             if !cell.outlined.is_some_and(same) {
+                // drawn at the body's size, stretched by vertex attraction: the outline only follows
+                let follows = given.is_some() && cell.outlined.is_some();
                 cell.outlined = Some(shape);
                 let outline = outline_with(vec2(shape[0], shape[1]), shape[2], left);
-                world.set_outline(body_id, Some(outline));
+                if follows {
+                    world.follow_outline(body_id, outline);
+                } else {
+                    world.set_outline(body_id, Some(outline));
+                }
             }
         }
         if let Some((corner, wait)) = cell.anchor {

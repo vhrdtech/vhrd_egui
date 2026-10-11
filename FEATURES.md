@@ -373,7 +373,9 @@ switch (P2605#8oct-1205). ve_settle (SETL-5, SETL-7) later reads the same shapes
   of the three a frame on auto shows, in place of the choice by the room's width; the frame then fills the room
   it is given; the pinned sizes are not touched. `FrameState::body_rect()` says where the body was laid out, so
   with `drawn_rect()` a layout knows what the frame takes around a body; `is_hex()` its shape. kittest
-  `a_layouts_pick_overrules_what_auto_would_choose`.
+  `a_layouts_pick_overrules_what_auto_would_choose`. `FrameState::set_layout_size(Some([w, h]))` gives a
+  hexagon in a grid its whole size, as a floating one has its window's: faces at 60°, the body what is left,
+  never under the smallest hint (SETL-20); kittest `a_layout_gives_a_hexagon_in_the_grid_its_size`.
 - ✅ **FRM-3 Sides and hexagons**: `.left(|ui| ..)` / `.right(|ui| ..)` columns beside a rectangle's body, laid
   out top to bottom; `Shape::Hex`: a flat-topped hexagon (faces at 60°, any width) with header and footer on the
   flat faces, a body of exactly the hinted size, and `.hex_side(HexFace, [SideItem::text(..), SideItem::led(..)])`
@@ -767,7 +769,7 @@ up and Packery's "others flow around the dragged one". No app uses it yet.
   drag / remove through the world, nesting, the notch, a mixed pile at rest without overlap, a hexagon's tips
   growing to a wall and a rectangle). Not done: drawing content clipped to the shape and a hit test by outline in
   an app (the sandbox draws the polygon and grabs by the rectangle); concave shapes; into-line pulls for outline
-  vertices (flush only); snapping outline vertices; an outline whose vertex was dragged off a side no longer
+  vertices other than face to face (SETL-20); snapping outline vertices (SETL-20 slides along faces instead); an outline whose vertex was dragged off a side no longer
   touches its rectangle there, and walls and rectangle neighbours still see the rectangle.
 - ✅ **SETL-13 Sandbox: shape tiles and outline editing** (P2605#10oct-1656): "Add hexagon", "Add half hexagon" and
   "Add triangle" add tiles with a convex outline (the half hexagon and the triangle turn a quarter with each
@@ -891,13 +893,34 @@ up and Packery's "others flow around the dragged one". No app uses it yet.
   same through the app, plus: the scroll area's content reaches as far as the world). Not done: with wild
   parameters bodies may overlap beyond their cores while they move (only the cores and the walls are hard);
   the top or left side cannot be the open one (content cannot grow to negative coordinates).
-- 📋 **SETL-20 Vertex attraction on hexagon frames** (user, round 2: "works much worse on hexagons than on
-  rectangles"): not started. Why it is weak today: a hexagon frame draws at the size its hints give, so its
-  body is rigid and attraction has nothing to resize (SETL-18 "rigid bodies everywhere"), and the solver pulls
-  outline bodies flush only, not into line (SETL-4). Needed: `ve_frame` lets a layout give a docked hexagon a
-  size (as a floating one has through `window_size`), `frames` opens the body's limits by the attraction range,
-  and `attract_pass` lines the flat faces and the side vertices of outlines up with neighbours' edges, shape
-  kept (one scale for width and height at 60° faces), with a test like `tests/attract.rs` has for rectangles.
+- 🚧 **SETL-20 Vertex attraction on hexagon frames** (user, round 2: "works much worse on hexagons than on
+  rectangles"; round 3, 12 Oct 2026). Before: a hexagon frame was a rigid body, and the solver pulled outlines
+  flush only, by the corners of their rectangles, which for nested hexagons are nowhere near each other.
+  Now, in `attract_pass`, two outlines whose faces lie against each other (antiparallel, the gap apart within
+  the attraction range, side by side: `face_pairs`) line the vertices at the ends of those faces up, in two
+  parts that do not feed each other:
+  - *slide*: what both ends are off alike along the face moves the body along the face of its nearest such
+    neighbour, a share per step (`attract_strength`), at most a glide, without speed (`attract_shift`), faded
+    by cooling. Only into free room: a slide that would take it deeper into anything but that face, or past a
+    closed wall, waits until something changes (`slide_blocked`, cleared by `wake`). Of two bodies the one
+    toward gravity's side does not slide (it lies on the wall or on what is under it and would only creep),
+    nor does a body held by its home (the slide would walk the home off: the old *mixed* scene never rested).
+  - *length*: the difference in length of the two faces, which no slide changes, each body takes half of
+    through its height (slanted face) or width (flat face), on its free edges. (Pulling the rectangle's edges to
+    the vertices directly chased the slide: the body grew to the range limit.)
+  An outline is no longer squeezed by contacts (its room under its size is attraction's), its edges do not grow
+  into anything but the faces they line up with, and its growth gives way to pressure like flush growth does.
+  Test `nested_hexagons_end_vertex_to_vertex` (`tests/polygon.rs`): two hexagons 6 points apart in height,
+  the lower one where it came down on the other's slope: without snap and attraction over 6 points off, with them
+  vertex to vertex (0.5) and the same height, the upper one does not creep. In the frames sandbox hexagons are
+  still rigid by default and line up by sliding. `Frames::stretch_hexagons` ("Hexagons stretch to line up",
+  off) lets attraction resize a hexagon frame by up to its range around its hinted size: the frame is drawn at
+  the body's size (`FrameState::set_layout_size`), the outline follows quietly (`World::follow_outline`, no
+  wake, no new cooling). Not done: with it on, three frames kittests fail (a hexagon growing flush to a wall
+  and the one nested under it sliding back take turns until the world cools; a ghost moves 0.4 points; a
+  hexagon changes size after opening), so it stays off; a body pressed between two walls cannot slide and
+  stays off by up to the range (the first test world, 300 wide, showed it); faces of a rectangle and an
+  outline are not paired (they pressed rectangles into stepping down).
 - 💡 **SETL-18 Frames on bodies: what does not fit yet** (findings of SETL-7, 11 Oct 2026):
   - *Heights do not stretch.* A frame draws itself as tall as its content, so its body is rigid in height and
     vertex attraction (SETL-12) cannot put the bottoms of a row on one line; widths of rectangles on auto or

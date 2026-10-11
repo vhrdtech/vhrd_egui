@@ -1233,6 +1233,9 @@ impl Sandbox {
             ui.checkbox(&mut self.frames.ghosts, "Ghost slots")
                 .on_hover_text("A widget popped out as a window keeps its body in the world, drawn as a dashed ghost; click it to put the widget back. Off: its body leaves the world and the others close up.")
                 .on_disabled_hover_text(off);
+            ui.checkbox(&mut self.frames.stretch_hexagons, "Hexagons stretch to line up")
+                .on_hover_text("Vertex attraction may resize a hexagon by up to its range (Attraction range) to line its faces up with its neighbours'. Off: hexagons keep the size their hints give and line up by sliding along each other's faces only. Experimental (SETL-20): a hexagon at a wall and one nested under it can take turns growing and sliding until the world cools.")
+                .on_disabled_hover_text(off);
             let mut window = self.frames.land_at == LandAt::Window;
             ui.checkbox(&mut window, "Land where the window is")
                 .on_hover_text("A floating widget put back into the layout lands where its window was, like a drop. Off: it returns to the place it left.")

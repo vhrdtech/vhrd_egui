@@ -138,6 +138,9 @@ pub struct FrameState {
     /// What a layout picked for auto ([`FrameState::set_auto_pick`]).
     #[serde(skip)]
     pub(crate) auto_pick: Option<Size>,
+    /// The size a layout gives a hexagon in a grid ([`FrameState::set_layout_size`]).
+    #[serde(skip)]
+    pub(crate) layout_size: Option<[f32; 2]>,
     /// Where the body was laid out last, in screen points.
     #[serde(skip)]
     pub(crate) body: Option<egui::Rect>,
@@ -266,6 +269,19 @@ impl FrameState {
     /// What a layout picked for auto, if it did.
     pub fn auto_pick(&self) -> Option<Size> {
         self.auto_pick
+    }
+
+    /// A layout that sizes frames itself gives a hexagon in a grid its whole size, outline included, as a
+    /// floating hexagon has the size of its window: its body is what that leaves (never under the hint's
+    /// minimum), its faces stay at 60°. `None`: the hints make the outline. A rectangle takes the room it is
+    /// given and ignores this. Not saved.
+    pub fn set_layout_size(&mut self, size: Option<[f32; 2]>) {
+        self.layout_size = size;
+    }
+
+    /// The size a layout gave a hexagon in a grid, if it did.
+    pub fn layout_size(&self) -> Option<[f32; 2]> {
+        self.layout_size
     }
 
     /// Whether the ☰ menu was open when the frame was drawn last; its button is drawn pressed then.

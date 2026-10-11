@@ -684,6 +684,59 @@ fn a_floating_hexagon_resizes() {
     }
 }
 
+/// A layout gives a hexagon in the grid its size (SETL-20): it is drawn at that size with its faces at 60°,
+/// the body takes what is left, and it never gets smaller than its smallest body needs.
+#[test]
+fn a_layout_gives_a_hexagon_in_the_grid_its_size() {
+    let hex = Opts {
+        hex: true,
+        ..Opts::ALL
+    };
+    let mut h = harness(
+        Playground::with([Demo::new(hex, Scale::Medium)]),
+        vec2(1100.0, 700.0),
+    );
+    let size = |h: &Harness<'_, Playground>| slot(h).frame.drawn_rect().expect("drawn").size();
+    let body = |h: &Harness<'_, Playground>| slot(h).frame.body_rect().expect("drawn").size();
+    let set = |h: &mut Harness<'_, Playground>, to: Option<egui::Vec2>| {
+        for s in h.state_mut().dock.iter_mut() {
+            s.frame.set_layout_size(to.map(Into::into));
+        }
+        h.run();
+    };
+    // pinned: auto would choose by the size given (a layout that sizes frames picks for auto too)
+    for s in h.state_mut().dock.iter_mut() {
+        s.frame.size = SizeMode::Nom;
+    }
+    h.run();
+    let (opened, opened_body) = (size(&h), body(&h));
+    let given = opened + vec2(14.0, 10.0);
+    set(&mut h, Some(given));
+    assert!(
+        (size(&h) - given).length() < 0.5,
+        "{given:?}: {:?}",
+        size(&h)
+    );
+    assert!(
+        body(&h).x > opened_body.x && body(&h).y > opened_body.y,
+        "the body takes the room: {opened_body:?} -> {:?}",
+        body(&h)
+    );
+    set(&mut h, Some(vec2(10.0, 10.0)));
+    let least = size(&h);
+    assert!(
+        least.x > 100.0 && least.y > Scale::Medium.hints().min.y,
+        "no smaller than the smallest body: {least:?}"
+    );
+    set(&mut h, None);
+    assert!(
+        (size(&h) - opened).length() < 0.5,
+        "back to the hints: {opened:?}, {:?} {:?}",
+        size(&h),
+        slot(&h).frame.shown_size()
+    );
+}
+
 /// The wings of a hexagon are the widget's to fill when the frame offers them; without the option the faces
 /// keep their items.
 #[test]

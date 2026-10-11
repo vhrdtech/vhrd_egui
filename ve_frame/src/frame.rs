@@ -514,13 +514,18 @@ impl<'a> WidgetFrame<'a> {
         r
     }
 
-    /// The body a floating hexagon has room for in the window size it was given; `None` when it isn't
-    /// floating with a size (then its hints make its outline).
+    /// The body a hexagon has room for in the size it was given: a floating one's window size, or in a grid
+    /// what a layout gave it ([`FrameState::set_layout_size`]); `None` without one (then its hints make its
+    /// outline).
     fn hex_room(&self, state: &FrameState) -> Option<Vec2> {
-        if self.shape != Shape::Hex || !state.placement.floating {
+        if self.shape != Shape::Hex {
             return None;
         }
-        let [w, h] = state.window_size?;
+        let [w, h] = if state.placement.floating {
+            state.window_size?
+        } else {
+            state.layout_size?
+        };
         let footer_h = if self.footer.is_some() {
             HEX_FOOTER_H
         } else {

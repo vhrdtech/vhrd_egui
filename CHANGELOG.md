@@ -43,6 +43,16 @@ versions follow [Semantic Versioning](https://semver.org/). Feature IDs refer to
   springs, ranges as circles, pressure as heat, the grid); "Grow to the right" turns the scene to scroll
   sideways (SETL-7, SETL-19).
 
+- ve_settle: vertex attraction for outlines face to face (SETL-20): two outlines whose faces lie against each
+  other line the vertices at the ends up, by sliding the body along the face (into free room only, not a body
+  held by its home nor the one toward gravity's side) and by making the two faces equally long (half each,
+  through height or width). `World::follow_outline` changes an outline that follows its body's size without
+  waking the world. **Behaviour change:** contacts no longer squeeze a body with an outline.
+- ve_settle: `Frames::stretch_hexagons` (off by default, experimental): attraction may resize a hexagon frame by
+  up to its range; sandbox checkbox "Hexagons stretch to line up" (SETL-20).
+- ve_frame: `FrameState::set_layout_size` / `layout_size`: a layout gives a hexagon in a grid its whole size, as
+  a floating one has its window's (FRM-2, SETL-20).
+
 ### Fixed
 
 - ve_settle: `Frames::clear` keeps handing out new ids, so a new scene's frames no longer start from what the last
