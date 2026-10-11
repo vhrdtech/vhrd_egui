@@ -345,6 +345,9 @@ switch (P2605#8oct-1205). ve_settle (SETL-5, SETL-7) later reads the same shapes
   the pointer is moved with `ViewportCommand::CursorPosition`, which Wayland ignores), and in a grid the
   enclosing scroll area scrolls back by what the switch moved. kittest `the_size_switch_stays_under_the_pointer`,
   `the_size_switch_anchor_keeps_the_window_on_screen`, `the_size_switch_stays_put_in_a_scrolled_grid`.
+  The ☰ looks pressed while its menu is open (`menu_open_look`: filled with the accent, outlined;
+  `FrameState::menu_open`); the size switch already fills while it is pressed. kittest
+  `the_menu_button_shows_that_its_menu_is_open` (reads the rendered pixels).
 - ✅ **FRM-2 Sizes**: `SizeMode` (auto / min / nom / wide, the switch cycles them), `Size` (what the body is
   told), `SizeHints { min, nom, wide }` (body sizes; `width_for`, `outer_width` for layouts), `auto_size(prev,
   width, hints)`: the widest that fits, a step up needing `AUTO_HYSTERESIS` (24 pt) to spare. min is exactly
@@ -368,6 +371,19 @@ switch (P2605#8oct-1205). ve_settle (SETL-5, SETL-7) later reads the same shapes
   then (same place). Without the option nothing changes. Playground toggle *wings* (a level whose rows follow
   the left wing, the count in the right one); unit test `wings_narrow_to_the_vertex_and_hold_their_rectangle`,
   kittest `hexagon_wings_hold_content_when_asked_for`, snapshot `hex_wings`.
+  Side bars (user, round 4; they replace the thin strips of items): `.hex_side(face, items)` draws a real band
+  along the slanted face, `.hex_bar_thickness(pt)` thick (18 by default), looking like the footer (quiet fill,
+  a thin rule toward the body); the two bars of a side meet in a level seam at the vertex and the body moves
+  in to make room (`hex::bar`, `bar_reach`). Items are painted turned with the face: `SideItem::text`, `led`,
+  `meter(frac, segments)`, and the controls `button(text)` and `toggle(text, on)`, whose clicks come back in
+  `FrameResponse::side_clicks` / `side_clicked(face, index)`. egui reports a click anywhere in the upright
+  rectangle around a turned control; the inverse rotation decides whether the pointer was on it, and hover and
+  tooltip follow the same test. What doesn't fit is cut with an ellipsis: a text is shortened, anything else
+  becomes an "…" whose tooltip says how many items are missing. Limits: only these item kinds (egui can't
+  rotate arbitrary UI), boxes without rounded corners. `ve_frame/src/hex.rs` (unit tests
+  `bars_run_along_the_faces_and_meet_at_the_vertex`, `a_turned_box_is_hit_through_the_rotation`), kittest
+  `a_rotated_button_in_a_side_bar_clicks_and_explains_itself`, `a_short_side_bar_says_what_it_left_out`,
+  snapshot `hex_bars`.
 - ✅ **FRM-4 Moves**: `FrameState { size, placement }` (serde) with `Placement { viewport: ViewportSlot,
   floating }`; the menu reports a `FrameAction` (pop out / back into the grid / send to a new or an open OS
   window / send to a machine / close) and `Dock<W>` carries it out: it owns the widgets (`Slot`), `ids(viewport,
@@ -395,6 +411,33 @@ switch (P2605#8oct-1205). ve_settle (SETL-5, SETL-7) later reads the same shapes
   kinds) grew by the width of its sides every frame until it hit the window's edge: its body took the window's
   whole width and the sides came on top. kittest `a_floating_window_does_not_grow_by_itself` pops out all 384
   kinds and compares their sizes after 60 frames.
+  Round 4 (user, 12 Oct 2026):
+  - Floating windows stand out, each part an option (`WidgetFrame::float_look(FloatLook { elevation, focus })`,
+    both on by default): *elevation* is the theme's raised surface as fill, a stronger 1 px border
+    (`line_strong`) and the new token `Tokens::shadow.floating` (wide and soft; dark and light); *focus* puts
+    the border of the floating window on top in the accent colour (`FrameState::is_focused`); the glow stays
+    for landing only. kittest `a_floating_window_stands_out_and_the_one_on_top_is_marked` (rendered pixels).
+  - Ghost slot: `ghost_slot(ui, title, size, shape)` draws the place a floating widget came from
+    (`FrameState::left_slot`, `Dock::ids_in`) as a dashed outline with the title faint; a click puts it back.
+    Without it the grid closes the gap, which is what made a pop-out read as a broken layout: the ghost is
+    the better default in a grid that reflows (the playground has it on), and is left out in `ve_app`'s tabs,
+    where a pane's room goes to its neighbours anyway. kittest `a_ghost_keeps_the_slot_and_puts_the_widget_back`.
+  - Folding: the ▾ in a floating frame's header, or a double click on the bare header, folds the window down
+    to its header and back (`FrameState::collapsed`, saved; `openness()`); LED, title, ⓘ, size switch and ☰
+    keep working, the header doesn't move, unfolding gives the size it had. A hexagon folds to its header band.
+    Animated over `FOLD_SECS` 0.2 s by cutting the frame off: it is always laid out in full and only clipped,
+    never rescaled (the pop-out hop likewise only moves the window now); reduced motion snaps. kittest
+    `a_floating_window_folds_down_to_its_header`, `a_double_click_on_the_header_folds`,
+    `folding_cuts_the_frame_off_without_rescaling_it`.
+  - Landing out of view (`WidgetFrame::land_mode(LandMode)`): a widget put back at a place that is scrolled
+    out of view no longer seems to vanish. `Stay` (default): the view stays and a marker with the title sits on
+    the edge of the view toward it, in the corner when it is off along both axes; a click scrolls there; the
+    glow waits until the widget is seen, `AWAY_SECS` 60 s at most. `Follow`: the view scrolls to it, then it
+    glows. Works along either axis and both; with nested scroll areas the host calls `forward_scroll(ui)` in
+    the outer one, because egui gives a scroll request to the innermost area only. kittest
+    `a_widget_landing_out_of_view_is_pointed_at_from_the_edge`, `the_view_follows_a_widget_that_lands_out_of_view`
+    (both for vertical, horizontal, both axes and nested), `a_widget_out_of_view_is_pointed_at_for_a_minute_at_most`,
+    `a_widget_landing_in_view_just_glows`.
 - ✅ **FRM-5 Send to another machine**: trait `Remote { machines(), send(machine, Parcel) }` the app implements,
   offered through `Moves::remote` / `Dock::moves(Some(&remote))`; `Dock::send` packs the widget into a `Parcel`
   (title, serialized widget, size switch) and removes it only when the send worked. Without a `Remote` the entry
@@ -409,6 +452,12 @@ switch (P2605#8oct-1205). ve_settle (SETL-5, SETL-7) later reads the same shapes
   `frames_hex`, `moved`, `matrix`, later `hex_wings`) with a budget of 40 failing pixels.
   A cell is never wider than its row, so a large *Auto room* can't push a frame past the right edge (bug
   found by the user, 11 Oct 2026; kittest `nothing_goes_past_the_right_edge`).
+  Round 4: two tabs, *Rectangles* (192) and *Hexagons* (288: the options with each kind of sides, bars, wings
+  and none; the medium ones with everything on come first, so a hexagon with side bars and one with wings open
+  the list). The ⓘ of every example says in plain words what it is (shape, size class), which parts are on and
+  off, and what to try, with the title's code as a small last line; examples without an ⓘ say it on their
+  count. Switches: elevation, focus border, ghost slots, follow. kittest `the_playground_has_a_tab_per_shape`,
+  `an_example_explains_itself`, snapshot `tab_hexagons`.
 - ✅ **FRM-7 Widgets and the shell on the frame**: `Widget` gained `frame_spec() -> FrameSpec { led, about,
   stats, sizes }` and `ui_sized(ui, cx, id, size)`, both with defaults, so existing widgets compile unchanged.
   `ve_app::Shell` keeps its widgets in a `Dock<Box<dyn Widget>>` and draws each in a `WidgetFrame`: in a tile
@@ -425,11 +474,14 @@ switch (P2605#8oct-1205). ve_settle (SETL-5, SETL-7) later reads the same shapes
 - 📋 **FRM-8 Port tpm_mesh_dash to the frame**: its `Panel`s become `WidgetFrame`s; then `Panel` and `PanelSize`
   go to *Dropped and superseded*.
 - 💡 **FRM-9 Open ends of the frame**: a hexagon can't `fill` a tile; egui 0.36 has no reduced-motion flag of
-  its own, so the glow and the hop follow `animation_time`; in a wrapping grid the size switch can still move
-  sideways when its cell changes row (only scrolling keeps it); the pointer fallback at a screen edge was not
-  tried on X11 or Windows, and does nothing on Wayland; a second chrome in the style of `Panel` (title on the
-  border line) if the dash wants to keep that look; ve_settle bodies taking `SizeHints` and `Shape` (SETL-4,
-  SETL-5, SETL-7).
+  its own, so the glow, the hop and folding follow `animation_time`; in a wrapping grid the size switch can
+  still move sideways when its cell changes row (only scrolling keeps it); the pointer fallback at a screen edge
+  was not tried on X11 or Windows, and does nothing on Wayland; a folded window has no shadow under its cut
+  edge; a third click soon after two counts as a triple click in egui and doesn't fold; several markers for
+  widgets out of view can overlap; side bar controls have square corners; `ve_app` doesn't offer ghost slots,
+  the land mode or the float look as settings yet; a second chrome in the style of `Panel` (title on the border
+  line) if the dash wants to keep that look; ve_settle bodies taking `SizeHints` and `Shape` (SETL-4, SETL-5,
+  SETL-7).
 
 ## Physics layout (`SETL`)
 

@@ -98,6 +98,9 @@ pub struct FrameState {
     /// The frame drawn last was still learning what its sides and footer take: its size is not one to keep.
     #[serde(skip)]
     pub(crate) settling: bool,
+    /// Since when the frame waits to be seen: it landed in a grid outside the view (egui's clock, seconds).
+    #[serde(skip)]
+    pub(crate) away_since: Option<f64>,
     /// Whether this is the floating window on top of the others (set by [`crate::Dock::show_windows`]).
     #[serde(skip)]
     pub(crate) focused: bool,
@@ -136,6 +139,24 @@ pub struct FrameState {
 
 /// How long the glow around a frame that just landed takes to fade, in seconds.
 pub const GLOW_SECS: f64 = 0.6;
+
+/// How long a widget that landed outside the view waits to be seen, in seconds: that long its place is pointed
+/// at from the edge (or the view goes after it), and its landing glow is held back for the moment it shows.
+pub const AWAY_SECS: f64 = 60.0;
+
+/// What happens when a widget lands in a grid at a place that is scrolled out of view (it was put back from a
+/// floating window, or arrived from another window), so it doesn't look as if it vanished
+/// ([`crate::WidgetFrame::land_mode`]).
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash, Serialize, Deserialize)]
+pub enum LandMode {
+    /// The view stays. A marker with the widget's title sits on the edge of the view toward it (in a corner
+    /// when it is off along both axes); a click on it scrolls there. The landing glow waits until the widget
+    /// comes into view, [`AWAY_SECS`] at most.
+    #[default]
+    Stay,
+    /// The view scrolls to the widget's place, then it glows there as usual.
+    Follow,
+}
 
 /// How long folding a floating window down to its header, or unfolding it, takes, in seconds.
 pub const FOLD_SECS: f32 = 0.2;
@@ -187,6 +208,11 @@ impl FrameState {
     /// How far the pop-out animation is: 1 right after the widget was plucked out, 0 when it rests.
     pub fn pluck(&self) -> f32 {
         self.pluck
+    }
+
+    /// Whether the frame landed outside the view and still waits to be seen ([`LandMode`]).
+    pub fn is_away(&self) -> bool {
+        self.away_since.is_some()
     }
 
     /// Whether this floating window is the one on top: its border takes the accent colour.

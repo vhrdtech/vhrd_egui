@@ -10,7 +10,7 @@ use ve_theme::Tokens;
 use crate::hex::{self, HexFace, SideItem, Wing};
 use crate::menu::{self, Moves};
 use crate::size::{Size, SizeHints, SizeMode};
-use crate::state::{FOLD_SECS, FrameAction, FrameState, GLOW_SECS, Landing};
+use crate::state::{AWAY_SECS, FOLD_SECS, FrameAction, FrameState, GLOW_SECS, LandMode, Landing};
 
 /// Height of the header row.
 pub(crate) const HEADER_H: f32 = 26.0;
@@ -147,6 +147,7 @@ pub struct WidgetFrame<'a> {
     hex_wings: bool,
     hex_bar: f32,
     float_look: FloatLook,
+    land_mode: LandMode,
     /// Worked out when the frame is drawn: its border, its shadow, and whether the header has the fold
     /// control (a floating frame).
     edge: Stroke,
@@ -177,6 +178,7 @@ impl<'a> WidgetFrame<'a> {
             hex_wings: false,
             hex_bar: hex::BAR_THICKNESS,
             float_look: FloatLook::default(),
+            land_mode: LandMode::default(),
             edge: Stroke::NONE,
             shadow: None,
             foldable: false,
@@ -283,6 +285,12 @@ impl<'a> WidgetFrame<'a> {
     /// How the frame sets itself off while it floats; see [`FloatLook`].
     pub fn float_look(mut self, look: FloatLook) -> Self {
         self.float_look = look;
+        self
+    }
+
+    /// What happens when the widget lands in a grid outside the view; see [`LandMode`].
+    pub fn land_mode(mut self, mode: LandMode) -> Self {
+        self.land_mode = mode;
         self
     }
 
@@ -414,6 +422,7 @@ impl<'a> WidgetFrame<'a> {
         state.folding = open < 1.0;
         let full = state.window_size.filter(|_| state.folding).map(Vec2::from);
         let edge = self.edge;
+        let (land_mode, title) = (self.land_mode, self.title.clone());
         let draw = |ui: &mut Ui, state: &mut FrameState| {
             ui.push_id(("ve_frame", salt), |ui| match shape {
                 Shape::Rect => {
@@ -455,6 +464,12 @@ impl<'a> WidgetFrame<'a> {
                 r
             }
         };
+        if floating {
+            state.away_since = None;
+        } else {
+            let frame = (r.response.rect, salt, title.as_str());
+            await_view(ui, &theme, state, frame, land_mode);
+        }
         landing_glow(ui, &theme, state, r.response.rect, shape);
         state.drawn = Some(r.response.rect);
         if !floating && state.anchor_due {
@@ -1119,10 +1134,164 @@ fn blend_button(ui: &mut Ui, theme: &Theme) {
     ui.spacing_mut().button_padding = vec2(3.0, 1.0);
 }
 
+/// Whether enough of `rect` shows in `view` to say the widget is seen: its middle, or half of it.
+fn in_view(rect: Rect, view: Rect) -> bool {
+    if !view.is_positive() {
+        return false;
+    }
+    let shown = view.intersect(rect);
+    view.contains(rect.center()) || (shown.is_positive() && shown.area() >= 0.5 * rect.area())
+}
+
+/// A frame that just landed in a grid (`state.landing` pending) at a place that is scrolled out of view must
+/// not look as if it vanished. Until it is seen, [`AWAY_SECS`] at most: with [`LandMode::Follow`] the view
+/// scrolls to it; with [`LandMode::Stay`] a marker with its title sits on the edge of the view toward it and
+/// scrolls there when clicked. The view is the clip rectangle of the `Ui`, which is what the scroll areas
+/// around it (one or several, along either axis) leave visible.
+fn await_view(
+    ui: &mut Ui,
+    theme: &Theme,
+    state: &mut FrameState,
+    (rect, salt, title): (Rect, Id, &str),
+    mode: LandMode,
+) {
+    let now = ui.input(|i| i.time);
+    let mut view = ui.clip_rect();
+    if !view.is_positive() {
+        // the scroll area the frame is in is itself out of view: point from the edge of the window
+        view = ui.ctx().content_rect();
+    }
+    let seen = in_view(rect, ui.clip_rect());
+    if state.landing == Landing::Pending && !seen && state.away_since.is_none() {
+        state.away_since = Some(now);
+    }
+    let Some(since) = state.away_since else {
+        return;
+    };
+    if seen || now - since > AWAY_SECS {
+        state.away_since = None;
+        return;
+    }
+    let go = match mode {
+        LandMode::Follow => true,
+        LandMode::Stay => away_marker(ui, theme, (rect, view), salt, title),
+    };
+    if go {
+        ui.scroll_to_rect(rect, Some(Align::Center));
+        // for the scroll areas further out: see `forward_scroll`
+        ui.data_mut(|d| d.insert_temp(forward_id(), Some(rect)));
+    }
+    // the wait ends by the clock too
+    ui.ctx()
+        .request_repaint_after(std::time::Duration::from_secs(1));
+}
+
+fn forward_id() -> Id {
+    Id::new("ve_frame::forward_scroll")
+}
+
+/// Pass a frame's wish to be scrolled to on to an outer scroll area. egui gives a scroll request to the
+/// innermost scroll area only, on both axes, so with nested ones (a row that scrolls sideways in a page that
+/// scrolls up and down) the outer one never hears of it. A host with nested scroll areas calls this in the
+/// outer area's content, after the inner area; with a single scroll area nothing is needed.
+///
+/// ```
+/// # egui::__run_test_ui(|ui| {
+/// egui::ScrollArea::vertical().show(ui, |ui| {
+///     egui::ScrollArea::horizontal().id_salt("row").show(ui, |ui| {
+///         // frames ...
+///     });
+///     ve_frame::forward_scroll(ui);
+/// });
+/// # });
+/// ```
+pub fn forward_scroll(ui: &Ui) {
+    let wanted: Option<Option<Rect>> = ui.data_mut(|d| d.remove_temp(forward_id()));
+    if let Some(Some(rect)) = wanted {
+        ui.scroll_to_rect(rect, Some(Align::Center));
+    }
+}
+
+/// The marker on the edge of `view` that points at a widget in `rect`, outside it: an arrow toward it (along
+/// the diagonal when it is off along both axes) and its title. Returns whether it was clicked.
+fn away_marker(ui: &Ui, theme: &Theme, (rect, view): (Rect, Rect), salt: Id, title: &str) -> bool {
+    // which way it lies: -1, 0 or 1 along each axis
+    let way = |at: f32, range: egui::Rangef| {
+        if at < range.min {
+            -1.0
+        } else if at > range.max {
+            1.0
+        } else {
+            0.0
+        }
+    };
+    let toward = vec2(
+        way(rect.center().x, view.x_range()),
+        way(rect.center().y, view.y_range()),
+    );
+    let font = FontId::proportional(11.5);
+    let text = ui
+        .painter()
+        .layout_no_wrap(title.to_owned(), font, theme.text);
+    let size = vec2(text.size().x + 30.0, 22.0);
+    let room = view.shrink2((size / 2.0 + vec2(6.0, 6.0)).min(view.size() / 2.0));
+    let center = rect.center().clamp(room.min, room.max);
+    let at = Rect::from_center_size(center, size);
+    let mut clicked = false;
+    egui::Area::new(Id::new(("ve_frame::away", salt)))
+        .order(egui::Order::Foreground)
+        .fixed_pos(at.min)
+        .constrain(false)
+        .show(ui.ctx(), |ui| {
+            let (r, response) = ui.allocate_exact_size(size, Sense::click());
+            let label = format!("go to {title}");
+            response.widget_info(|| {
+                egui::WidgetInfo::labeled(egui::WidgetType::Button, true, label.clone())
+            });
+            let lit = response.hovered() || response.has_focus();
+            let fill = theme
+                .panel_bg
+                .lerp_to_gamma(theme.accent, if lit { 0.45 } else { 0.25 });
+            let painter = ui.painter();
+            painter.rect(
+                r,
+                11.0,
+                fill,
+                Stroke::new(1.0, theme.accent),
+                egui::StrokeKind::Inside,
+            );
+            // the arrow: a triangle with its tip toward the widget
+            let dir = toward.normalized();
+            let side = vec2(-dir.y, dir.x);
+            let c = egui::pos2(r.left() + 12.0, r.center().y);
+            let tip = c + dir * 5.0;
+            let back = c - dir * 4.0;
+            painter.add(egui::Shape::convex_polygon(
+                vec![tip, back + side * 4.5, back - side * 4.5],
+                theme.text,
+                Stroke::NONE,
+            ));
+            let pos = egui::pos2(r.left() + 22.0, r.center().y - text.size().y / 2.0);
+            painter.galley(pos, text, theme.text);
+            clicked = response.clicked();
+            response
+                .on_hover_cursor(egui::CursorIcon::PointingHand)
+                .on_hover_text(format!(
+                    "{title} was put into the grid outside the view, this way. Click to scroll there."
+                ));
+        });
+    clicked
+}
+
 /// The glow around a frame that just landed ([`FrameState::land`]): the accent colour, fading over
 /// [`GLOW_SECS`]. Skipped when animations are off.
 fn landing_glow(ui: &Ui, theme: &Theme, state: &mut FrameState, rect: Rect, shape: Shape) {
     let now = ui.input(|i| i.time);
+    if state.away_since.is_some() {
+        // not seen yet: the glow is for the moment it shows
+        state.glow = 0.0;
+        return;
+    }
     if state.landing == Landing::Pending {
         let animated = ui.style().animation_time > 0.0;
         state.landing = if animated {

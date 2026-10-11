@@ -72,6 +72,19 @@ versions follow [Semantic Versioning](https://semver.org/). Feature IDs refer to
   toggle *wings* (FRM-3).
 - ve_frame: a click on the size switch keeps the switch under the pointer: a floating window takes the size of
   the next form and moves around it, a grid scrolls back (FRM-1).
+- ve_frame: hexagon side bars: `hex_side` draws a band on the slanted face (`hex_bar_thickness`) with its items
+  turned with the face; new items `SideItem::meter`, `button`, `toggle`; clicks in `FrameResponse::side_clicks`;
+  what doesn't fit is cut with an ellipsis (FRM-3).
+- ve_frame: floating windows stand out: `FloatLook` (elevation, focus border), `ghost_slot` with
+  `FrameState::left_slot` and `Dock::ids_in` (FRM-4).
+- ve_frame: floating windows fold down to their header (`FrameState::collapsed`, `openness`, `FOLD_SECS`), by
+  the ▾ in the header or a double click on it (FRM-4).
+- ve_frame: `LandMode` (`Stay` with a marker on the edge of the view, `Follow`), `AWAY_SECS`,
+  `FrameState::is_away`, `forward_scroll` for nested scroll areas (FRM-4).
+- ve_frame: the ☰ looks pressed while its menu is open (`menu_open_look`, `FrameState::menu_open`) (FRM-1).
+- ve_frame playground: tabs *Rectangles* and *Hexagons*, hexagons with bars, wings and no sides, every example
+  explains itself in its ⓘ, switches for elevation, focus border, ghost slots and follow (FRM-6).
+- ve_theme: `Elevation::floating`, the shadow of a widget lifted out of its grid, in dark and light (THM-1).
 - ve_widget: `Widget::frame_spec` (`FrameSpec`: LED, ⓘ text and stats, sizes) and `Widget::ui_sized`, both with
   defaults; `ve_widget::ve_frame` re-export (FRM-7).
 - ve_app: every widget sits in a `ve_frame::WidgetFrame`; its ☰ menu pops it out as a floating window and back
@@ -81,6 +94,9 @@ versions follow [Semantic Versioning](https://semver.org/). Feature IDs refer to
 
 ### Changed
 
+- ve_frame: **Breaking:** the items of `hex_side` sit in a bar on the face instead of loose along it; `hex::band`
+  is gone (`hex::bar`). The pop-out hop only lifts the window, it no longer scales it (FRM-3, FRM-4).
+- ve_theme: **Breaking:** `Elevation` has a new field `floating`; code that builds one by hand adds it (THM-1).
 - ve_frame: the header is the strongest band of a frame (`header_fill`, title in the text colour), the sides and
   the footer a quiet one (`quiet_fill`); the faces of a hexagon that carry items use the quiet fill too (FRM-1).
 - ve_frame: a floating frame always has a size of its own: `FrameState::window_size` is set from the first frame

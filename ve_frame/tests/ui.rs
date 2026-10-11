@@ -1381,3 +1381,238 @@ fn folding_cuts_the_frame_off_without_rescaling_it() {
     h.step();
     assert_eq!(slot(&h).frame.openness(), 1.0);
 }
+
+/// How the test field scrolls.
+#[derive(Clone, Copy, Debug, PartialEq)]
+enum Scrolls {
+    Vertical,
+    Horizontal,
+    Both,
+    /// A row that scrolls sideways, far down in a page that scrolls up and down.
+    Nested,
+}
+
+/// A plain host with many small widgets in a scroll area, to land one of them outside the view.
+struct Field {
+    dock: ve_frame::Dock<String>,
+    mode: ve_frame::LandMode,
+    scrolls: Scrolls,
+    /// What the scroll area shows, in screen points.
+    view: egui::Rect,
+}
+
+impl Field {
+    fn new(scrolls: Scrolls, mode: ve_frame::LandMode) -> Self {
+        let mut dock = ve_frame::Dock::new();
+        for n in 0..60 {
+            dock.add(format!("w{n}"));
+        }
+        Self {
+            dock,
+            mode,
+            scrolls,
+            view: egui::Rect::NOTHING,
+        }
+    }
+
+    fn row(&mut self, ui: &mut egui::Ui, ids: &[ve_frame::SlotId]) {
+        for id in ids {
+            let slot = self.dock.get_mut(*id).expect("there");
+            let name = slot.widget.clone();
+            ve_frame::WidgetFrame::new(name.as_str())
+                .id_salt(id.0)
+                .land_mode(self.mode)
+                .show(ui, &mut slot.frame, |ui, _| {
+                    ui.set_min_size(vec2(150.0, 40.0));
+                    ui.label("body");
+                });
+        }
+    }
+
+    fn ui(&mut self, ui: &mut egui::Ui) {
+        let ids = self.dock.ids(ViewportSlot::MAIN, false);
+        let view = match self.scrolls {
+            Scrolls::Vertical => {
+                egui::ScrollArea::vertical()
+                    .auto_shrink(false)
+                    .show(ui, |ui| self.row(ui, &ids))
+                    .inner_rect
+            }
+            Scrolls::Horizontal => {
+                egui::ScrollArea::horizontal()
+                    .auto_shrink(false)
+                    .show(ui, |ui| ui.horizontal(|ui| self.row(ui, &ids)))
+                    .inner_rect
+            }
+            Scrolls::Both => {
+                egui::ScrollArea::both()
+                    .auto_shrink(false)
+                    .show(ui, |ui| {
+                        for line in ids.chunks(6) {
+                            ui.horizontal(|ui| self.row(ui, line));
+                        }
+                    })
+                    .inner_rect
+            }
+            Scrolls::Nested => {
+                egui::ScrollArea::vertical()
+                    .auto_shrink(false)
+                    .show(ui, |ui| {
+                        ui.add_space(900.0);
+                        egui::ScrollArea::horizontal()
+                            .id_salt("row")
+                            .show(ui, |ui| ui.horizontal(|ui| self.row(ui, &ids)));
+                        // egui hands a scroll request to the innermost area only: pass it on to this one
+                        ve_frame::forward_scroll(ui);
+                        ui.add_space(300.0);
+                    })
+                    .inner_rect
+            }
+        };
+        self.view = view;
+    }
+}
+
+fn field(scrolls: Scrolls, mode: ve_frame::LandMode, dt: f32) -> Harness<'static, Field> {
+    let mut h = Harness::builder()
+        .with_size(vec2(640.0, 420.0))
+        .with_step_dt(dt)
+        .build_ui_state(|ui, f: &mut Field| f.ui(ui), Field::new(scrolls, mode));
+    h.run();
+    // an app has animations on: the glow, and scrolling that takes a moment
+    h.ctx.all_styles_mut(|s| s.animation_time = 1.0 / 12.0);
+    h.run();
+    h
+}
+
+const ALL_SCROLLS: [Scrolls; 4] = [
+    Scrolls::Vertical,
+    Scrolls::Horizontal,
+    Scrolls::Both,
+    Scrolls::Nested,
+];
+
+/// The last widget of the field: far along every axis the field scrolls.
+fn far(h: &Harness<'_, Field>) -> ve_frame::FrameState {
+    h.state().dock.iter().last().expect("widgets").frame
+}
+
+fn land_far(h: &mut Harness<'_, Field>) {
+    let last = h.state_mut().dock.iter_mut().last().expect("widgets");
+    last.frame.land(); // as when it is put back from a floating window
+    h.step();
+    h.step();
+}
+
+fn far_is_seen(h: &Harness<'_, Field>) -> bool {
+    let rect = far(h).drawn_rect().expect("drawn");
+    h.state().view.contains(rect.center())
+}
+
+/// Stay: a widget that lands outside the view is pointed at from the edge of the view toward it; a click on
+/// the marker scrolls there, the marker goes, and the widget glows the moment it shows. Along every axis.
+#[test]
+fn a_widget_landing_out_of_view_is_pointed_at_from_the_edge() {
+    for scrolls in ALL_SCROLLS {
+        let mut h = field(scrolls, ve_frame::LandMode::Stay, 0.05);
+        land_far(&mut h);
+        assert!(
+            far(&h).is_away() && !far_is_seen(&h),
+            "{scrolls:?}: landed outside the view"
+        );
+        assert_eq!(far(&h).glow(), 0.0, "{scrolls:?}: the glow waits");
+        let marker = h.get_by_label("go to w59").rect();
+        let view = match scrolls {
+            // the row itself is out of view: the marker sits on the edge of the window
+            Scrolls::Nested => h.state().view,
+            _ => h.state().view,
+        };
+        assert!(
+            view.expand(1.0).contains_rect(marker),
+            "{scrolls:?}: {marker:?} in {view:?}"
+        );
+        let (at_right, at_bottom) = (
+            marker.right() > view.right() - 12.0,
+            marker.bottom() > view.bottom() - 12.0,
+        );
+        let expect = match scrolls {
+            Scrolls::Vertical => (false, true),
+            Scrolls::Horizontal => (true, false),
+            Scrolls::Both | Scrolls::Nested => (true, true), // the corner
+        };
+        assert_eq!(
+            (at_right, at_bottom),
+            expect,
+            "{scrolls:?}: marker at {marker:?} in {view:?}"
+        );
+
+        h.get_by_label("go to w59").click();
+        let mut glowed = 0.0_f32;
+        for _ in 0..60 {
+            h.step();
+            glowed = glowed.max(far(&h).glow());
+        }
+        assert!(far_is_seen(&h), "{scrolls:?}: the click scrolled there");
+        assert!(!far(&h).is_away() && h.query_by_label("go to w59").is_none());
+        assert!(
+            glowed > 0.5,
+            "{scrolls:?}: it glowed when it came into view: {glowed}"
+        );
+        assert_eq!(far(&h).glow(), 0.0, "{scrolls:?}: and the glow is over");
+    }
+}
+
+/// Stay: the wait is over after 60 s, seen or not.
+#[test]
+fn a_widget_out_of_view_is_pointed_at_for_a_minute_at_most() {
+    let mut h = field(Scrolls::Horizontal, ve_frame::LandMode::Stay, 10.0);
+    land_far(&mut h);
+    assert!(far(&h).is_away());
+    h.get_by_label("go to w59");
+    for _ in 0..3 {
+        h.step();
+    }
+    assert!(far(&h).is_away(), "still pointed at after 50 s");
+    for _ in 0..3 {
+        h.step();
+    }
+    assert!(!far(&h).is_away() && !far_is_seen(&h));
+    assert!(
+        h.query_by_label("go to w59").is_none(),
+        "the marker is gone after 60 s"
+    );
+}
+
+/// Follow: the view goes to where the widget landed, and it glows there. Along every axis.
+#[test]
+fn the_view_follows_a_widget_that_lands_out_of_view() {
+    for scrolls in ALL_SCROLLS {
+        let mut h = field(scrolls, ve_frame::LandMode::Follow, 0.05);
+        land_far(&mut h);
+        let mut glowed = 0.0_f32;
+        for _ in 0..60 {
+            assert!(
+                h.query_by_label("go to w59").is_none(),
+                "{scrolls:?}: no marker when following"
+            );
+            h.step();
+            glowed = glowed.max(far(&h).glow());
+        }
+        assert!(far_is_seen(&h), "{scrolls:?}: the slot is in view");
+        assert!(!far(&h).is_away());
+        assert!(glowed > 0.5, "{scrolls:?}: it glowed once there: {glowed}");
+    }
+}
+
+/// A widget that lands in view glows at once, without a marker and without the view moving.
+#[test]
+fn a_widget_landing_in_view_just_glows() {
+    let mut h = field(Scrolls::Vertical, ve_frame::LandMode::Stay, 0.05);
+    let first = h.state_mut().dock.iter_mut().next().expect("widgets");
+    first.frame.land();
+    h.step();
+    h.step();
+    let frame = h.state().dock.iter().next().expect("widgets").frame;
+    assert!(!frame.is_away() && frame.glow() > 0.5);
+    assert!(h.query_by_label("go to w0").is_none());
+}

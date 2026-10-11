@@ -17,9 +17,9 @@ use egui::{Align, Layout, RichText, Ui};
 use serde::{Deserialize, Serialize};
 use ve_dash::{Meter, Sparkline, StatusLight, Theme};
 use ve_frame::{
-    Applied, Dock, FloatLook, FrameAction, FrameState, HexFace, Machine, Moves, Parcel, Remote,
-    Shape, SideItem, Size, SizeHints, Slot, SlotId, Status, ViewportSlot, WidgetFrame, Wing,
-    outer_width,
+    Applied, Dock, FloatLook, FrameAction, FrameState, HexFace, LandMode, Machine, Moves, Parcel,
+    Remote, Shape, SideItem, Size, SizeHints, Slot, SlotId, Status, ViewportSlot, WidgetFrame,
+    Wing, outer_width,
 };
 
 #[allow(dead_code)] // the UI tests include this file as a module and start their own harness
@@ -425,7 +425,7 @@ impl Demo {
 pub fn draw_at(
     ui: &mut Ui,
     slot: &mut Slot<Demo>,
-    (moves, look): (&Moves, FloatLook),
+    (moves, look, land): (&Moves, FloatLook, LandMode),
 ) -> (Option<FrameAction>, egui::Rect) {
     let Slot { id, widget, frame } = slot;
     let opts = widget.opts;
@@ -436,7 +436,8 @@ pub fn draw_at(
 
     let mut f = WidgetFrame::new(widget.title())
         .id_salt(id.0)
-        .float_look(look);
+        .float_look(look)
+        .land_mode(land);
     if opts.led {
         let (status, why) = widget.status();
         f = f.led(status, why);
@@ -588,6 +589,8 @@ pub struct Playground {
     pub look: FloatLook,
     /// Whether the grid keeps the place of a widget that floats, as a dashed ghost that puts it back.
     pub ghosts: bool,
+    /// What happens when a widget is put back at a place that is scrolled out of view.
+    pub land: LandMode,
     /// The last thing that happened, shown in the bar.
     pub message: String,
     /// Where the main grid's frames were drawn last frame, and the room they had (for the tests).
@@ -613,6 +616,7 @@ impl Playground {
             tab: None,
             look: FloatLook::default(),
             ghosts: true,
+            land: LandMode::default(),
             message: String::new(),
             drawn: Vec::new(),
             room: egui::Rect::NOTHING,
@@ -660,6 +664,7 @@ impl Playground {
         let room = self.auto_room;
         let look = self.look;
         let ghosts = self.ghosts;
+        let land = self.land;
         let hidden: Vec<SlotId> = self
             .dock
             .iter()
@@ -678,7 +683,7 @@ impl Playground {
                         &mut self.dock,
                         ViewportSlot::MAIN,
                         &hidden,
-                        (&moves, room, look, ghosts),
+                        (&moves, room, (look, land), ghosts),
                         (&mut picked, &mut drawn),
                     );
                 });
@@ -686,7 +691,7 @@ impl Playground {
         self.drawn = drawn;
         let mut floated = Vec::new();
         let mut float = |ui: &mut Ui, slot: &mut Slot<Demo>| {
-            let (action, rect) = draw_at(ui, slot, (&moves, look));
+            let (action, rect) = draw_at(ui, slot, (&moves, look, land));
             floated.push((slot.id, rect));
             action
         };
@@ -698,7 +703,7 @@ impl Playground {
                     dock,
                     viewport,
                     &hidden,
-                    (&moves, room, look, ghosts),
+                    (&moves, room, (look, land), ghosts),
                     (&mut picked, &mut Vec::new()),
                 );
                 picked.extend(dock.show_windows(ui, viewport, &mut float));
@@ -796,6 +801,18 @@ impl Playground {
                     "The grid keeps the place of a widget that floats, as a dashed outline with its title; \
                      click it to put the widget back. Off: the rows close up behind it",
                 );
+            let mut follow = self.land == LandMode::Follow;
+            ui.checkbox(&mut follow, "follow")
+                .on_hover_text(
+                    "When a widget is put back at a place that is scrolled out of view. On: the view \
+                     scrolls there. Off: the view stays and a marker on its edge points at the widget; \
+                     click the marker to go there",
+                );
+            self.land = if follow {
+                LandMode::Follow
+            } else {
+                LandMode::Stay
+            };
             ui.separator();
             ui.checkbox(&mut self.transport, "transport")
                 .on_hover_text(
@@ -830,7 +847,7 @@ fn grid(
     dock: &mut Dock<Demo>,
     viewport: ViewportSlot,
     hidden: &[SlotId],
-    (moves, auto_room, look, ghosts): (&Moves, f32, FloatLook, bool),
+    (moves, auto_room, (look, land), ghosts): (&Moves, f32, (FloatLook, LandMode), bool),
     (picked, drawn): (&mut Vec<(SlotId, FrameAction)>, &mut Vec<egui::Rect>),
 ) {
     let rows = Layout::left_to_right(Align::Min).with_main_wrap(true);
@@ -872,7 +889,7 @@ fn grid(
             let (action, rect) = ui
                 .allocate_ui_with_layout(size, Layout::top_down(Align::Min), |ui| {
                     ui.set_max_width(cell);
-                    draw_at(ui, slot, (moves, look))
+                    draw_at(ui, slot, (moves, look, land))
                 })
                 .inner;
             drawn.push(rect);
