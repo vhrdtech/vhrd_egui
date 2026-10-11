@@ -257,7 +257,7 @@ fn sides_work_on_both_shapes() {
         Playground::with([Demo::new(hex, Scale::Medium)]),
         vec2(900.0, 500.0),
     );
-    for label in ["ch 1", "24 °C", "n 0"] {
+    for label in ["ch 1", "add", "x2"] {
         h.get_by_label(label);
     }
 }
@@ -746,10 +746,12 @@ fn the_playground_has_a_tab_per_shape() {
     h.run();
     assert_eq!(h.state().drawn.len(), 32 * 3 * 3, "only the hexagons");
     assert!(on_screen(&h, "medium LISMFX"), "a hexagon with side strips");
-    assert!(
-        on_screen(&h, "ch 1") && on_screen(&h, "24 °C"),
-        "its strips of items"
-    );
+    for item in ["ch 1", "add", "x2", "0 %"] {
+        assert!(
+            on_screen(&h, item),
+            "an item on each of its four bars: {item}"
+        );
+    }
     assert!(on_screen(&h, "medium LISMFW"), "a hexagon with wings");
     assert!(
         on_screen(&h, "wing level 0") && on_screen(&h, "count 0"),
@@ -779,10 +781,11 @@ fn an_example_explains_itself() {
     for line in [
         "A medium hexagon: its body is 90 × 40 pt at its smallest and asks for 200 pt of width in its \
          normal form, 380 pt in its wide one.",
-        "On: LED, info, size switch, menu, side strips along the slanted faces",
+        "On: LED, info, size switch, menu, side bars on the slanted faces",
         "Off: footer",
         "Try:",
-        "• Hover the items along the slanted faces: text and a dot, rotated with the face.",
+        "• Use the side bars: the add button and the x2 switch are turned with their faces and still \
+         click; hover the text, the dot and the meter.",
         "code: medium LISM-X",
     ] {
         assert!(h.query_by_label(line).is_some(), "missing: {line}");
@@ -914,4 +917,143 @@ fn the_size_switch_stays_put_in_a_scrolled_grid() {
         let now = frame(&h).switch_pos().expect("a switch");
         assert!((now.y - at.y).abs() < 1.0, "{at:?} -> {now:?}");
     }
+}
+
+/// A hexagon's side bars hold controls turned with their faces: the button is clicked through the rotation
+/// (on it, not in the corners of the upright rectangle around it), shows its tooltip, and the toggle flips.
+#[test]
+fn a_rotated_button_in_a_side_bar_clicks_and_explains_itself() {
+    let hex = Opts {
+        hex: true,
+        ..Opts::ALL
+    };
+    let mut h = harness(
+        Playground::with([Demo::new(hex, Scale::Medium)]),
+        vec2(900.0, 500.0),
+    );
+    // by its name, as assistive technology would
+    click(&mut h, "add");
+    assert_eq!(slot(&h).widget.clicks, 1);
+
+    // with the pointer on it
+    let around = h.get_by_label("add").rect();
+    let on_it = around.center();
+    h.hover_at(on_it);
+    for _ in 0..8 {
+        h.step();
+    }
+    assert!(
+        h.query_by_label("Lower left bar: add a click, like +1")
+            .is_some(),
+        "the tooltip of the turned button"
+    );
+    h.drag_at(on_it);
+    h.run();
+    h.drop_at(on_it);
+    h.run();
+    assert_eq!(
+        slot(&h).widget.clicks,
+        2,
+        "a pointer click on the turned button"
+    );
+
+    // the upright rectangle around a turned box has corners the box doesn't reach: no click, no tooltip there
+    assert!(
+        around.width() > 12.0 && around.height() > 12.0,
+        "{around:?}"
+    );
+    let corner = around.left_top() + vec2(1.5, 1.5);
+    h.hover_at(corner);
+    for _ in 0..8 {
+        h.step();
+    }
+    assert!(
+        h.query_by_label("Lower left bar: add a click, like +1")
+            .is_none()
+    );
+    h.drag_at(corner);
+    h.run();
+    h.drop_at(corner);
+    h.run();
+    assert_eq!(slot(&h).widget.clicks, 2, "beside the button is not on it");
+
+    // the toggle: on, and the button counts double
+    assert!(!slot(&h).widget.double);
+    click(&mut h, "x2");
+    assert!(slot(&h).widget.double);
+    click(&mut h, "add");
+    assert_eq!(slot(&h).widget.clicks, 4);
+    h.snapshot_options("hex_bars", &tolerant());
+}
+
+/// What doesn't fit into a side bar is cut with an ellipsis that says what is missing, not dropped.
+#[test]
+fn a_short_side_bar_says_what_it_left_out() {
+    let hex = Opts {
+        hex: true,
+        ..Opts::ALL
+    };
+    let mut h = harness(
+        Playground::with([Demo::new(hex, Scale::Medium)]),
+        vec2(900.0, 500.0),
+    );
+    // "ch 1" fits the upper left bar of a medium hexagon, "24 °C" after it does not
+    h.get_by_label("ch 1");
+    assert!(h.query_by_label("24 °C").is_none());
+    hover(&mut h, "1 more");
+    assert!(
+        h.query_by_label("1 more item on this side: no room for it; make the widget larger")
+            .is_some()
+    );
+    // a larger one has room for both
+    let h = harness(
+        Playground::with([Demo::new(hex, Scale::Big)]),
+        vec2(1100.0, 600.0),
+    );
+    h.state(); // big on auto shows its smallest form here; make it nom
+    let mut h = h;
+    click(&mut h, "auto");
+    click(&mut h, "min");
+    h.get_by_label("24 °C");
+    assert!(h.query_by_label("1 more").is_none());
+}
+
+/// The ☰ looks pressed while its menu is open: filled with the accent, back to nothing when it closes.
+#[test]
+fn the_menu_button_shows_that_its_menu_is_open() {
+    let mut h = harness(one(Scale::Medium), vec2(900.0, 500.0));
+    let theme = ve_dash::Theme::dark();
+    let (open_fill, _) = ve_frame::menu_open_look(&theme);
+    let rest = ve_frame::header_fill(&theme);
+    let sample = |h: &mut Harness<'_, Playground>| {
+        let button = slot(h).frame.menu_rect().expect("a menu button");
+        let image = h.render().expect("rendered");
+        pixel(&image, button.left_center() + vec2(2.0, 0.0))
+    };
+    assert!(!slot(&h).frame.menu_open());
+    let closed = sample(&mut h);
+    assert!(
+        ve_theme::hue::delta_e(closed, rest) < 0.02,
+        "no box at rest: {closed:?}"
+    );
+
+    click(&mut h, "☰");
+    h.run();
+    assert!(slot(&h).frame.menu_open());
+    let open = sample(&mut h);
+    assert!(
+        ve_theme::hue::delta_e(open, open_fill) < 0.03 && ve_theme::hue::delta_e(open, rest) > 0.1,
+        "filled while open: {open:?}, at rest {rest:?}, open fill {open_fill:?}"
+    );
+
+    h.key_press(egui::Key::Escape);
+    h.hover_at(egui::pos2(600.0, 400.0)); // off the button: under the pointer it is lit, as any control
+    h.run();
+    h.run();
+    assert!(!slot(&h).frame.menu_open());
+    let again = sample(&mut h);
+    assert!(
+        ve_theme::hue::delta_e(again, rest) < 0.02,
+        "released: {again:?}"
+    );
 }

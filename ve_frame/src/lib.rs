@@ -51,7 +51,8 @@ mod state;
 
 pub use dock::{Applied, Dock, Slot, SlotId};
 pub use frame::{
-    BodyArea, FrameResponse, Shape, WidgetFrame, header_fill, outer_width, quiet_fill,
+    BodyArea, FrameResponse, Shape, WidgetFrame, header_fill, menu_open_look, outer_width,
+    quiet_fill,
 };
 pub use hex::{HexFace, SideItem, Wing};
 pub use menu::{Moves, NO_REMOTE};

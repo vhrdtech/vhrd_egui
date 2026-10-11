@@ -103,6 +103,11 @@ pub struct FrameState {
     /// Where the size switch was drawn last, if the frame has one.
     #[serde(skip)]
     pub(crate) switch_at: Option<egui::Pos2>,
+    /// Whether the ☰ menu was open when the frame was drawn last, and where its button is.
+    #[serde(skip)]
+    pub(crate) menu_open: bool,
+    #[serde(skip)]
+    pub(crate) menu_at: Option<egui::Rect>,
     /// The size switch was clicked at this screen point: it should be there again once the frame has its new
     /// size (the window moves, or the grid scrolls). `anchor_fresh` in the frame of the click, `anchor_due` in
     /// the one after, when the new layout is known.
@@ -168,6 +173,16 @@ impl FrameState {
     /// Where the frame was drawn last, in screen points.
     pub fn drawn_rect(&self) -> Option<egui::Rect> {
         self.drawn
+    }
+
+    /// Whether the ☰ menu was open when the frame was drawn last; its button is drawn pressed then.
+    pub fn menu_open(&self) -> bool {
+        self.menu_open
+    }
+
+    /// Where the ☰ button was drawn last, if the frame has one.
+    pub fn menu_rect(&self) -> Option<egui::Rect> {
+        self.menu_at
     }
 
     /// Where the size switch was drawn last, if the frame has one.

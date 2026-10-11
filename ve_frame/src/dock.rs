@@ -336,8 +336,8 @@ fn keep_inside(pos: egui::Pos2, size: egui::Vec2, screen: egui::Rect) -> egui::P
 }
 
 /// The hop of a window that was just plucked out of the grid ([`FrameState::pluck_out`]): for
-/// [`PLUCK_SECS`] it is lifted and a touch larger, then it rests. Done with a transform of the window's layer,
-/// so its place and size stay what they are. With animations off (`egui::Style::animation_time` 0, the
+/// [`PLUCK_SECS`] it is lifted, then it rests. Done by moving the window's layer, so its place and size stay what
+/// they are and nothing is rescaled. With animations off (`egui::Style::animation_time` 0, the
 /// reduced-motion setting) it rests at once.
 fn pluck(ctx: &egui::Context, frame: &mut FrameState, window_id: Id) {
     let layer = egui::LayerId::new(egui::Order::Middle, window_id);
@@ -361,21 +361,16 @@ fn pluck(ctx: &egui::Context, frame: &mut FrameState, window_id: Id) {
         }
         return;
     }
-    // up and back down: nothing at both ends, the most in the middle
+    // up and back down: nothing at both ends, the most in the middle. The window only moves: its content is
+    // never rescaled, which would give frames with odd text and lines.
     let hop = (std::f32::consts::PI * (1.0 - frame.pluck)).sin();
-    let scale = 1.0 + PLUCK_SCALE * hop;
-    let center = match (frame.window_pos, frame.window_size) {
-        (Some(pos), Some(size)) => egui::Pos2::from(pos) + egui::Vec2::from(size) / 2.0,
-        _ => egui::Pos2::ZERO,
-    };
-    let offset = center.to_vec2() * (1.0 - scale) + egui::vec2(0.0, -PLUCK_LIFT * hop);
-    ctx.set_transform_layer(layer, egui::emath::TSTransform::new(offset, scale));
+    let lift = egui::vec2(0.0, -PLUCK_LIFT * hop);
+    ctx.set_transform_layer(layer, egui::emath::TSTransform::from_translation(lift));
     ctx.request_repaint();
 }
 
-/// How far a plucked window is lifted at the top of its hop, in points, and how much larger it is there.
+/// How far a plucked window is lifted at the top of its hop, in points.
 const PLUCK_LIFT: f32 = 10.0;
-const PLUCK_SCALE: f32 = 0.04;
 
 /// Width of the strips along the right and bottom edge that resize a floating frame, and the corner's size.
 const RESIZE_EDGE: f32 = 5.0;

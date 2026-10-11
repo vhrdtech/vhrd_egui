@@ -1,7 +1,7 @@
 //! Frame playground: every combination of the frame's options, in three widget sizes, on two tabs.
 //!
 //! *Rectangles*: 2⁶ options (LED, ⓘ, size switch, menu, footer, sides) × tiny / medium / big = 192 widgets.
-//! *Hexagons*: the same options with three kinds of sides (none, strips of items along the slanted faces, wings
+//! *Hexagons*: the same options with three kinds of sides (none, bars on the slanted faces with turned items, wings
 //! the content draws into) = 288 widgets, the ones with everything on first. Each title spells its options
 //! (`tiny LISMFX`, a dash for one that is off, `W` for wings); the ⓘ of a widget (and its count, when it has no
 //! ⓘ) says in plain words what it shows and what to try with it.
@@ -85,12 +85,8 @@ impl Opts {
         }
     }
 
-    /// `LISMFX`, with a dash for each option that is off.
-    pub fn code(self) -> String {
-        self.code_with(false)
-    }
-
-    /// [`Self::code`] with `W` in place of `X` for a hexagon whose sides are wings.
+    /// `LISMFX`, with a dash for each option that is off, and `W` in place of `X` for a hexagon whose sides
+    /// are wings.
     pub fn code_with(self, wings: bool) -> String {
         [
             (self.led, 'L'),
@@ -143,9 +139,12 @@ pub struct Demo {
     pub scale: Scale,
     pub clicks: u32,
     /// Whether a hexagon with sides asks for the wings beside its body and draws into them, instead of
-    /// carrying strips of items along its slanted faces.
+    /// carrying bars on its slanted faces.
     #[serde(default)]
     pub wings: bool,
+    /// The toggle in a hexagon's side bar: +1 counts double.
+    #[serde(default)]
+    pub double: bool,
 }
 
 impl Demo {
@@ -155,6 +154,7 @@ impl Demo {
             scale,
             clicks: 0,
             wings: false,
+            double: false,
         }
     }
 
@@ -198,7 +198,7 @@ impl Demo {
     fn sides_name(&self) -> &'static str {
         match (self.opts.hex, self.uses_wings()) {
             (false, _) => "left and right side columns",
-            (true, false) => "side strips along the slanted faces",
+            (true, false) => "side bars on the slanted faces",
             (true, true) => "wings beside the body",
         }
     }
@@ -258,7 +258,7 @@ impl Demo {
         if o.sides {
             lines.push(match (o.hex, self.uses_wings()) {
                 (false, _) => "Use + and − in the left side; the right side shows two status dots.".to_owned(),
-                (true, false) => "Hover the items along the slanted faces: text and a dot, rotated with the face.".to_owned(),
+                (true, false) => "Use the side bars: the add button and the x2 switch are turned with their faces and still click; hover the text, the dot and the meter.".to_owned(),
                 (true, true) => "Click +1 and watch the level in the left wing fill row by row; the count sits in the right wing.".to_owned(),
             });
         }
@@ -307,13 +307,14 @@ impl Demo {
     /// The body, arranged for `size`.
     fn body(&mut self, ui: &mut Ui, size: Size) {
         let theme = Theme::from_tokens(&ve_theme::Tokens::of_ui(ui));
+        let step = if self.double { 2 } else { 1 };
         let add = |ui: &mut Ui, clicks: &mut u32| {
             if ui
                 .small_button("+1")
                 .on_hover_text("Add one click: the count is the widget's state and travels with it")
                 .clicked()
             {
-                *clicks += 1;
+                *clicks += step;
             }
         };
         match size {
@@ -466,22 +467,30 @@ pub fn draw_at(
         f = f.shape(Shape::Hex);
         if opts.sides && !widget.uses_wings() {
             let led = widget.status().0;
+            let level = (clicks as f32 / 5.0).min(1.0);
             f = f
                 .hex_side(
                     HexFace::UpperLeft,
-                    [SideItem::text("ch 1").hover("Upper left face: the channel")],
+                    [
+                        SideItem::text("ch 1").hover("Upper left bar: the channel"),
+                        SideItem::text("24 °C").hover("Upper left bar: temperature, °C"),
+                    ],
                 )
                 .hex_side(
                     HexFace::UpperRight,
-                    [SideItem::led(led).hover("upper right face: the widget's state")],
+                    [
+                        SideItem::led(led).hover("upper right bar: the widget's state"),
+                        SideItem::meter(level, 5).hover("Upper right bar: clicks out of 5"),
+                    ],
                 )
                 .hex_side(
                     HexFace::LowerLeft,
-                    [SideItem::text("24 °C").hover("Lower left face: temperature, °C")],
+                    [SideItem::button("add").hover("Lower left bar: add a click, like +1")],
                 )
                 .hex_side(
                     HexFace::LowerRight,
-                    [SideItem::text(format!("n {clicks}")).hover("Lower right face: clicks")],
+                    [SideItem::toggle("x2", widget.double)
+                        .hover("Lower right bar: when on, a click counts double")],
                 );
         }
     } else if opts.sides {
@@ -519,6 +528,12 @@ pub fn draw_at(
         });
     if reset {
         widget.clicks = 0;
+    }
+    if r.side_clicked(HexFace::LowerLeft, 0) {
+        widget.clicks += if widget.double { 2 } else { 1 };
+    }
+    if r.side_clicked(HexFace::LowerRight, 0) {
+        widget.double = !widget.double;
     }
     widget.clicks = widget.clicks.saturating_add_signed(bump);
     (r.action, r.response.rect)
@@ -596,8 +611,8 @@ impl Playground {
     }
 
     /// Every combination of the options in the three scales, on two tabs. Rectangles: 64 option sets. Hexagons:
-    /// the five other options with each kind of sides (strips along the faces, wings, none); the medium ones
-    /// with the most options come first, so a hexagon with side strips and one with wings open the list.
+    /// the five other options with each kind of sides (bars on the faces, wings, none); the medium ones
+    /// with the most options come first, so a hexagon with side bars and one with wings open the list.
     pub fn matrix() -> Self {
         let rects = Scale::ALL.into_iter().flat_map(|scale| {
             (0..64).map(move |bits| Demo::new(Opts::from_bits(bits, false), scale))
@@ -734,7 +749,7 @@ impl Playground {
                     Tab::Hexagons,
                     "Hexagons",
                     hexes,
-                    "hexagonal frames: with side strips along the slanted faces, with wings, and without sides",
+                    "hexagonal frames: with side bars on the slanted faces, with wings, and without sides",
                 ),
             ] {
                 ui.selectable_value(&mut self.tab, Some(tab), label)

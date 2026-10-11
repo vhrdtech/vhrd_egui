@@ -62,6 +62,16 @@ pub struct FrameResponse<R> {
     pub response: Response,
     /// Where the body was laid out.
     pub body_rect: Rect,
+    /// The controls in a hexagon's side bars that were clicked this frame: the face and the item's index in
+    /// what [`WidgetFrame::hex_side`] was given.
+    pub side_clicks: Vec<(HexFace, usize)>,
+}
+
+impl<R> FrameResponse<R> {
+    /// Whether the control at `index` of the side bar on `face` was clicked.
+    pub fn side_clicked(&self, face: HexFace, index: usize) -> bool {
+        self.side_clicks.contains(&(face, index))
+    }
 }
 
 /// The frame a widget sits in. Everything but the title is optional:
@@ -114,6 +124,7 @@ pub struct WidgetFrame<'a> {
     bare: bool,
     title_shown: bool,
     hex_wings: bool,
+    hex_bar: f32,
 }
 
 impl<'a> WidgetFrame<'a> {
@@ -137,6 +148,7 @@ impl<'a> WidgetFrame<'a> {
             bare: false,
             title_shown: true,
             hex_wings: false,
+            hex_bar: hex::BAR_THICKNESS,
         }
     }
 
@@ -208,7 +220,10 @@ impl<'a> WidgetFrame<'a> {
         self
     }
 
-    /// Items along one slanted face of a hexagon, rotated along it. Ignored by rectangles.
+    /// The side bar on one slanted face of a hexagon: a band along the face, as thick as
+    /// [`Self::hex_bar_thickness`] and looking like the footer (quiet fill, a thin rule toward the body), with
+    /// `items` in it, turned with the face: texts, LEDs, meters, and buttons and toggles whose clicks come back
+    /// in [`FrameResponse::side_clicks`]. What doesn't fit is cut with an ellipsis. Ignored by rectangles.
     pub fn hex_side(mut self, face: HexFace, items: impl IntoIterator<Item = SideItem>) -> Self {
         self.hex_sides.push((face, items.into_iter().collect()));
         self
@@ -231,6 +246,13 @@ impl<'a> WidgetFrame<'a> {
     /// the frame in the ⓘ tooltip.
     pub fn title_shown(mut self, shown: bool) -> Self {
         self.title_shown = shown;
+        self
+    }
+
+    /// How thick the side bars of a hexagon are, in points (18 by default, at least 10). The body moves in
+    /// to make room.
+    pub fn hex_bar_thickness(mut self, thickness: f32) -> Self {
+        self.hex_bar = thickness.max(10.0);
         self
     }
 
@@ -357,15 +379,42 @@ impl<'a> WidgetFrame<'a> {
         let least = self.sizes.map_or(HEX_BODY * 0.5, |hints| hints.min);
         let body_h = (h - HEADER_H - 2.0 * PAD - footer_h).max(least.y);
         let outer_h = HEADER_H + body_h + 2.0 * PAD + footer_h;
-        let body_w = (w - 2.0 * hex::slant(outer_h) - 2.0 * PAD).max(least.x);
+        let pad = self.hex_pad();
+        let body_w = (w - 2.0 * hex::slant(outer_h) - 2.0 * pad).max(least.x);
         // to an eighth of a point: the way back from the outline must not lose the hint by a rounding error
         let snap = |x: f32| (x * 8.0).round() / 8.0;
         Some(vec2(snap(body_w), snap(body_h)))
     }
 
+    /// Whether the hexagon's side bars are drawn: there are some, and the wings don't take their place.
+    fn has_bars(&self) -> bool {
+        !self.hex_wings && !self.hex_sides.is_empty()
+    }
+
+    /// The space left and right of a hexagon's body: the usual padding, or what its side bars need. A bar
+    /// reaches furthest toward the body where it meets the header or the footer.
+    fn hex_pad(&self) -> f32 {
+        if !self.has_bars() {
+            return PAD;
+        }
+        let footer_h = if self.footer.is_some() {
+            HEX_FOOTER_H
+        } else {
+            0.0
+        };
+        let band = |face: &HexFace| match face {
+            HexFace::UpperLeft | HexFace::UpperRight => HEADER_H,
+            HexFace::LowerLeft | HexFace::LowerRight => footer_h,
+        };
+        let least = self.hex_sides.iter().map(|(f, _)| band(f));
+        let least = least.fold(f32::INFINITY, f32::min);
+        // under a band `least` high the face has moved out by least / √3; the bar reaches in from there
+        (hex::bar_reach(self.hex_bar) - least / 3f32.sqrt() + 3.0).max(PAD)
+    }
+
     /// The outline of a hexagon around a body of `content`: width and height.
     fn hex_outer(&self, content: Vec2, header_min: f32) -> Vec2 {
-        let top_face = (content.x + 2.0 * PAD).max(header_min);
+        let top_face = (content.x + 2.0 * self.hex_pad()).max(header_min);
         let footer_h = if self.footer.is_some() {
             HEX_FOOTER_H
         } else {
@@ -559,6 +608,7 @@ impl<'a> WidgetFrame<'a> {
             action,
             response: out.response,
             body_rect: laid.body_rect,
+            side_clicks: Vec::new(),
         }
     }
 
@@ -627,30 +677,25 @@ impl<'a> WidgetFrame<'a> {
             painter.add(band(footer_top, rect.bottom(), quiet_fill(theme)));
         }
         let wings_on = self.hex_wings;
-        if !wings_on {
-            // Each face with items is a panel of its own: a quiet fill and a rule toward the body.
-            for (face, _) in &self.hex_sides {
-                let [from, to, inner] = hex::band(rect, *face);
-                painter.add(egui::Shape::convex_polygon(
-                    vec![from, to, inner],
-                    quiet_fill(theme),
-                    Stroke::NONE,
-                ));
-                let (tip, corner) = if from.y == inner.y {
-                    (from, to)
-                } else {
-                    (to, from)
-                };
-                painter.line_segment([corner, inner], line);
-                painter.line_segment([tip, inner], line);
+        let pad = self.hex_pad();
+        // The side bars: bands along the slanted faces, like the footer, with their items turned with the face.
+        let mut side_clicks = Vec::new();
+        if self.has_bars() {
+            let look = (quiet_fill(theme), line);
+            let between = (header_rect.bottom(), footer_top);
+            for (face, items) in std::mem::take(&mut self.hex_sides) {
+                let bar = (face, self.hex_bar);
+                let clicked = hex::bar_ui(ui, theme, rect, bar, between, look, &items);
+                side_clicks.extend(clicked.into_iter().map(|i| (face, i)));
             }
         }
+        let painter = ui.painter();
         painter.add(egui::Shape::closed_line(outline, line));
         let y = header_rect.bottom();
         painter.hline(hex::span_at(rect, y), y, line);
 
         let column = Rect::from_min_size(
-            pos2(rect.left() + slant + PAD, header_rect.bottom() + PAD),
+            pos2(rect.left() + slant + pad, header_rect.bottom() + PAD),
             content,
         );
         // min is the widget's fixed form, however large the hexagon was dragged
@@ -695,11 +740,6 @@ impl<'a> WidgetFrame<'a> {
             child.shrink_clip_rect(footer_rect);
             add(&mut child);
         }
-        for (face, items) in std::mem::take(&mut self.hex_sides) {
-            if !wings_on {
-                hex::side(ui, theme, rect, (HEADER_H, footer_h), face, &items);
-            }
-        }
         let action = self.header(ui, theme, state, header_rect);
         FrameResponse {
             inner,
@@ -707,6 +747,7 @@ impl<'a> WidgetFrame<'a> {
             action,
             response,
             body_rect,
+            side_clicks,
         }
     }
 
@@ -783,7 +824,19 @@ impl<'a> WidgetFrame<'a> {
                 let r = h
                     .scope(|h| {
                         blend_button(h, theme);
-                        let icon = RichText::new("☰").color(theme.text_muted).size(12.0);
+                        let mut icon = RichText::new("☰").color(theme.text_muted).size(12.0);
+                        if state.menu_open {
+                            // pressed in while its menu is open, like a toggle that is on; also under the
+                            // pointer, which is where it is right after the click
+                            let (fill, stroke) = menu_open_look(theme);
+                            let w = &mut h.visuals_mut().widgets;
+                            for look in [&mut w.inactive, &mut w.hovered, &mut w.active, &mut w.open] {
+                                look.weak_bg_fill = fill;
+                                look.bg_fill = fill;
+                                look.bg_stroke = stroke;
+                            }
+                            icon = icon.color(theme.text);
+                        }
                         h.menu_button(icon, |ui| {
                             let mut picked = None;
                             if let Some(moves) = moves {
@@ -799,6 +852,8 @@ impl<'a> WidgetFrame<'a> {
                         })
                     })
                     .inner;
+                state.menu_open = r.inner.is_some();
+                state.menu_at = Some(r.response.rect);
                 action = r.inner.flatten();
                 r.response.on_hover_text(
                     "Widget menu: pop it out as a window, send it to another window or machine",
@@ -868,6 +923,14 @@ pub fn quiet_fill(theme: &Theme) -> Color32 {
     theme.panel_bg.lerp_to_gamma(theme.border, 0.16)
 }
 
+/// How the ☰ looks while its menu is open: filled with the accent and outlined, so it reads as pressed.
+pub fn menu_open_look(theme: &Theme) -> (Color32, Stroke) {
+    (
+        theme.panel_bg.lerp_to_gamma(theme.accent, 0.55),
+        Stroke::new(1.0, theme.accent),
+    )
+}
+
 /// Button visuals without a box at rest: a soft fill and outline only under the pointer or while open.
 fn blend_button(ui: &mut Ui, theme: &Theme) {
     let lit = theme.border.gamma_multiply(0.6);
@@ -883,6 +946,7 @@ fn blend_button(ui: &mut Ui, theme: &Theme) {
         state.expansion = 0.0;
     }
     widgets.active.weak_bg_fill = theme.border;
+
     ui.spacing_mut().button_padding = vec2(3.0, 1.0);
 }
 
