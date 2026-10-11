@@ -3,8 +3,8 @@
 //! The matrix is 2 shapes × 2⁶ options (LED, ⓘ, size switch, menu, footer, sides) × tiny / medium / big:
 //! 384 widgets in a wrapping grid. Each title spells its options (`tiny LISMFX`, a dash for one that is off).
 //! Try the size switch of any of them (the *Auto room* slider is the width auto has to choose from), the ☰
-//! menu (pop out as a window and back, send to a new OS window, send to the loopback "machine" and receive
-//! it again), and turn the transport off to see the disabled entry say why.
+//! menu (pop out as a window and back — it glows where it lands, and a floating one resizes by its edges and
+//! corner —, send to a new OS window, send to the loopback "machine" and receive it again), and turn the transport off to see the disabled entry say why.
 //!
 //! Run: `cargo run -p ve_frame --example playground`
 
@@ -229,6 +229,15 @@ impl Demo {
 
 /// Draw one demo widget in its frame, with the options it was made with. Returns the menu pick.
 pub fn draw(ui: &mut Ui, slot: &mut Slot<Demo>, moves: &Moves) -> Option<FrameAction> {
+    draw_at(ui, slot, moves).0
+}
+
+/// [`draw`], also telling where the frame was drawn.
+pub fn draw_at(
+    ui: &mut Ui,
+    slot: &mut Slot<Demo>,
+    moves: &Moves,
+) -> (Option<FrameAction>, egui::Rect) {
     let Slot { id, widget, frame } = slot;
     let opts = widget.opts;
     let clicks = widget.clicks;
@@ -322,7 +331,7 @@ pub fn draw(ui: &mut Ui, slot: &mut Slot<Demo>, moves: &Moves) -> Option<FrameAc
         widget.clicks = 0;
     }
     widget.clicks = widget.clicks.saturating_add_signed(bump);
-    r.action
+    (r.action, r.response.rect)
 }
 
 /// A transport that goes nowhere: what is sent lands in `inbox`, and *Receive* opens it again here.
@@ -361,6 +370,9 @@ pub struct Playground {
     pub show_hex: bool,
     /// The last thing that happened, shown in the bar.
     pub message: String,
+    /// Where the main grid's frames were drawn last frame, and the room they had (for the tests).
+    pub drawn: Vec<egui::Rect>,
+    pub room: egui::Rect,
 }
 
 impl Playground {
@@ -379,6 +391,8 @@ impl Playground {
             show_rect: true,
             show_hex: true,
             message: String::new(),
+            drawn: Vec::new(),
+            room: egui::Rect::NOTHING,
         }
     }
 
@@ -415,27 +429,37 @@ impl Playground {
             .map(|s| s.id)
             .collect();
         let mut picked = Vec::new();
+        let mut drawn = Vec::new();
         egui::ScrollArea::vertical()
             .auto_shrink(false)
             .show(ui, |ui| {
                 egui::Frame::new().inner_margin(4).show(ui, |ui| {
+                    self.room = ui.max_rect();
                     grid(
                         ui,
                         &mut self.dock,
                         ViewportSlot::MAIN,
                         &hidden,
                         (&moves, room),
-                        &mut picked,
+                        (&mut picked, &mut drawn),
                     );
                 });
             });
+        self.drawn = drawn;
         picked.extend(
             self.dock
                 .show_windows(ui, ViewportSlot::MAIN, |ui, slot| draw(ui, slot, &moves)),
         );
         self.dock
             .show_viewports(ui.ctx(), "Frame playground", |dock, ui, viewport| {
-                grid(ui, dock, viewport, &hidden, (&moves, room), &mut picked);
+                grid(
+                    ui,
+                    dock,
+                    viewport,
+                    &hidden,
+                    (&moves, room),
+                    (&mut picked, &mut Vec::new()),
+                );
                 picked.extend(dock.show_windows(ui, viewport, |ui, slot| draw(ui, slot, &moves)));
             });
         for (id, action) in picked {
@@ -534,9 +558,10 @@ fn grid(
     viewport: ViewportSlot,
     hidden: &[SlotId],
     (moves, auto_room): (&Moves, f32),
-    picked: &mut Vec<(SlotId, FrameAction)>,
+    (picked, drawn): (&mut Vec<(SlotId, FrameAction)>, &mut Vec<egui::Rect>),
 ) {
     let rows = Layout::left_to_right(Align::Min).with_main_wrap(true);
+    let row = ui.available_width();
     ui.with_layout(rows, |ui| {
         ui.spacing_mut().item_spacing = egui::vec2(8.0, 8.0);
         for id in dock.ids(viewport, false) {
@@ -551,15 +576,18 @@ fn grid(
                 .scale
                 .hints()
                 .width_for(slot.frame.size, auto_room);
-            // room for the two sides of a rectangle on top of the frame's own
-            let cell = outer_width(body) + if slot.widget.opts.sides { 64.0 } else { 0.0 };
+            // room for the two sides of a rectangle on top of the frame's own; never more than a whole row,
+            // so a large Auto room can't push a frame past the right edge
+            let sides = if slot.widget.opts.sides { 64.0 } else { 0.0 };
+            let cell = (outer_width(body) + sides).min(row);
             let size = egui::vec2(cell, 10.0);
-            let action = ui
+            let (action, rect) = ui
                 .allocate_ui_with_layout(size, Layout::top_down(Align::Min), |ui| {
                     ui.set_max_width(cell);
-                    draw(ui, slot, moves)
+                    draw_at(ui, slot, moves)
                 })
                 .inner;
+            drawn.push(rect);
             picked.extend(action.map(|a| (id, a)));
         }
     });

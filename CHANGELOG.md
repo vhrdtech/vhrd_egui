@@ -56,6 +56,12 @@ versions follow [Semantic Versioning](https://semver.org/). Feature IDs refer to
 - ve_frame: `cargo run -p ve_frame --example playground`, the matrix of every option combination in three widget
   sizes, with a loopback machine; headless tests and snapshots (FRM-6).
 
+- ve_frame: a floating widget is resized by its right edge, bottom edge and corner; the size is kept in
+  `FrameState::window_size` and never goes below what the frame needs (FRM-4).
+- ve_frame: a widget that was popped out, put back or sent to another window glows where it landed for 0.6 s
+  (`FrameState::land`, `FrameState::glow`, `GLOW_SECS`); off when `Style::animation_time` is 0 (FRM-4).
+- ve_frame: the faces of a hexagon that carry items are panels of their own (lighter fill, thin rules,
+  `hex::band`); the ☰ menu button has no box and lights up only under the pointer (FRM-1, FRM-3).
 - ve_widget: `Widget::frame_spec` (`FrameSpec`: LED, ⓘ text and stats, sizes) and `Widget::ui_sized`, both with
   defaults; `ve_widget::ve_frame` re-export (FRM-7).
 - ve_app: every widget sits in a `ve_frame::WidgetFrame`; its ☰ menu pops it out as a floating window and back
@@ -70,6 +76,8 @@ versions follow [Semantic Versioning](https://semver.org/). Feature IDs refer to
 
 ### Fixed
 
+- ve_frame playground: a large *Auto room* pushed frames past the right edge; a cell is never wider than its
+  row now, and a hexagon on auto is chosen by its whole outline (FRM-2, FRM-6).
 - ve_dash: the three UI snapshots are compared with a budget of 20 failing pixels, so `cargo test -p ve_dash`
   passes on omarchy-m1 too (DASH-21).
 

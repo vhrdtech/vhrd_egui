@@ -55,7 +55,7 @@ pub use hex::{HexFace, SideItem};
 pub use menu::{Moves, NO_REMOTE};
 pub use remote::{Machine, Parcel, Remote};
 pub use size::{AUTO_HYSTERESIS, Size, SizeHints, SizeMode, auto_size};
-pub use state::{FrameAction, FrameState, Placement, ViewportSlot, ViewportTarget};
+pub use state::{FrameAction, FrameState, GLOW_SECS, Placement, ViewportSlot, ViewportTarget};
 
 /// The status an LED shows, from `ve_dash`.
 pub use ve_dash::Status;

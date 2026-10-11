@@ -159,6 +159,7 @@ impl<W> Dock<W> {
             FrameAction::SendToMachine(machine) => return Applied::Send(machine),
             FrameAction::Close => return Applied::Close,
         }
+        slot.frame.land();
         Applied::Moved
     }
 
@@ -194,7 +195,9 @@ impl<W> Dock<W> {
     }
 
     /// The floating widgets of `viewport`, each as an egui `Window` without chrome of its own: the frame
-    /// `add` draws is the window, and dragging its header or body moves it. Returns the menu picks, for
+    /// `add` draws is the window, and dragging its header or body moves it. Its right edge, bottom edge and
+    /// corner resize it (a rectangle; a hexagon keeps its shape): the size is kept in
+    /// [`FrameState::window_size`] and never goes below what the frame needs. Returns the menu picks, for
     /// [`Dock::apply`].
     pub fn show_windows(
         &mut self,
@@ -209,13 +212,32 @@ impl<W> Dock<W> {
                 continue;
             };
             let step = 28.0 * (n % 8) as f32;
+            let window_id = Id::new(("ve_frame::window", id.0));
             let action = egui::Window::new("")
-                .id(Id::new(("ve_frame::window", id.0)))
+                .id(window_id)
                 .title_bar(false)
                 .resizable(false)
                 .frame(egui::Frame::NONE)
                 .default_pos(origin + egui::vec2(48.0 + step, 48.0 + step))
-                .show(ui.ctx(), |ui| add(ui, slot))
+                .show(ui.ctx(), |ui| {
+                    let resizable = slot.frame.is_resizable();
+                    let wanted = slot.frame.window_size.filter(|_| resizable);
+                    if let Some([w, h]) = wanted {
+                        ui.set_min_size(egui::vec2(w, h));
+                        ui.set_max_size(egui::vec2(w, h));
+                    }
+                    let action = add(ui, slot);
+                    let drawn = ui.min_rect();
+                    if resizable {
+                        if let Some(size) = resize_handles(ui, drawn, window_id) {
+                            slot.frame.window_size = Some(size.into());
+                        } else if wanted.is_some() {
+                            // the frame needed more than was asked: that is the size now
+                            slot.frame.window_size = Some(drawn.size().into());
+                        }
+                    }
+                    action
+                })
                 .and_then(|r| r.inner)
                 .flatten();
             if let Some(action) = action {
@@ -256,6 +278,79 @@ impl<W> Dock<W> {
             }
         }
     }
+}
+
+/// Width of the strips along the right and bottom edge that resize a floating frame, and the corner's size.
+const RESIZE_EDGE: f32 = 5.0;
+const RESIZE_CORNER: f32 = 12.0;
+/// The least a floating frame can be dragged to; the frame's own needs come on top.
+const RESIZE_LEAST: egui::Vec2 = egui::vec2(60.0, 40.0);
+
+/// The resize handles of a floating frame drawn in `rect`: the right edge, the bottom edge and the corner
+/// (with a small grip). Returns the new size while one is dragged.
+fn resize_handles(ui: &mut Ui, rect: egui::Rect, id: Id) -> Option<egui::Vec2> {
+    use egui::{CursorIcon, Rect, Sense, pos2, vec2};
+    let corner = Rect::from_min_max(rect.max - vec2(RESIZE_CORNER, RESIZE_CORNER), rect.max);
+    let right = Rect::from_min_max(
+        pos2(rect.right() - RESIZE_EDGE, rect.top() + RESIZE_CORNER),
+        pos2(rect.right(), corner.top()),
+    );
+    let bottom = Rect::from_min_max(
+        pos2(rect.left() + RESIZE_CORNER, rect.bottom() - RESIZE_EDGE),
+        pos2(corner.left(), rect.bottom()),
+    );
+    let handles = [
+        (
+            right,
+            "right",
+            vec2(1.0, 0.0),
+            CursorIcon::ResizeHorizontal,
+            "width",
+        ),
+        (
+            bottom,
+            "bottom",
+            vec2(0.0, 1.0),
+            CursorIcon::ResizeVertical,
+            "height",
+        ),
+        (
+            corner,
+            "corner",
+            vec2(1.0, 1.0),
+            CursorIcon::ResizeNwSe,
+            "size",
+        ),
+    ];
+    let mut delta = egui::Vec2::ZERO;
+    let mut dragged = false;
+    let mut lit = false;
+    for (handle, salt, axes, cursor, what) in handles {
+        let r = ui.interact(handle, id.with(("resize", salt)), Sense::drag());
+        r.widget_info(|| {
+            egui::WidgetInfo::labeled(egui::WidgetType::Other, true, format!("resize {salt}"))
+        });
+        if r.dragged() {
+            dragged = true;
+            delta += r.drag_delta() * axes;
+        }
+        lit |= r.hovered() || r.dragged();
+        r.on_hover_cursor(cursor)
+            .on_hover_text(format!("Drag to change the window's {what}"));
+    }
+    // the grip: two short diagonal strokes in the corner
+    let color = if lit {
+        ui.visuals().text_color()
+    } else {
+        ui.visuals().weak_text_color()
+    };
+    let stroke = egui::Stroke::new(1.0, color);
+    for inset in [4.0, 8.0] {
+        let a = pos2(rect.right() - inset, rect.bottom() - 3.0);
+        let b = pos2(rect.right() - 3.0, rect.bottom() - inset);
+        ui.painter().line_segment([a, b], stroke);
+    }
+    dragged.then(|| (rect.size() + delta).max(RESIZE_LEAST))
 }
 
 #[cfg(test)]

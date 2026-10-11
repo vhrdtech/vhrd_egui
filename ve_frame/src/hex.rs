@@ -91,6 +91,18 @@ pub fn span_at(rect: Rect, y: f32) -> Rangef {
     Rangef::new(rect.left() + inset, rect.right() - inset)
 }
 
+/// The band of `face`: the triangle between the slanted face and the body's side, where the face's items sit.
+/// The first two points are the face, the third the inner corner.
+pub fn band(rect: Rect, face: HexFace) -> [Pos2; 3] {
+    let (from, to) = ends(rect, face);
+    let cy = rect.center().y;
+    let inner_x = match face {
+        HexFace::UpperLeft | HexFace::LowerLeft => to.x,
+        HexFace::UpperRight | HexFace::LowerRight => from.x,
+    };
+    [from, to, pos2(inner_x, cy)]
+}
+
 /// The two ends of `face`, ordered so that text along it reads left to right.
 fn ends(rect: Rect, face: HexFace) -> (Pos2, Pos2) {
     let [tl, tr, r, br, bl, l] = points(rect);

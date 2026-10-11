@@ -334,6 +334,8 @@ switch (P2605#8oct-1205). ve_settle (SETL-5, SETL-7) later reads the same shapes
   background. `show(ui, &mut state, |ui, size| ..)` returns `FrameResponse { inner, size, action, response,
   body_rect }`. Every control has a tooltip; colours come from the theme tokens of the `Ui` (dark / light).
   `ve_frame/src/frame.rs`, kittest in `ve_frame/tests/ui.rs`.
+  The ☰ has no box of its own: like the ⓘ and the size switch it lights up only under the pointer (user,
+  11 Oct 2026).
 - ✅ **FRM-2 Sizes**: `SizeMode` (auto / min / nom / wide, the switch cycles them), `Size` (what the body is
   told), `SizeHints { min, nom, wide }` (body sizes; `width_for`, `outer_width` for layouts), `auto_size(prev,
   width, hints)`: the widest that fits, a step up needing `AUTO_HYSTERESIS` (24 pt) to spare. min is exactly
@@ -346,6 +348,9 @@ switch (P2605#8oct-1205). ve_settle (SETL-5, SETL-7) later reads the same shapes
   items painted rotated along the four slanted faces, each with a tooltip; items that don't fit are left out.
   Arbitrary egui UI can't be rotated (egui transforms only scale and move), hence items instead of a closure.
   `ve_frame/src/hex.rs` (unit tests), snapshot `frames_hex`.
+  Each face with items is a panel of its own: the triangle between the face and the body (`hex::band`) has a
+  slightly lighter fill and thin rules toward the body. On auto a hexagon is chosen by its whole outline, so
+  it never gets wider than the room.
 - ✅ **FRM-4 Moves**: `FrameState { size, placement }` (serde) with `Placement { viewport: ViewportSlot,
   floating }`; the menu reports a `FrameAction` (pop out / back into the grid / send to a new or an open OS
   window / send to a machine / close) and `Dock<W>` carries it out: it owns the widgets (`Slot`), `ids(viewport,
@@ -355,6 +360,12 @@ switch (P2605#8oct-1205). ve_settle (SETL-5, SETL-7) later reads the same shapes
   while it holds a widget, and closing it sends its widgets back to the main grid. A move keeps the widget
   value as it is. `ve_frame/src/dock.rs`, `state.rs`, `menu.rs` (unit tests), kittest
   `pops_out_as_a_window_and_back`, `goes_to_another_os_window_and_back`.
+  A floating rectangle is resized by its right edge, bottom edge and corner (`resize right` / `bottom` /
+  `corner` handles with a grip); the size is kept in `FrameState::window_size`, travels with the widget and
+  never goes below what the frame needs; a hexagon keeps its shape. Every move makes the frame glow where it
+  landed (`FrameState::land`, the theme accent, fading over `GLOW_SECS` 0.6 s; nothing when
+  `Style::animation_time` is 0, the reduced-motion setting). kittest
+  `a_floating_window_resizes_within_its_minimum`, `a_moved_widget_glows_where_it_landed_then_stops`.
 - ✅ **FRM-5 Send to another machine**: trait `Remote { machines(), send(machine, Parcel) }` the app implements,
   offered through `Moves::remote` / `Dock::moves(Some(&remote))`; `Dock::send` packs the widget into a `Parcel`
   (title, serialized widget, size switch) and removes it only when the send worked. Without a `Remote` the entry
@@ -367,6 +378,8 @@ switch (P2605#8oct-1205). ve_settle (SETL-5, SETL-7) later reads the same shapes
   "machine" with *Receive*, and a transport switch that shows the disabled entry. `ve_frame/tests/ui.rs` drives
   it headless (size switch, menu moves, machine, tooltips, sides) and compares four snapshots (`frames_rect`,
   `frames_hex`, `moved`, `matrix`) with a budget of 40 failing pixels.
+  A cell is never wider than its row, so a large *Auto room* can't push a frame past the right edge (bug
+  found by the user, 11 Oct 2026; kittest `nothing_goes_past_the_right_edge`).
 - ✅ **FRM-7 Widgets and the shell on the frame**: `Widget` gained `frame_spec() -> FrameSpec { led, about,
   stats, sizes }` and `ui_sized(ui, cx, id, size)`, both with defaults, so existing widgets compile unchanged.
   `ve_app::Shell` keeps its widgets in a `Dock<Box<dyn Widget>>` and draws each in a `WidgetFrame`: in a tile
@@ -383,7 +396,8 @@ switch (P2605#8oct-1205). ve_settle (SETL-5, SETL-7) later reads the same shapes
 - 📋 **FRM-8 Port tpm_mesh_dash to the frame**: its `Panel`s become `WidgetFrame`s; then `Panel` and `PanelSize`
   go to *Dropped and superseded*.
 - 💡 **FRM-9 Open ends of the frame**: a floating widget opens at a fixed offset, not where it sat in the grid;
-  a hexagon can't `fill` and has no shadow when floating; a second chrome in the style of `Panel` (title on the
+  a hexagon can't `fill`, can't be resized and has no shadow when floating; egui 0.36 has no reduced-motion
+  flag of its own, so the glow follows `animation_time`; a second chrome in the style of `Panel` (title on the
   border line) if the dash wants to keep that look; ve_settle bodies taking `SizeHints` and `Shape` (SETL-4,
   SETL-5, SETL-7).
 

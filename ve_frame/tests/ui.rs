@@ -333,6 +333,176 @@ fn snapshot_moved_widgets() {
         ve_frame::FrameAction::SendToViewport(ve_frame::ViewportTarget::New),
     );
     pg.message.clear();
+    // one of the floating ones was resized by the user
+    if let Some(slot) = pg.dock.get_mut(ids[1]) {
+        slot.frame.window_size = Some([330.0, 150.0]);
+    }
     h.run();
     h.snapshot_options("moved", &tolerant());
+}
+
+/// The right edge of every frame drawn, and the right edge of the room they have.
+fn right_edges(h: &Harness<'_, Playground>) -> (f32, f32) {
+    let frames = h.state().drawn.iter().map(|r| r.right());
+    (frames.fold(0.0, f32::max), h.state().room.right())
+}
+
+/// The Auto room slider never pushes a frame past the right edge, whichever way it is moved.
+#[test]
+fn nothing_goes_past_the_right_edge() {
+    let widgets = Scale::ALL.into_iter().flat_map(|scale| {
+        [0b111111, 0b011111, 0b000100]
+            .into_iter()
+            .flat_map(move |bits| {
+                [false, true].map(|hex| Demo::new(Opts::from_bits(bits, hex), scale))
+            })
+    });
+    let mut h = harness(Playground::with(widgets), vec2(520.0, 900.0));
+    for room in [240.0, 640.0, 40.0, 640.0, 300.0, 40.0, 240.0] {
+        h.state_mut().auto_room = room;
+        h.run();
+        h.run();
+        let (frames, edge) = right_edges(&h);
+        assert!(
+            frames <= edge + 0.5,
+            "auto room {room}: a frame ends at {frames}, the room at {edge}"
+        );
+    }
+}
+
+/// Click `label` and step frame by frame until `done` (a menu pick lands a frame or two after the click).
+fn click_until(h: &mut Harness<'_, Playground>, label: &str, done: impl Fn(&Playground) -> bool) {
+    h.get_by_label(label).click();
+    for _ in 0..6 {
+        if done(h.state()) {
+            return;
+        }
+        h.step();
+    }
+    assert!(done(h.state()), "{label} did not take effect");
+}
+
+/// A widget that pops out or goes back glows where it landed, and the glow is gone after 0.6 s. With
+/// animations off (reduced motion) nothing glows.
+#[test]
+fn a_moved_widget_glows_where_it_landed_then_stops() {
+    let floating = |pg: &Playground| !pg.dock.ids(ViewportSlot::MAIN, true).is_empty();
+    let mut h = harness(one(Scale::Medium), vec2(900.0, 500.0));
+    // the harness starts with animations off; an app has them on
+    h.ctx.all_styles_mut(|s| s.animation_time = 1.0 / 12.0);
+    h.run();
+    assert_eq!(slot(&h).frame.glow(), 0.0);
+    click(&mut h, "☰");
+    click_until(&mut h, "Pop out as a window", floating);
+    h.step();
+    let first = slot(&h).frame.glow();
+    assert!(first > 0.5, "glowing right after the move: {first}");
+    h.step(); // 0.25 s per step
+    let later = slot(&h).frame.glow();
+    assert!(later > 0.0 && later < first, "fading: {first} then {later}");
+    for _ in 0..3 {
+        h.step();
+    }
+    assert_eq!(
+        slot(&h).frame.glow(),
+        0.0,
+        "gone after {} s",
+        ve_frame::GLOW_SECS
+    );
+    h.run();
+
+    // and back into the grid: the same glow
+    click(&mut h, "☰");
+    click_until(&mut h, "Back into the grid", |pg| !floating(pg));
+    h.step();
+    assert!(slot(&h).frame.glow() > 0.5);
+    h.run();
+    assert_eq!(slot(&h).frame.glow(), 0.0);
+
+    // reduced motion: animations off, no glow
+    h.ctx.all_styles_mut(|s| s.animation_time = 0.0);
+    h.run();
+    click(&mut h, "☰");
+    click_until(&mut h, "Pop out as a window", floating);
+    for _ in 0..3 {
+        h.step();
+        assert_eq!(slot(&h).frame.glow(), 0.0);
+    }
+}
+
+/// Drag the handle named `label` by `by`.
+fn drag(h: &mut Harness<'_, Playground>, label: &str, by: egui::Vec2) {
+    let from = h.get_by_label(label).rect().center();
+    h.hover_at(from);
+    h.run();
+    h.drag_at(from);
+    h.run();
+    h.hover_at(from + by * 0.5);
+    h.run();
+    h.hover_at(from + by);
+    h.run();
+    h.drop_at(from + by);
+    h.run();
+}
+
+/// A popped-out widget is resized by its corner and edges; the size is kept in its frame state, never
+/// goes below what the frame needs, and survives going back into the grid and out again.
+#[test]
+fn a_floating_window_resizes_within_its_minimum() {
+    let mut h = harness(one(Scale::Medium), vec2(1000.0, 700.0));
+    pick(&mut h, &["Pop out as a window"]);
+    h.run();
+    assert_eq!(
+        slot(&h).frame.window_size,
+        None,
+        "content-sized until dragged"
+    );
+    let before = h.get_by_label("resize corner").rect().max;
+
+    drag(&mut h, "resize corner", vec2(90.0, 60.0));
+    let [w, height] = slot(&h).frame.window_size.expect("a size after the drag");
+    let after = h.get_by_label("resize corner").rect().max;
+    assert!(
+        (after - before - vec2(90.0, 60.0)).length() < 3.0,
+        "{before:?} -> {after:?}"
+    );
+
+    drag(&mut h, "resize right", vec2(40.0, 25.0));
+    let [w2, h2] = slot(&h).frame.window_size.expect("still sized");
+    assert!(
+        (w2 - w - 40.0).abs() < 3.0 && (h2 - height).abs() < 1.0,
+        "the right edge changes the width only"
+    );
+    drag(&mut h, "resize bottom", vec2(25.0, 30.0));
+    let [w3, h3] = slot(&h).frame.window_size.expect("still sized");
+    assert!(
+        (h3 - h2 - 30.0).abs() < 3.0 && (w3 - w2).abs() < 1.0,
+        "the bottom edge changes the height only"
+    );
+
+    // far below the minimum: it stops at what the frame needs
+    drag(&mut h, "resize corner", vec2(-900.0, -900.0));
+    h.run();
+    let [min_w, min_h] = slot(&h).frame.window_size.expect("still sized");
+    assert!(
+        min_w > 150.0 && min_h > 80.0,
+        "not crushed: {min_w} x {min_h}"
+    );
+    for label in ["+1", "☰", "info"] {
+        h.get_by_label(label); // everything is still there
+    }
+    drag(&mut h, "resize corner", vec2(-200.0, -200.0));
+    assert_eq!(
+        slot(&h).frame.window_size,
+        Some([min_w, min_h]),
+        "the minimum holds"
+    );
+
+    // the size travels with the widget
+    drag(&mut h, "resize corner", vec2(120.0, 40.0));
+    let sized = slot(&h).frame.window_size;
+    pick(&mut h, &["Back into the grid"]);
+    pick(&mut h, &["Pop out as a window"]);
+    h.run();
+    assert_eq!(slot(&h).frame.window_size, sized);
 }

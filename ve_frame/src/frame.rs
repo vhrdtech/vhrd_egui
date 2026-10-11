@@ -10,7 +10,7 @@ use ve_theme::Tokens;
 use crate::hex::{self, HexFace, SideItem};
 use crate::menu::{self, Moves};
 use crate::size::{Size, SizeHints, SizeMode};
-use crate::state::{FrameAction, FrameState};
+use crate::state::{FrameAction, FrameState, GLOW_SECS, Landing};
 
 /// Height of the header row.
 pub(crate) const HEADER_H: f32 = 26.0;
@@ -221,7 +221,7 @@ impl<'a> WidgetFrame<'a> {
 
     /// Draw the frame. `body` gets the size to arrange itself for.
     pub fn show<R>(
-        self,
+        mut self,
         ui: &mut Ui,
         state: &mut FrameState,
         body: impl FnOnce(&mut Ui, Size) -> R,
@@ -237,21 +237,52 @@ impl<'a> WidgetFrame<'a> {
             finite(avail.x - 2.0 * border - learned.sides_w - 2.0 * PAD),
             finite(avail.y - 2.0 * border - HEADER_H - learned.footer_h - 2.0 * PAD),
         );
+        let shape = self.shape;
+        let sized = shape == Shape::Rect && state.placement.floating && state.window_size.is_some();
+        self.fill |= sized;
+        state.resizable = shape == Shape::Rect;
         let size = match &self.sizes {
-            Some(hints) if avail.x.is_finite() => {
-                state.size.resolve(state.last_size, room.x, hints)
-            }
+            Some(hints) if avail.x.is_finite() => match shape {
+                Shape::Rect => state.size.resolve(state.last_size, room.x, hints),
+                // a hexagon is as wide as its body makes it: choose by the whole outline
+                Shape::Hex => {
+                    let header_min = self.header_min_width(ui, &theme);
+                    let outer = |size| self.hex_outer(hints.of(size), header_min);
+                    let outline = SizeHints {
+                        min: outer(Size::Min),
+                        nom: outer(Size::Nom),
+                        wide: outer(Size::Wide),
+                    };
+                    state.size.resolve(state.last_size, avail.x, &outline)
+                }
+            },
             // no bound: nothing to choose from, auto is the normal form
             Some(_) => state.size.fixed().unwrap_or(Size::Nom),
             None => Size::Nom,
         };
         state.last_size = Some(size);
-        let shape = self.shape;
-        ui.push_id(("ve_frame", salt), |ui| match shape {
-            Shape::Rect => self.show_rect(ui, &theme, state, (size, room), (mem, learned), body),
-            Shape::Hex => self.show_hex(ui, &theme, state, size, body),
-        })
-        .inner
+        let r = ui
+            .push_id(("ve_frame", salt), |ui| match shape {
+                Shape::Rect => {
+                    self.show_rect(ui, &theme, state, (size, room, avail), (mem, learned), body)
+                }
+                Shape::Hex => self.show_hex(ui, &theme, state, size, body),
+            })
+            .inner;
+        landing_glow(ui, &theme, state, r.response.rect, shape);
+        r
+    }
+
+    /// The outline of a hexagon around a body of `content`: width and height.
+    fn hex_outer(&self, content: Vec2, header_min: f32) -> Vec2 {
+        let top_face = (content.x + 2.0 * PAD).max(header_min);
+        let footer_h = if self.footer.is_some() {
+            HEX_FOOTER_H
+        } else {
+            0.0
+        };
+        let height = HEADER_H + content.y + 2.0 * PAD + footer_h;
+        vec2(top_face + 2.0 * hex::slant(height), height)
     }
 
     fn show_rect<R>(
@@ -259,7 +290,7 @@ impl<'a> WidgetFrame<'a> {
         ui: &mut Ui,
         theme: &Theme,
         state: &mut FrameState,
-        (size, room): (Size, Vec2),
+        (size, room, avail): (Size, Vec2, Vec2),
         (mem, learned): (Id, Learned),
         body: impl FnOnce(&mut Ui, Size) -> R,
     ) -> FrameResponse<R> {
@@ -288,13 +319,24 @@ impl<'a> WidgetFrame<'a> {
         }
         let spacing = ui.spacing().item_spacing;
         let (left, right, footer) = (self.left.take(), self.right.take(), self.footer.take());
+        let fill = self.fill;
         let out = frame.show(ui, |ui| {
             ui.spacing_mut().item_spacing = Vec2::ZERO;
+            if fill {
+                ui.set_min_size(vec2(
+                    finite(avail.x - 2.0 * border),
+                    finite(avail.y - 2.0 * border),
+                ));
+            }
             let top = ui.cursor().min;
             ui.add_space(HEADER_H);
             let mut dividers = Vec::new();
             let mut sides_w = 0.0;
             let mid = ui.horizontal_top(|ui| {
+                if fill {
+                    // the footer stays at the bottom whatever the body takes
+                    ui.set_min_height(room.y + 2.0 * PAD);
+                }
                 if let Some(add) = left {
                     let r = side_ui(ui, spacing, add);
                     sides_w += r.width();
@@ -379,27 +421,45 @@ impl<'a> WidgetFrame<'a> {
     ) -> FrameResponse<R> {
         let content = self.sizes.map_or(HEX_BODY, |h| h.of(size));
         let header_min = self.header_min_width(ui, theme);
-        let top_face = (content.x + 2.0 * PAD).max(header_min);
         let footer_h = if self.footer.is_some() {
             HEX_FOOTER_H
         } else {
             0.0
         };
-        let height = HEADER_H + content.y + 2.0 * PAD + footer_h;
-        let slant = hex::slant(height);
-        let (rect, response) =
-            ui.allocate_exact_size(vec2(top_face + 2.0 * slant, height), Sense::hover());
+        let outer = self.hex_outer(content, header_min);
+        let slant = hex::slant(outer.y);
+        let (rect, response) = ui.allocate_exact_size(outer, Sense::hover());
         let line = Stroke::new(1.0, theme.border);
         let fill = if self.bare {
             Color32::TRANSPARENT
         } else {
             theme.panel_bg
         };
-        ui.painter().add(egui::Shape::convex_polygon(
-            hex::points(rect).to_vec(),
+        let outline = hex::points(rect).to_vec();
+        let painter = ui.painter();
+        painter.add(egui::Shape::convex_polygon(
+            outline.clone(),
             fill,
-            line,
+            Stroke::NONE,
         ));
+        // Each face with items is a panel of its own: a slightly different fill and a rule toward the body.
+        let band_fill = theme.panel_bg.lerp_to_gamma(theme.border, 0.4);
+        for (face, _) in &self.hex_sides {
+            let [from, to, inner] = hex::band(rect, *face);
+            painter.add(egui::Shape::convex_polygon(
+                vec![from, to, inner],
+                band_fill,
+                Stroke::NONE,
+            ));
+            let (tip, corner) = if from.y == inner.y {
+                (from, to)
+            } else {
+                (to, from)
+            };
+            painter.line_segment([corner, inner], line);
+            painter.line_segment([tip, inner], line);
+        }
+        painter.add(egui::Shape::closed_line(outline, line));
 
         let header_rect = Rect::from_min_max(
             pos2(rect.left() + slant, rect.top()),
@@ -517,19 +577,26 @@ impl<'a> WidgetFrame<'a> {
         h.with_layout(Layout::right_to_left(Align::Center), |h| {
             if has_menu {
                 let placement = state.placement;
-                let r = h.menu_button("☰", |ui| {
-                    let mut picked = None;
-                    if let Some(moves) = moves {
-                        picked = menu::ui(ui, moves, placement);
-                    }
-                    if let Some(add) = extra {
-                        if moves.is_some() {
-                            ui.separator();
-                        }
-                        add(ui);
-                    }
-                    picked
-                });
+                // no box of its own: it lights up under the pointer like the ⓘ and the size switch
+                let r = h
+                    .scope(|h| {
+                        blend_button(h, theme);
+                        let icon = RichText::new("☰").color(theme.text_muted).size(12.0);
+                        h.menu_button(icon, |ui| {
+                            let mut picked = None;
+                            if let Some(moves) = moves {
+                                picked = menu::ui(ui, moves, placement);
+                            }
+                            if let Some(add) = extra {
+                                if moves.is_some() {
+                                    ui.separator();
+                                }
+                                add(ui);
+                            }
+                            picked
+                        })
+                    })
+                    .inner;
                 action = r.inner.flatten();
                 r.response.on_hover_text(
                     "Widget menu: pop it out as a window, send it to another window or machine",
@@ -585,6 +652,65 @@ impl<'a> WidgetFrame<'a> {
         });
         action
     }
+}
+
+/// Button visuals without a box at rest: a soft fill and outline only under the pointer or while open.
+fn blend_button(ui: &mut Ui, theme: &Theme) {
+    let lit = theme.border.gamma_multiply(0.6);
+    let outline = Stroke::new(1.0, theme.border);
+    let widgets = &mut ui.visuals_mut().widgets;
+    widgets.inactive.weak_bg_fill = Color32::TRANSPARENT;
+    widgets.inactive.bg_fill = Color32::TRANSPARENT;
+    widgets.inactive.bg_stroke = Stroke::NONE;
+    for state in [&mut widgets.hovered, &mut widgets.active, &mut widgets.open] {
+        state.weak_bg_fill = lit;
+        state.bg_fill = lit;
+        state.bg_stroke = outline;
+        state.expansion = 0.0;
+    }
+    widgets.active.weak_bg_fill = theme.border;
+    ui.spacing_mut().button_padding = vec2(3.0, 1.0);
+}
+
+/// The glow around a frame that just landed ([`FrameState::land`]): the accent colour, fading over
+/// [`GLOW_SECS`]. Skipped when animations are off.
+fn landing_glow(ui: &Ui, theme: &Theme, state: &mut FrameState, rect: Rect, shape: Shape) {
+    let now = ui.input(|i| i.time);
+    if state.landing == Landing::Pending {
+        let animated = ui.style().animation_time > 0.0;
+        state.landing = if animated {
+            Landing::Since(now)
+        } else {
+            Landing::No
+        };
+    }
+    state.glow = 0.0;
+    let Landing::Since(since) = state.landing else {
+        return;
+    };
+    let left = 1.0 - ((now - since) / GLOW_SECS) as f32;
+    if left <= 0.0 {
+        state.landing = Landing::No;
+        return;
+    }
+    state.glow = left;
+    let painter = ui.painter();
+    for (out, width, alpha) in [(1.0, 2.0, 0.9), (3.5, 3.0, 0.35), (7.0, 4.0, 0.12)] {
+        let stroke = Stroke::new(width, theme.accent.gamma_multiply(alpha * left));
+        let around = rect.expand(out);
+        match shape {
+            Shape::Rect => {
+                painter.rect_stroke(around, 6.0 + out, stroke, egui::StrokeKind::Middle);
+            }
+            Shape::Hex => {
+                painter.add(egui::Shape::closed_line(
+                    hex::points(around).to_vec(),
+                    stroke,
+                ));
+            }
+        }
+    }
+    ui.ctx().request_repaint();
 }
 
 /// Horizontal gap between header items.

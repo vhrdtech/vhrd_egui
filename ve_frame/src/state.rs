@@ -47,6 +47,17 @@ pub struct Placement {
     pub floating: bool,
 }
 
+/// Whether a frame just arrived somewhere (popped out, put back, sent to another window) and shows it.
+#[derive(Clone, Copy, Debug, Default, PartialEq)]
+pub(crate) enum Landing {
+    #[default]
+    No,
+    /// Moved; the glow starts with the next frame drawn.
+    Pending,
+    /// Glowing since this time (egui's clock, seconds).
+    Since(f64),
+}
+
 /// The frame's own state, kept by whoever owns the widget and saved with it. It travels with the widget on
 /// every move.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Serialize, Deserialize)]
@@ -56,10 +67,25 @@ pub struct FrameState {
     pub size: SizeMode,
     /// Where the frame sits.
     pub placement: Placement,
+    /// The size the user dragged the floating window to, in points; `None` until then: the window is as big
+    /// as the widget's content. Never smaller than the frame needs.
+    pub window_size: Option<[f32; 2]>,
     /// The size shown last frame: auto's memory for its hysteresis. Not saved.
     #[serde(skip)]
     pub(crate) last_size: Option<Size>,
+    #[serde(skip)]
+    pub(crate) landing: Landing,
+    /// How strong the landing glow was drawn last frame, 1 to 0.
+    #[serde(skip)]
+    pub(crate) glow: f32,
+    /// Whether the frame drawn last can be resized as a floating window (a rectangle can, a hexagon keeps
+    /// its shape).
+    #[serde(skip)]
+    pub(crate) resizable: bool,
 }
+
+/// How long the glow around a frame that just landed takes to fade, in seconds.
+pub const GLOW_SECS: f64 = 0.6;
 
 impl FrameState {
     /// A frame in the main grid with its size switch on `size` (a widget that arrived in a
@@ -74,6 +100,23 @@ impl FrameState {
     /// The size the body was given last frame; `None` before the first one.
     pub fn shown_size(&self) -> Option<Size> {
         self.last_size
+    }
+
+    /// The widget just arrived where it is now: its frame glows for [`GLOW_SECS`] so the eye finds it.
+    /// [`crate::Dock::apply`] calls this on every move; a host that moves widgets itself calls it too.
+    /// Nothing glows when animations are off (`egui::Style::animation_time` 0, the reduced-motion setting).
+    pub fn land(&mut self) {
+        self.landing = Landing::Pending;
+    }
+
+    /// How strong the landing glow was drawn last frame: 1 right after a move, 0 when it is over.
+    pub fn glow(&self) -> f32 {
+        self.glow
+    }
+
+    /// Whether the frame, floating, can be resized by the user (set when it is drawn).
+    pub fn is_resizable(&self) -> bool {
+        self.resizable
     }
 }
 
