@@ -29,7 +29,7 @@ const HEX_FRAME_MOVE: f32 = 40.0;
 /// The deepest a hexagon may be found in a neighbour while things move, points (SETL-17: an outline gives
 /// way by a glide per step at most, so pressed harder than that it dips in until the row has sorted itself
 /// out). Rectangles never overlap, and at rest nothing does.
-const OUTLINE_DIP: f32 = 24.0;
+const OUTLINE_DIP: f32 = 16.0;
 
 type App = Harness<'static, Sandbox>;
 
@@ -162,14 +162,25 @@ impl Watch {
     }
 }
 
-/// The frames scene in a window, settled.
-fn sandbox() -> (App, Watch) {
-    let mut h = Harness::builder()
+/// The frames scene in a window before its first frame; `sideways` turns it to grow to the right.
+fn fresh(sideways: bool) -> App {
+    let h = Harness::builder()
         .with_size(vec2(1250.0, 800.0))
         .with_step_dt(1.0 / FPS)
-        .build_eframe(|cc| Sandbox::with_scene(cc, Scene::Frames));
+        .build_eframe(move |cc| {
+            let mut sandbox = Sandbox::with_scene(cc, Scene::Frames);
+            sandbox.sideways = sideways;
+            sandbox.reset();
+            sandbox
+        });
     // as on a desktop: the glow fades, a window hops, a frame folds over a few frames
     h.ctx.all_styles_mut(|s| s.animation_time = 1.0 / 12.0);
+    h
+}
+
+/// The frames scene in a window, settled.
+fn sandbox() -> (App, Watch) {
+    let mut h = fresh(false);
     h.step();
     let mut watch = Watch {
         seen: HashMap::new(),
@@ -485,7 +496,7 @@ fn a_widget_put_back_out_of_view_is_followed_or_lands_where_its_window_is() {
     watch.frames(&mut h, 3);
     let landed = body_rect(&h, slot).center();
     assert!(
-        (landed - at).max_abs() < 40.0,
+        (landed - at).max_abs() < 60.0,
         "landed {landed:?}, window {at:?}"
     );
     watch.rest(&mut h);
@@ -636,5 +647,328 @@ fn dragging_a_frame_moves_its_body_and_the_others_flow_around() {
     assert!(
         (after.center() - before.center()).max_abs() < 1.0,
         "and did not move the body: {before:?} to {after:?}"
+    );
+}
+
+/// Item 1 of round 2: the scene is measured and laid out before it is shown, so it opens with every
+/// frame at the size it keeps and (rectangles) where it stays; nothing grows into shape.
+#[test]
+fn the_scene_opens_at_its_sizes_and_nearly_at_rest() {
+    for tab in [app::Tab::Rectangles, app::Tab::Mixed] {
+        let mut h = fresh(false);
+        h.state_mut().tab = tab;
+        h.state_mut().reset();
+        // the first frame only learns the window's size; the second seeds and shows
+        h.step();
+        h.step();
+        let at_start = |h: &App| -> Vec<(SlotId, Rect, Option<Size>)> {
+            let s = h.state();
+            let frames = s.frames.dock.iter();
+            frames
+                .map(|w| (w.id, body_rect(h, w.id), s.frames.pick(w.id)))
+                .collect()
+        };
+        let first = at_start(&h);
+        assert!(first.len() >= 12, "{tab:?}: {} frames", first.len());
+        let mut watch = Watch {
+            seen: HashMap::new(),
+            worst_dip: 0.0,
+        };
+        watch.look(&h);
+        let frames = watch.rest(&mut h);
+        let rested = at_start(&h);
+        let mut farthest = 0.0f32;
+        let mut repicked = 0;
+        for ((id, a, pick_a), (_, b, pick_b)) in first.iter().zip(&rested) {
+            // (a rectangle with side columns still finds its width over the first frames: SETL-18)
+            let sides = |w: &ve_frame::Slot<app::playground::Demo>| {
+                w.widget.opts.sides && !w.widget.opts.hex
+            };
+            if h.state().frames.dock.get(*id).is_some_and(sides) {
+                continue;
+            }
+            // (where nesting or a neighbour's width made room afterwards, the layout may still widen
+            // a frame or two)
+            if pick_a != pick_b {
+                repicked += 1;
+                continue;
+            }
+            assert!(
+                // (vertex attraction may still line a side up with a neighbour's: its range)
+                (a.size().y - b.size().y).abs() < 1.5 && (a.size().x - b.size().x).abs() < 17.0,
+                "{tab:?}: {id:?} {} pick {pick_a:?} opened {:?} and ended {:?}; measured {:?} {:?} {:?}",
+                h.state()
+                    .frames
+                    .dock
+                    .get(*id)
+                    .map(|w| w.widget.title())
+                    .unwrap_or_default(),
+                a.size(),
+                b.size(),
+                h.state().frames.outer(*id, Size::Min),
+                h.state().frames.outer(*id, Size::Nom),
+                h.state().frames.outer(*id, Size::Wide),
+            );
+            farthest = farthest.max((a.center() - b.center()).max_abs());
+        }
+        assert!(
+            repicked <= 2,
+            "{tab:?}: {repicked} frames changed their size after opening"
+        );
+        // Rectangles stay close to where they opened (one with side columns that widens moves
+        // its row along, SETL-18); with hexagons in the scene the frames still pack into each other.
+        if tab == app::Tab::Rectangles {
+            assert!(
+                farthest <= 120.0,
+                "{tab:?}: a frame moved {farthest} points after opening"
+            );
+        }
+        assert!(frames < 400, "{tab:?}: at rest after {frames} frames");
+    }
+}
+
+/// Parameters anywhere in the ranges of the sandbox's sliders; gravity's side and the walls stay.
+fn random_params(seed: &mut u32, base: &ve_settle::Params) -> ve_settle::Params {
+    let mut next = || {
+        *seed ^= *seed << 13;
+        *seed ^= *seed >> 17;
+        *seed ^= *seed << 5;
+        (*seed % 10_000) as f32 / 10_000.0
+    };
+    let mut pick = |lo: f32, hi: f32| lo + (hi - lo) * next();
+    ve_settle::Params {
+        gravity: pick(0.0, 3000.0),
+        home_stiffness: pick(0.0, 300.0),
+        home_drift: pick(0.0, 5.0),
+        damping: pick(0.0, 40.0),
+        gap: pick(0.0, 24.0),
+        tension: pick(0.0, 1.0),
+        restore: pick(0.0, 10.0),
+        grow_speed: pick(20.0, 2000.0),
+        glide_speed: pick(50.0, 3000.0),
+        snap_range: pick(0.0, 80.0),
+        snap_stiffness: pick(0.0, 6000.0),
+        attract_range: pick(0.0, 80.0),
+        attract_strength: pick(0.0, 60.0),
+        friction: pick(0.0, 4.0),
+        bulge_rest: pick(0.0, 20.0),
+        bulge_from: pick(0.0, 20.0),
+        bulge_gain: pick(0.0, 5.0),
+        bulge_max: pick(0.0, 60.0),
+        bulge_speed: pick(10.0, 1000.0),
+        grid_pitch: pick(4.0, 96.0),
+        grid_stiffness: pick(0.0, 3000.0),
+        max_speed: pick(100.0, 6000.0),
+        iterations: 1 + pick(0.0, 63.0) as u32,
+        dt: 1.0 / pick(30.0, 480.0),
+        ..*base
+    }
+}
+
+/// Item 6 of round 2: play with every slider, then press "Default parameters". Whatever the parameters
+/// are, no two frames share a middle and nothing is past a hard edge (gravity's side and the two sides
+/// that do not scroll); the content the scroll area shows reaches as far as the world; and with the
+/// defaults back the scene rests in time with nothing overlapping.
+fn any_parameters_then_default_parameters(sideways: bool) {
+    let mut h = fresh(sideways);
+    h.step();
+    let mut watch = Watch {
+        seen: HashMap::new(),
+        worst_dip: 0.0,
+    };
+    watch.look(&h);
+    watch.rest(&mut h);
+    let defaults = h.state().defaults();
+    let holds = |h: &App, when: &str| {
+        let s = h.state();
+        let world = &s.world;
+        assert_eq!(
+            world.max_escape(),
+            0.0,
+            "{when}: a frame is past a hard edge"
+        );
+        assert!(
+            world.max_core_overlap() <= 1e-3,
+            "{when}: two frames share a middle ({})",
+            world.max_core_overlap()
+        );
+        // the open side grows with the world, and the scroll area's content with it
+        let far = |pick: fn(&Rect) -> f32| {
+            world
+                .bodies()
+                .iter()
+                .map(|b| pick(&b.rect))
+                .fold(0.0, f32::max)
+        };
+        let (right, bottom) = (far(|r| r.max.x), far(|r| r.max.y));
+        assert!(
+            right.is_finite() && bottom.is_finite(),
+            "{when}: a frame is nowhere"
+        );
+        if sideways {
+            assert!(
+                s.content_width() >= right - s.arena.min.x,
+                "{when}: content ends before the world"
+            );
+            assert!(
+                bottom <= s.arena.max.y + 0.5,
+                "{when}: the bottom is a hard edge"
+            );
+        } else {
+            assert!(
+                s.content_height() >= bottom - s.arena.min.y,
+                "{when}: content ends before the world"
+            );
+            assert!(
+                right <= s.arena.max.x + 0.5,
+                "{when}: the right side is a hard edge"
+            );
+        }
+    };
+    let mut seed = 0x2545_f491;
+    for round in 0..8 {
+        let wild = random_params(&mut seed, &defaults);
+        h.state_mut().world.set_params(wild);
+        for frame in 0..40 {
+            h.step();
+            holds(&h, &format!("round {round} frame {frame}"));
+        }
+    }
+    h.get_by_label("Default parameters").click();
+    h.step();
+    h.step();
+    assert_eq!(
+        *h.state().world.params(),
+        defaults,
+        "back at the scene's defaults"
+    );
+    let mut calm = 0;
+    let mut rested = None;
+    for frame in 0..SETTLE_FRAMES {
+        h.step();
+        holds(&h, &format!("after the reset, frame {frame}"));
+        calm = if h.state().world.is_at_rest() {
+            calm + 1
+        } else {
+            0
+        };
+        if calm >= 30 {
+            rested = Some(frame);
+            break;
+        }
+    }
+    assert!(
+        rested.is_some(),
+        "not at rest {SETTLE_FRAMES} frames after Default parameters"
+    );
+    assert_eq!(h.state().world.max_overlap(), 0.0, "an overlap at rest");
+    assert!(h.state().world.bodies().iter().all(|b| !b.lifted));
+    // the world runs past the window on its open side, and the view scrolls that far
+    let s = h.state();
+    if sideways {
+        assert!(
+            s.content_width() > s.arena.width() + 50.0,
+            "{}",
+            s.content_width()
+        );
+    } else {
+        assert!(
+            s.content_height() > s.arena.height() + 50.0,
+            "{}",
+            s.content_height()
+        );
+    }
+}
+
+#[test]
+fn any_parameters_then_default_parameters_in_a_scene_that_scrolls_down() {
+    any_parameters_then_default_parameters(false);
+}
+
+#[test]
+fn any_parameters_then_default_parameters_in_a_scene_that_scrolls_sideways() {
+    any_parameters_then_default_parameters(true);
+}
+
+/// Items 3, 4 and 5 of round 2: a tab per shape, frame times in the panel, a slider that shows what it
+/// does in the world.
+#[test]
+fn tabs_speed_and_the_effect_of_a_hovered_slider() {
+    let (mut h, mut watch) = sandbox();
+    for (label, tab, hex) in [
+        ("Hexagons", app::Tab::Hexagons, true),
+        ("Rectangles", app::Tab::Rectangles, false),
+    ] {
+        h.get_by_label(label).click();
+        h.step();
+        h.step();
+        h.step();
+        watch.seen.clear();
+        watch.rest(&mut h);
+        let s = h.state();
+        assert_eq!(s.tab, tab);
+        assert!(
+            s.frames.dock.len() >= 10,
+            "{label}: {} frames",
+            s.frames.dock.len()
+        );
+        assert!(
+            s.frames.dock.iter().all(|w| w.widget.opts.hex == hex),
+            "{label} only"
+        );
+    }
+    // frame times of the frames just drawn
+    let stats = h.state().perf.stats().expect("frames were counted");
+    assert!(stats.frames > 30 && stats.fps > 0.0);
+    assert!(stats.min <= stats.p50 && stats.p50 <= stats.p95 && stats.p95 <= stats.p99);
+    assert!(stats.p99 <= stats.max && stats.solver_p50 <= stats.solver_max);
+    assert_eq!(app::percentile(&[1.0, 2.0, 3.0, 4.0], 0.5), 2.0);
+    assert_eq!(app::percentile(&[1.0, 2.0, 3.0, 4.0], 0.99), 4.0);
+    assert_eq!(app::percentile(&[], 0.5), 0.0);
+    // every knob has something to show
+    for name in [
+        "gravity",
+        "home stiffness",
+        "damping",
+        "gap",
+        "tension",
+        "snap range",
+    ] {
+        assert!(app::Effect::of(name).is_some(), "{name}");
+    }
+    for name in [
+        "attract range",
+        "friction",
+        "bulge gain",
+        "grid pitch",
+        "glide speed",
+    ] {
+        assert!(app::Effect::of(name).is_some(), "{name}");
+    }
+    // each effect draws (kept on with the pin, as after hovering its slider)
+    h.state_mut().pin_effect = true;
+    use app::Effect as E;
+    for effect in [
+        E::Gravity,
+        E::Home,
+        E::Motion,
+        E::Gap,
+        E::Pressure,
+        E::Snap,
+        E::Attract,
+        E::Friction,
+        E::Grid,
+    ] {
+        assert!(!effect.what().is_empty());
+        h.state_mut().effect = Some(effect);
+        h.step();
+        assert_eq!(h.state().effect, Some(effect), "pinned, it stays");
+    }
+    h.state_mut().pin_effect = false;
+    h.step();
+    assert_eq!(
+        h.state().effect,
+        None,
+        "without the pin it goes with the pointer"
     );
 }

@@ -431,6 +431,10 @@ pub struct Sandbox {
     pub message: String,
     /// Which frames the frames scene holds.
     pub tab: Tab,
+    /// The frames scene grows to the right instead of down: gravity
+    /// pulls left, the right wall is open and the bottom one closed, and
+    /// the arena scrolls sideways.
+    pub sideways: bool,
     /// How far the arena is scrolled to the right, points (a world that
     /// is open on the right grows there).
     pub scroll_x: f32,
@@ -517,6 +521,7 @@ impl Sandbox {
             lit: Vec::new(),
             message: String::new(),
             tab: Tab::Mixed,
+            sideways: false,
             scroll_x: 0.0,
             due: 0,
             perf: Perf::default(),
@@ -650,6 +655,18 @@ impl Sandbox {
         id
     }
 
+    /// The parameters the scene starts with, and "Default parameters"
+    /// goes back to: the scene's, turned a quarter when it grows sideways.
+    pub fn defaults(&self) -> Params {
+        let mut p = self.scene.params();
+        if self.scene == Scene::Frames && self.sideways {
+            p.gravity_side = Some(Side::Left);
+            p.walls.bottom = true;
+            p.walls.right = false;
+        }
+        p
+    }
+
     /// How many widgets the scene holds, floating frames included.
     pub fn count(&self) -> usize {
         self.items.len() + self.frames.dock.len() + self.due
@@ -756,8 +773,8 @@ impl Sandbox {
         self.items.iter_mut().find(|item| item.id == id)
     }
 
-    fn reset(&mut self) {
-        self.world = World::new(from_rect(self.arena), self.scene.params());
+    pub fn reset(&mut self) {
+        self.world = World::new(from_rect(self.arena), self.defaults());
         (self.scroll, self.scroll_x, self.due) = (0.0, 0.0, 0);
         self.items.clear();
         self.drop_frames();
@@ -932,6 +949,27 @@ impl Sandbox {
             let guess = guess.map_or(vec2(240.0, 120.0), to_vec);
             frames.outer(slot, size).unwrap_or(guess)
         };
+        if self.sideways {
+            // columns that fit the height, each body right of what lies left of it
+            let (mut y, mut column) = (a.min.y + gap, a.min.x + gap);
+            let mut widest = 0.0f32;
+            for slot in fresh {
+                let size = size_of(&self.frames, slot, Size::Nom);
+                if y > a.min.y + gap && y + size.y + gap > a.max.y {
+                    (y, column, widest) = (a.min.y + gap, column + widest + gap, 0.0);
+                }
+                let over = |r: &&Rect| r.max.y > y - gap && r.min.y < y + size.y + gap;
+                let left = placed.iter().filter(over).map(|r| r.max.x + gap);
+                let left = left.fold(column.min(a.min.x + gap), f32::max);
+                let at = Vec2::new(left + size.x / 2.0, y + size.y / 2.0);
+                self.frames.place(&mut self.world, slot, at);
+                placed.push(Rect::from_center_size(at, Vec2::new(size.x, size.y)));
+                y += size.y + gap;
+                widest = widest.max(size.x);
+            }
+            self.selected = None;
+            return;
+        }
         let room = a.width() - 2.0 * gap;
         let mut rows: Vec<Vec<SlotId>> = vec![Vec::new()];
         let mut used = 0.0;
@@ -1109,6 +1147,14 @@ impl Sandbox {
                 self.clear();
             }
             if ui
+                .button("Default parameters")
+                .on_hover_text("Put every parameter back to the scene's defaults (the walls and gravity it started with); the widgets stay. The change comes in over a quarter second and no widget keeps more speed than a glide, so nothing is thrown about.")
+                .clicked()
+            {
+                let defaults = self.defaults();
+                self.world.set_params(defaults);
+            }
+            if ui
                 .danger_button(
                     "Reset",
                     "Remove every widget, put the parameters back to the scene's defaults and seed the scene's widgets again.",
@@ -1196,6 +1242,14 @@ impl Sandbox {
                 .on_hover_text("When a widget is put back at a place that is scrolled out of view. On: the view scrolls there. Off: the view stays and a marker on its edge points at the widget; click the marker to go there.")
                 .on_disabled_hover_text(off);
             self.land = if follow { LandMode::Follow } else { LandMode::Stay };
+            let mut sideways = self.sideways;
+            ui.checkbox(&mut sideways, "Grow to the right")
+                .on_hover_text("Turn the scene a quarter: gravity pulls left, the left, top and bottom walls are hard edges, the right side is open and the arena scrolls sideways as the world grows there. Off: gravity pulls up, the bottom is open and it scrolls down. Changing it seeds the scene again.")
+                .on_disabled_hover_text(off);
+            if sideways != self.sideways {
+                self.sideways = sideways;
+                self.reset();
+            }
             ui.checkbox(&mut self.backdrop_on, "Backdrop")
                 .on_hover_text("The ve_backdrop grid behind the frames: light gathers around them, more around the floating ones and the one on top.")
                 .on_disabled_hover_text(off);
@@ -1521,13 +1575,6 @@ impl Sandbox {
         .on_hover_text("A step in which nothing moved more than this many points is calm.");
         ui.add(Slider::new(&mut p.rest_steps, 1..=240).text("rest steps"))
             .on_hover_text("This many calm steps in a row put the world to rest.");
-        if ui
-            .button("Default parameters")
-            .on_hover_text("Put every parameter back to the scene's defaults (the walls and gravity it started with); the widgets stay. The change comes in over a quarter second and no widget keeps more speed than a glide, so nothing is thrown about.")
-            .clicked()
-        {
-            p = self.scene.params();
-        }
         self.world.set_params(p);
     }
 
