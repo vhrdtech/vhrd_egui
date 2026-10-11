@@ -4,6 +4,11 @@ egui building blocks and helpers: the common platform for the in-house egui apps
 
 What works and what is planned: [FEATURES.md](FEATURES.md). Changes: [CHANGELOG.md](CHANGELOG.md).
 
+The widget frame: `ve_frame` is the frame every widget sits in (header with LED, title, ⓘ, size switch and menu;
+footer; sides; rectangle or hexagon) and `Dock` moves widgets between the grid, a floating window, another OS
+window and another machine. Try it with `cargo run -p ve_frame --example playground`: every combination of the
+options in three widget sizes; click a size switch, open a ☰ menu, drag the *Auto room* slider.
+
 Physics layout prototype: `ve_settle` (rectangles that settle under gravity, home springs, walls and contacts; no
 egui dependency). Try it with `cargo run -p ve_settle --example sandbox`: a slider on every parameter, a debug
 overlay, drag, resize, add and remove widgets, pause and single-step.

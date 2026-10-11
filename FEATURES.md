@@ -191,10 +191,9 @@ Small helpers every app uses, crate `ve_basics`. UI rules that go with them: AGE
   widest forever: after `COMPACT_AFTER` (3 min) without growth the width glides (`animate_value`) down to the
   widest the content needed since, never while the content's width is still changing (5 s), and growth stays
   immediate; `reset_steady` still forgets everything. `ve_dash/src/steady.rs`, unit tests for the policy.
-- 🐛 **DASH-21 Snapshots differ on omarchy-m1**: `cargo test -p ve_dash --test ui` fails `sparkline_gradient`,
-  `sparkline_axis` and `dash_panel` by 2-9 pixels on omarchy-m1 (aarch64, its wgpu renderer), on main as well
-  (seen 10 Oct 2026 by session settle-polygon), so `just test` is red there. Needs a per-test failing-pixel
-  threshold (egui_kittest `SnapshotOptions`) or snapshots that agree across the PCs.
+- ✅ **DASH-21 Snapshots differ on omarchy-m1**: `sparkline_gradient`, `sparkline_axis` and `dash_panel` differed
+  by 2-9 pixels on omarchy-m1 (aarch64, its wgpu renderer). The three snapshots are now compared with a budget of
+  20 failing pixels (`tolerant()` in `ve_dash/tests/ui.rs`, egui_kittest `SnapshotOptions::max_failed_pixels`).
 - ✅ **BAS-1 Build info**: `BuildInfo`, `build_info!()` (captures the *calling* crate's name, version,
   `GIT_SHA`, `BUILD_TIME` and `cfg!(debug_assertions)`) and `build_info_label` — `version · sha · debug|release`
   with an orange debug marker and a tooltip spelling everything out. The app's `build.rs` sets `GIT_SHA` /
@@ -269,6 +268,12 @@ on every background (unit-tested), status colors always come with a text label.
 - 💡 **THM-6 Hot reload of tokens**: in debug builds, read the tokens from a RON file and re-apply on change, as
   re_ui's `hot_reload_design_tokens` does, so tuning doesn't need a rebuild. Needs serde on the token types.
 
+- 🐛 **THM-12 Palette copy test fails beside this vhrd_brand checkout**: `tokens::tests::palette_copy_matches_the_sibling_export`
+  compares `ve_theme/brand/palette.json` with `../vhrd_brand/web/palette.json` byte for byte. On omarchy-m1
+  (11 Oct 2026) the two differ (the sibling export has no `status` block, the copy here has one), so the test
+  says "stale: run `just brand`" and `just test` is red; not looked into which side is right, since
+  `just brand` would change colours every app and snapshot uses.
+
 ## Widget frame (`FRM`)
 
 One frame every widget sits in, crate `ve_frame` (user, 11 Oct 2026, P2605#11oct-1154): header, body, optional
@@ -317,22 +322,54 @@ switch (P2605#8oct-1205). ve_settle (SETL-5, SETL-7) later reads the same shapes
 
 ### Items
 
-- 📋 **FRM-1 Frame**: `WidgetFrame` with the header (optional LED, title, optional ⓘ with what-it-is text plus
-  the widget's own stats, size switch, ☰ menu), body and optional footer; every control has a tooltip.
-- 📋 **FRM-2 Sizes**: `SizeMode`, `Size`, `SizeHints`, `auto_size` with hysteresis.
-- 📋 **FRM-3 Sides and hexagons**: two sides for rectangles (left / right, laid out top to bottom); `Shape::Hex`
-  with header and footer on the flat faces and four item strips on the slanted faces, rotated along them.
-- 📋 **FRM-4 Moves**: `Placement`, `FrameAction`, `Dock<W>`: pop out as a window / back into the grid, send to a
-  new or existing OS window (multi-viewport), where it is again a window or in that window's grid.
-- 📋 **FRM-5 Send to another machine**: `Remote`, `Machine`, `Parcel`; disabled with the reason when the app
-  gives no transport.
-- 📋 **FRM-6 Playground and tests**: `cargo run -p ve_frame --example playground` spawns the matrix (every
-  combination of the options × tiny / medium / big); kittest drives the menu, the size switch, pop out and back;
-  snapshots with a failing-pixel tolerance (DASH-21).
+- ✅ **FRM-1 Frame**: `WidgetFrame::new(title)` with the header (optional LED `.led(status, why)`, title cut
+  with an ellipsis when the frame is narrow, optional ⓘ whose tooltip holds `.about(text)` plus the widget's
+  own stats `.info(|ui| ..)`, size switch `.sizes(hints)`, ☰ menu `.moves(&moves)` / `.menu(|ui| ..)`), body and
+  optional `.footer(|ui| ..)`; `.fill(true)` takes the room given (tiles), `.bare(true)` drops its own
+  background. `show(ui, &mut state, |ui, size| ..)` returns `FrameResponse { inner, size, action, response,
+  body_rect }`. Every control has a tooltip; colours come from the theme tokens of the `Ui` (dark / light).
+  `ve_frame/src/frame.rs`, kittest in `ve_frame/tests/ui.rs`.
+- ✅ **FRM-2 Sizes**: `SizeMode` (auto / min / nom / wide, the switch cycles them), `Size` (what the body is
+  told), `SizeHints { min, nom, wide }` (body sizes; `width_for`, `outer_width` for layouts), `auto_size(prev,
+  width, hints)`: the widest that fits, a step up needing `AUTO_HYSTERESIS` (24 pt) to spare. min is exactly
+  `hints.min`, clipped; nom and wide get at least their hint and grow downward; on auto the body fills the room
+  given. `SizeMode: From<ve_dash::PanelSize>`. `ve_frame/src/size.rs` (unit tests), kittest
+  `auto_follows_the_room_without_flipping`, `min_body_is_exactly_the_hinted_size`.
+- ✅ **FRM-3 Sides and hexagons**: `.left(|ui| ..)` / `.right(|ui| ..)` columns beside a rectangle's body, laid
+  out top to bottom; `Shape::Hex`: a flat-topped hexagon (faces at 60°, any width) with header and footer on the
+  flat faces, a body of exactly the hinted size, and `.hex_side(HexFace, [SideItem::text(..), SideItem::led(..)])`
+  items painted rotated along the four slanted faces, each with a tooltip; items that don't fit are left out.
+  Arbitrary egui UI can't be rotated (egui transforms only scale and move), hence items instead of a closure.
+  `ve_frame/src/hex.rs` (unit tests), snapshot `frames_hex`.
+- ✅ **FRM-4 Moves**: `FrameState { size, placement }` (serde) with `Placement { viewport: ViewportSlot,
+  floating }`; the menu reports a `FrameAction` (pop out / back into the grid / send to a new or an open OS
+  window / send to a machine / close) and `Dock<W>` carries it out: it owns the widgets (`Slot`), `ids(viewport,
+  floating)` tells the host which sit in a window's grid, `show_windows` shows the floating ones as chrome-less
+  egui `Window`s (the frame is the window), `show_viewports` the extra OS windows through
+  `show_viewport_immediate` (embedded as windows where the backend has one viewport); an extra window exists
+  while it holds a widget, and closing it sends its widgets back to the main grid. A move keeps the widget
+  value as it is. `ve_frame/src/dock.rs`, `state.rs`, `menu.rs` (unit tests), kittest
+  `pops_out_as_a_window_and_back`, `goes_to_another_os_window_and_back`.
+- ✅ **FRM-5 Send to another machine**: trait `Remote { machines(), send(machine, Parcel) }` the app implements,
+  offered through `Moves::remote` / `Dock::moves(Some(&remote))`; `Dock::send` packs the widget into a `Parcel`
+  (title, serialized widget, size switch) and removes it only when the send worked. Without a `Remote` the entry
+  is disabled with `NO_REMOTE` as its tooltip; an unreachable `Machine` is a disabled entry with its own
+  reason. No transport ships with it: that is the app's (tpm_mesh for the dash). `ve_frame/src/remote.rs`,
+  kittest `goes_to_another_machine_and_arrives_with_its_state`, `no_transport_keeps_the_entry_disabled_with_the_reason`.
+- ✅ **FRM-6 Playground and tests**: `cargo run -p ve_frame --example playground`: 2 shapes × 2⁶ options (LED,
+  ⓘ, size switch, menu, footer, sides) × tiny / medium / big = 384 demo widgets in wrapping rows, titled by their
+  options (`tiny LISMFX`); an *Auto room* slider to watch auto step between the sizes, filters, a loopback
+  "machine" with *Receive*, and a transport switch that shows the disabled entry. `ve_frame/tests/ui.rs` drives
+  it headless (size switch, menu moves, machine, tooltips, sides) and compares four snapshots (`frames_rect`,
+  `frames_hex`, `moved`, `matrix`) with a budget of 40 failing pixels.
 - 📋 **FRM-7 Widgets and the shell on the frame**: `Widget::frame_spec` / `ui_sized`, `ve_app` panes in the
   frame, floating and in extra OS windows, persisted (closes WID-10).
 - 📋 **FRM-8 Port tpm_mesh_dash to the frame**: its `Panel`s become `WidgetFrame`s; then `Panel` and `PanelSize`
   go to *Dropped and superseded*.
+- 💡 **FRM-9 Open ends of the frame**: a floating widget opens at a fixed offset, not where it sat in the grid;
+  a hexagon can't `fill` and has no shadow when floating; a second chrome in the style of `Panel` (title on the
+  border line) if the dash wants to keep that look; ve_settle bodies taking `SizeHints` and `Shape` (SETL-4,
+  SETL-5, SETL-7).
 
 ## Physics layout (`SETL`)
 

@@ -16,6 +16,12 @@ use ve_dash::{
     steady_width,
 };
 
+/// Snapshots are compared with a small budget of failing pixels: the wgpu renderers of the PCs differ in a
+/// handful of anti-aliased pixels (2-9 on omarchy-m1, DASH-21). A real change moves far more than that.
+fn tolerant() -> egui_kittest::SnapshotOptions {
+    egui_kittest::SnapshotOptions::new().max_failed_pixels(20)
+}
+
 /// Deterministic wiggly series for the snapshot charts.
 fn wave(n: usize, scale: f32) -> Vec<f32> {
     (0..n)
@@ -137,7 +143,7 @@ fn dash_panel_snapshot() {
             });
         });
     h.run();
-    h.snapshot("dash_panel");
+    h.snapshot_options("dash_panel", &tolerant());
 }
 
 #[test]
@@ -303,7 +309,7 @@ fn sparkline_time_axis() {
         });
     h.run();
     // painted text isn't in the accesskit tree: the snapshot is the guard
-    h.snapshot("sparkline_axis");
+    h.snapshot_options("sparkline_axis", &tolerant());
 }
 
 /// `color_by` changes the line's color along its length with the value; the hover readout of a point at the top
@@ -328,7 +334,7 @@ fn sparkline_color_by_value_and_readout_flips() {
     // Near the top of the harness window the readout would not fit above the point.
     h.hover_at(pos2(60.0, 20.0));
     h.step();
-    h.snapshot("sparkline_gradient");
+    h.snapshot_options("sparkline_gradient", &tolerant());
 }
 
 /// Compaction never runs in a few frames: a shorter value keeps its room (the glide itself is unit-tested).

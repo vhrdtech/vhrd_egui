@@ -38,6 +38,28 @@ versions follow [Semantic Versioning](https://semver.org/). Feature IDs refer to
   It lines up with the real wallpaper where the window's position is known: X11, Windows, macOS, and Hyprland
   through its IPC sockets (`ve_backdrop::Hyprland`, live from the event socket); other compositors through the
   `PositionProvider` trait; fitted to the window otherwise. Feature `glass`, on by default (BACK-2).
+### Added
+
+- ve_frame, a new crate: the frame every widget sits in. `WidgetFrame` draws a header (optional LED, title,
+  optional ⓘ with what the widget is and its stats, size switch, ☰ menu), the body, an optional footer and
+  optional sides (left / right of a rectangle); every control has a tooltip (FRM-1, FRM-3).
+- ve_frame: sizes. The switch cycles auto / min / nom / wide (`SizeMode`); the body is told `Size::Min` (exactly
+  `SizeHints::min`), `Nom` or `Wide` (layout hints); auto picks the widest that fits the room, with a 24 pt
+  hysteresis (`auto_size`) (FRM-2).
+- ve_frame: `Shape::Hex`, a flat-topped hexagon with header and footer on the flat faces and `SideItem`s (text,
+  LED) rotated along the four slanted faces (FRM-3).
+- ve_frame: moves. `FrameState` (size switch and `Placement`) travels with the widget; the menu reports a
+  `FrameAction` and `Dock<W>` carries it out: pop out as an egui window and back into the grid, send to a new or
+  an open OS window (egui multi-viewport) where it sits in the grid or floats again (FRM-4).
+- ve_frame: send to another machine through the trait `Remote` an app implements (`Machine`, `Parcel`,
+  `Dock::send`); without one the menu entry is disabled and says why (FRM-5).
+- ve_frame: `cargo run -p ve_frame --example playground`, the matrix of every option combination in three widget
+  sizes, with a loopback machine; headless tests and snapshots (FRM-6).
+
+### Fixed
+
+- ve_dash: the three UI snapshots are compared with a budget of 20 failing pixels, so `cargo test -p ve_dash`
+  passes on omarchy-m1 too (DASH-21).
 
 ## [0.18.0] - 2026-10-11
 

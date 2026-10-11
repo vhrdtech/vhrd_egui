@@ -3683,6 +3683,19 @@ dependencies = [
 ]
 
 [[package]]
+name = "ve_frame"
+version = "0.17.0"
+dependencies = [
+ "eframe",
+ "egui",
+ "egui_kittest",
+ "serde",
+ "serde_json",
+ "ve_dash",
+ "ve_theme",
+]
+
+[[package]]
 name = "ve_macro"
 version = "0.20.0"
 dependencies = [
