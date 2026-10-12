@@ -1,6 +1,6 @@
 //! The world: bodies, forces, contacts and the fixed step that moves them.
 
-use crate::geom::{Axis, Hit, Poly, Rect, Side, Vec2, sat};
+use crate::geom::{Axis, Hit, Poly, Rect, Side, Vec2, contact, sat};
 use crate::params::Params;
 
 /// Overlaps below this (points) count as touching.
@@ -1019,6 +1019,14 @@ impl World {
                 } else {
                     p.max_speed
                 };
+                // The body that gives way out of a full row is pushed out
+                // by a glide a step; with a glide of its own speed on top
+                // it went two and more (SETL-21).
+                let limit = if b.yielding {
+                    limit.min(p.glide_speed * 0.5)
+                } else {
+                    limit
+                };
                 let travelled = b.rect.center() - b.prev.center() - b.attract_shift;
                 // Put back onto a slope it sits on, it keeps next to no
                 // speed: being put back is not travelling.
@@ -2017,7 +2025,10 @@ impl World {
                 // Flat on flat nothing is doubled: pushed by a neighbour
                 // that parts at a glide, it has to keep up with it.
                 let most = if on_slope { glide * 0.5 } else { glide };
-                let (straight_a, straight_b) = if outlined {
+                // So does a body that lands lifted on a stack: what it
+                // pushes in, by every pass and pair together, goes at a
+                // glide (SETL-21).
+                let (straight_a, straight_b) = if outlined || a.lifted || b.lifted {
                     (spend_net(a, -straight, most), spend_net(b, straight, most))
                 } else {
                     (-straight, straight)
@@ -2492,7 +2503,7 @@ fn outline_hit(a: &Body, ar: &Rect, b: &Body, br: &Rect, gap: f32, prefer: Vec2)
     if o.x <= 0.0 || o.y <= 0.0 {
         return None;
     }
-    sat(&pa, &pb, |_| gap, prefer)
+    contact(&pa, &pb, gap, prefer)
 }
 
 /// The bulges a pair meets with: their own when one of them is the

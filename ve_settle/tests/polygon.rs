@@ -534,10 +534,10 @@ fn hexagons_tip_to_tip_part_by_their_true_distance() {
     let hex = Poly::unit_hexagon();
     let a = hex.fit(&Rect::from_min_size(v(0.0, 0.0), v(300.0, 156.0)));
     let b = hex.fit(&Rect::from_min_size(v(305.856, 0.0), v(300.0, 156.0)));
-    let hit = ve_settle::sat(&a, &b, |_| 6.0, Vec2::ZERO).expect("inside the gap");
+    let hit = ve_settle::contact(&a, &b, 6.0, Vec2::ZERO).expect("inside the gap");
     assert!(close(hit.normal, v(1.0, 0.0)), "{hit:?}");
     assert!((hit.depth - 0.144).abs() < 1e-3, "{hit:?}");
     // farther than the gap: no contact
     let c = hex.fit(&Rect::from_min_size(v(306.5, 0.0), v(300.0, 156.0)));
-    assert_eq!(ve_settle::sat(&a, &c, |_| 6.0, Vec2::ZERO), None);
+    assert_eq!(ve_settle::contact(&a, &c, 6.0, Vec2::ZERO), None);
 }

@@ -659,6 +659,19 @@ pub struct Hit {
     pub depth: f32,
 }
 
+/// Two convex polygons that are to be kept `gap` apart, the gap round about
+/// them: polygons that do not overlap by their true distance, the rest as
+/// [`sat`] has them. Across an edge normal two tips that meet (hexagons
+/// side by side) look closer than they are, and a push by that much throws
+/// them apart (round 4).
+pub fn contact(a: &Poly, b: &Poly, gap: f32, prefer: Vec2) -> Option<Hit> {
+    if let Some((d, normal)) = apart(a, b) {
+        let depth = gap - d;
+        return (depth > 0.0).then_some(Hit { normal, depth });
+    }
+    sat(a, b, |_| gap, prefer)
+}
+
 /// How far apart two convex polygons are and the unit direction from `a`'s
 /// nearest point to `b`'s; `None` when they touch or overlap.
 fn apart(a: &Poly, b: &Poly) -> Option<(f32, Vec2)> {
@@ -706,18 +719,10 @@ const TIE: f32 = 1e-3;
 /// them. Ties (two ridges meeting tip to tip) go to the normal that pushes
 /// `b` most along `prefer`, then to the first found; with `prefer` zero
 /// they are split: the tied normals are averaged (two mirrored slopes
-/// give the straight axis between them). Polygons that do not overlap are
-/// kept the gap apart by their true distance: across an edge normal two
-/// tips that meet look closer than they are. The answer depends on nothing
-/// but the inputs.
+/// give the straight axis between them). The answer depends on nothing
+/// but the inputs. (Kept `gap` apart this way, the gap around a polygon has
+/// its corners: two rectangles meet as boxes. [`contact`] keeps it round.)
 pub fn sat(a: &Poly, b: &Poly, gap: impl Fn(Vec2) -> f32, prefer: Vec2) -> Option<Hit> {
-    // Apart, they are kept the gap apart by their true distance: across an
-    // edge normal two tips that meet (hexagons side by side) look closer than
-    // they are, and a push by that much throws them apart (round 4).
-    if let Some((d, normal)) = apart(a, b) {
-        let depth = gap(normal) - d;
-        return (depth > 0.0).then_some(Hit { normal, depth });
-    }
     let mut best: Option<Hit> = None;
     // With no preference: the sum of the tied normals, averaged at the end.
     let mut tied = Vec2::ZERO;

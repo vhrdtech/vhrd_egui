@@ -534,7 +534,14 @@ up and Packery's "others flow around the dragged one". No app uses it yet.
   outside walls that moved; a dragged body floats and the others flow around it. Debug readouts per body (pulls,
   velocity, squeeze, pressure) and the step's contacts. No dependencies. `ve_settle/src/` (`world.rs`,
   `params.rs`, `geom.rs`), tests in `ve_settle/tests/core.rs`, doc example in `lib.rs`.
-- ✅ **SETL-2 Sandbox**: `cargo run -p ve_settle --example sandbox` (eframe): widgets of four kinds (sessions,
+- ✅ **SETL-2 Sandbox**: `cargo run -p ve_settle --example sandbox` (eframe). **Round 4 (user, 12 Oct 2026):
+  one sandbox, not two kinds**: its scenes are the tabs above the arena, *Rectangles* (the default) and
+  *Hexagons* (`-- hexagons`), real `ve_frame` widgets on the `ve_backdrop` grid (SETL-7); the *Mixed* tab and the
+  plain-box scenes below (*full*, *few*, *shapes*, *tight*) are gone with their widget kinds, corner handle,
+  grow / shrink, content by itself, tile buttons and outline editing. Sliders, overlay layers (off at the start),
+  Add widget, double click on empty arena, Remove selected, Homes here, Clear scene, Reset, pause and step stay.
+  What the old scenes guarded: `tests/scenes.rs` (SETL-11/12/13/14). The rest of this entry is the first version:
+  widgets of four kinds (sessions,
   usage, machine, grid) the size of real dash panels (250-450 wide, 120-400 tall), whose content grows in
   different directions (measured from the real egui content a frame late, as a dash would), a
   slider with a tooltip on every parameter, overlay layers (bodies with minimum size and id, force and velocity
@@ -552,6 +559,10 @@ up and Packery's "others flow around the dragged one". No app uses it yet.
   the others, resize the window, grow and shrink content, corner resize, remove, pause and step, content changing
   by itself for 15 s) and checks on every frame that no two solid bodies overlap and nothing moves more than
   32 points, and that it rests within 300 frames (5 s) of the last change. `ve_settle/tests/sandbox.rs`.
+  Round 4: with the plain boxes gone the file holds the frames kittests (SETL-7) and the sandbox's own: starts
+  with rectangles and fills the window as it grows, the wheel scrolls without moving anything, Add widget, a
+  double click on empty arena, Remove selected, Clear scene and Reset, pause and step, window resize, the overlay
+  switches. The physics the plain-box tests guarded is in the World tests (`tests/scenes.rs` for the scenes).
 - ✅ **SETL-8 Corner snapping**: sticking points on the corners (user, 10 Oct 2026). A corner of a free body
   within `snap_range` (20) of a corner of another body, or of the walls, is pulled to line up with it, the gap
   kept where the two bodies face each other, so panels align at their corners. `snap_stiffness` (1500) sets how
@@ -590,7 +601,9 @@ up and Packery's "others flow around the dragged one". No app uses it yet.
   `tests/pillow.rs`. Sandbox: a "Pillow" slider section (bulge at rest, from, gain, max, speed), a "Collision
   shapes" overlay layer (the pillows of bulged bodies with their bulge, the yielder thicker and marked "yields"),
   the slide push as a force arrow; kittest `a_row_overfilled_by_the_window_sends_one_widget_to_the_next_row`
-  (four panels, window narrowed to three: one moves down, nothing crushed, no overlap or jump on any frame).
+  (four panels, window narrowed to three: one moves down, nothing crushed, no overlap or jump on any frame;
+  gone with the plain-box sandbox in round 4, `a_row_overfilled_by_one_widget_sends_one_to_the_next_row` in
+  `tests/pillow.rs` covers it).
   Still open: the yielder is one per world, so two rows overfilled at once take turns.
 - ✅ **SETL-10 Grid pitch** (user, 10 Oct 2026): touching bodies are guided to line up their edges at whole steps of
   one global `grid_pitch` (24) along each contact (body under body: left edges; side by side: tops; against a wall:
@@ -663,7 +676,7 @@ up and Packery's "others flow around the dragged one". No app uses it yet.
   stretched. Result in the full scene: rows end on one bottom line, the field still rests within
   the old tests' limits, SETL-9/10/11 tests unchanged. Tests in `tests/attract.rs` (5 apart end equal,
   60 apart stay, limits, column widths, wall and neighbour, letting go, off at 0, three in a row), kittest
-  `widgets_of_nearly_the_same_height_end_with_one_bottom_line`. Sandbox: "Vertex attraction" sliders, "Vertex
+  `widgets_of_nearly_the_same_height_end_with_one_bottom_line` (gone with the plain-box sandbox in round 4). Sandbox: "Vertex attraction" sliders, "Vertex
   pulls" layer. Not done: pulling while dragging; one scale for width and height of a preset shape; the top edge under gravity up never lines up by itself (the row above
   does it with its bottoms).
 - ✅ **SETL-6 Pile sticks out though there is room beside it**: contacts parted two bodies along the axis of least
@@ -702,7 +715,8 @@ up and Packery's "others flow around the dragged one". No app uses it yet.
     outline, not by the corners of its rectangle); the frame's own controls keep their clicks.
   - *Backdrop*: `frames.placed()` lists every frame of the window as drawn (rectangle, hexagon or not, floating,
     on top), which is all a `ve_backdrop::Lit` needs.
-  Sandbox scene *frames* (`cargo run -p ve_settle --example sandbox -- frames`, or pick it under Scene): the
+  Sandbox (since round 4 its only kind of scene: tabs *Rectangles* and *Hexagons*, `cargo run -p ve_settle
+  --example sandbox`, `-- hexagons` for the second; until round 4 one scene *frames* next to plain boxes): the
   frame playground's demo widgets (its `Demo` and `draw_at`, included from `ve_frame/examples/playground`),
   twelve kinds mixed (rectangles and hexagons, tiny / medium / big, with and without sides, side bars, wings,
   footer, size switch), enough to fill two windows, so it runs past the bottom, on the `ve_backdrop` grid lit by the frames
@@ -713,7 +727,8 @@ up and Packery's "others flow around the dragged one". No app uses it yet.
   then packs nothing; and `max_speed` is the glide speed, since without a home to brake it what a landing
   widget pushes away flew on (34 points in a frame).
   `ve_settle/src/frames.rs` (unit tests: outline, folded band, room of a row, size estimates; doc example),
-  `examples/sandbox/app.rs` (`frames_ui`, `mixed`, `seat`), kittests in `tests/frames.rs`: the scene fills the
+  `examples/sandbox/app.rs` (`frames_ui`, `mixed`, `seat`), kittests in `tests/sandbox.rs` (`tests/frames.rs`
+  until round 4): the scene fills the
   window, runs past the bottom and rests with every frame on its body; the size switch changes the body and the
   others make room; a hexagon's body and outline follow its size; pop out through the menu and back; ghost;
   put back out of view (followed) and landing where the window is; folding (rectangle and hexagon); the size
@@ -788,7 +803,10 @@ up and Packery's "others flow around the dragged one". No app uses it yet.
   disabled with the reason when the outline is full). A plain panel keeps its resize corner and gets an outline with
   its first "+". Bodies with an outline are drawn as the polygon, with what vertex attraction added.
   `ve_settle/examples/sandbox/app.rs` (`Outline`, `add_shape`, `vertex_ui`, `seed_shapes`), kittest
-  `the_shapes_scene_settles_and_an_outline_can_be_edited`. "Clear scene" empties the arena and keeps the parameters,
+  `the_shapes_scene_settles_and_an_outline_can_be_edited`. Round 4 (user, 12 Oct 2026: one sandbox of real
+  frames): the tiles, their buttons, the shapes and tight scenes and the editing handles left the sandbox (a
+  frame's outline comes from the frame); the editing API stays (`World::insert_vertex` / `move_vertex` /
+  `remove_vertex`, tests in `tests/polygon.rs`) and the scenes live on as headless worlds in `tests/scenes.rs`. "Clear scene" empties the arena and keeps the parameters,
   to build a case by hand; scene *tight* is the shapes scene seeded pressed together (SETL-14). Homes stay on in
   that scene: nothing rubs in this
   solver, so without them the triangles wedge the row apart.
@@ -800,7 +818,9 @@ up and Packery's "others flow around the dragged one". No app uses it yet.
   onto a slope, SETL-15), and a body put back onto a slope keeps next to no speed. To see it gone: scene *tight*
   in the sandbox, then "Add half hexagon" a few times; kittest
   `the_mixed_scenes_come_to_full_rest_and_clear_empties_the_arena` drops four tiles on both scenes and checks every
-  frame.
+  frame. Since round 4 (the scene left the sandbox) that is the headless
+  `a_honeycomb_rests_and_tiles_dropped_on_it_glide_in` in `tests/scenes.rs`, same layout, same drops, every frame
+  checked for jumps (an outline may dip up to 16 points into a neighbour while the pack moves, SETL-17).
 - ✅ **SETL-15 Seated shapes hold, and the world sleeps** (user, 10 Oct 2026: "hexagon nesting is there but weak,
   they slide apart"; "the mixed scene keeps twitching ever so slightly"). (1) *Friction*: nothing rubbed in this
   solver, so a tile pressed onto a slanted edge by gravity slid along it, out of the notch, and triangles wedged a
@@ -814,7 +834,8 @@ up and Packery's "others flow around the dragged one". No app uses it yet.
   Tests: `a_nested_hexagon_holds_on_the_slope_it_sat_down_on` (holds with friction, slides out on ice), kittests
   `every_captured_pair_in_the_full_scene_ends_lined_up_and_the_field_sleeps` and
   `the_mixed_scenes_come_to_full_rest_and_clear_empties_the_arena` (120 frames with identical bodies and no step
-  after settling, in the full, shapes and tight scenes). Sandbox: "friction" slider under "Outlines". Known: on ice
+  after settling, in the full, shapes and tight scenes; since round 4 headless in `tests/scenes.rs`:
+  `a_full_field_runs_past_the_open_bottom_lines_up_and_sleeps`, `a_honeycomb_rests_and_tiles_dropped_on_it_glide_in`). Sandbox: "friction" slider under "Outlines". Known: on ice
   (friction 0) the tight scene with tiles dropped on it did not come to rest before the sleep rule; not rechecked.
 - 🚧 **SETL-5 Sizes chosen by the layout**: a body offers several sizes (auto / compact / normal / wide,
   P2605#8oct-1205) and the layout picks the one that fits best, instead of only squeezing.
@@ -901,7 +922,7 @@ up and Packery's "others flow around the dragged one". No app uses it yet.
   ranges, in a world that grows down and one that grows to the right, three seeds each: on every step nothing
   past a hard wall, no shared middle, nothing at infinity; back at the defaults at rest within 16 s with no
   overlap and nobody lifted; a change of parameters ramps and leaves no speed; nonsense is made sane), kittests
-  `any_parameters_then_default_parameters_in_a_scene_that_scrolls_down` / `_sideways` in `tests/frames.rs` (the
+  `any_parameters_then_default_parameters_in_a_scene_that_scrolls_down` / `_sideways` in `tests/sandbox.rs` (the
   same through the app, plus: the scroll area's content reaches as far as the world). Not done: with wild
   parameters bodies may overlap beyond their cores while they move (only the cores and the walls are hard);
   the top or left side cannot be the open one (content cannot grow to negative coordinates).
@@ -933,6 +954,18 @@ up and Packery's "others flow around the dragged one". No app uses it yet.
   hexagon changes size after opening), so it stays off; a body pressed between two walls cannot slide and
   stays off by up to the range (the first test world, 300 wide, showed it); faces of a rectangle and an
   outline are not paired (they pressed rectangles into stepping down).
+- ✅ **SETL-21 Pushed stacks ran faster than a glide** (found in round 4, when the sandbox became rectangles
+  only): a frame put back on top of a full stack, or a row's yielder (SETL-11) dropping out of a row a size
+  switch overfilled, moved the frames under it 33 to 37 points a frame and faster each frame (the limit that reads
+  as a jump is 32). Causes: a lifted body at a hard wall had all of its push go to the body under it, from the
+  pass over the pairs, the hard pass and the eject pass together, two and a half glides a step; and the yielder
+  kept a glide of speed and was pushed out by another glide on top. Fixed: what a lifted body pushes into another,
+  every pass and pair together, is a glide a step (as for outlines, SETL-17), and the yielder keeps at most half
+  a glide of speed (`World::step`). Kittests `popping_out_and_back_keeps_the_world_calm` and
+  `the_size_switch_changes_the_body_and_the_neighbours_make_room` in the rectangles scene. Tried and dropped: a
+  push that gives no speed outward (a stack pushed out kept none): it left two rectangles 1 point in each other
+  while the window narrowed. Still: a field seeded into itself (thirty panels at once) moves up to 35 points in a
+  frame while it comes apart (`tests/scenes.rs` allows 40 there).
 - 💡 **SETL-18 Frames on bodies: what does not fit yet** (findings of SETL-7, 11 Oct 2026):
   - *Heights do not stretch.* A frame draws itself as tall as its content, so its body is rigid in height and
     vertex attraction (SETL-12) cannot put the bottoms of a row on one line; widths of rectangles on auto or

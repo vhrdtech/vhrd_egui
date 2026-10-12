@@ -1,12 +1,9 @@
-//! The ve_settle sandbox: widgets of different sizes on a physics layout,
-//! a slider on every parameter, a debug overlay, drag, resize, add and
-//! remove, pause and single-step (SETL-2).
+//! The ve_settle sandbox: real `ve_frame` widgets on a physics layout, on
+//! the `ve_backdrop` grid, a slider on every parameter, a debug overlay,
+//! drag, add and remove, pause and single-step (SETL-2, SETL-7).
 //!
-//! `cargo run -p ve_settle --example sandbox`
-//!
-//! `cargo run -p ve_settle --example sandbox -- frames` starts in the
-//! frames scene: real `ve_frame` widgets on the bodies, on the
-//! `ve_backdrop` grid (SETL-7).
+//! `cargo run -p ve_settle --example sandbox` starts with rectangles;
+//! `cargo run -p ve_settle --example sandbox -- hexagons` with hexagons.
 
 mod app;
 
@@ -24,8 +21,8 @@ fn main() -> eframe::Result {
         "ve_settle sandbox",
         options,
         Box::new(|cc| {
-            let sandbox = if std::env::args().any(|arg| arg == "frames") {
-                app::Sandbox::with_scene(cc, app::Scene::Frames)
+            let sandbox = if std::env::args().any(|arg| arg == "hexagons") {
+                app::Sandbox::with_scene(cc, app::Scene::Hexagons)
             } else {
                 app::Sandbox::new(cc)
             };

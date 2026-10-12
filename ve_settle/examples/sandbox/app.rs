@@ -1,9 +1,7 @@
-//! The sandbox app: a `ve_settle::World` with widgets of different sizes
-//! on its bodies, a slider on every parameter and a debug overlay (SETL-2).
-//!
-//! The *frames* scene puts real `ve_frame` widgets on the bodies
-//! (`ve_settle::frames`, SETL-7): the frame playground's demo widgets,
-//! rectangles and hexagons, on the `ve_backdrop` grid.
+//! The sandbox app: a `ve_settle::World` with real `ve_frame` widgets on
+//! its bodies (`ve_settle::frames`, SETL-7), the frame playground's demo
+//! widgets on the `ve_backdrop` grid, a slider on every parameter and a
+//! debug overlay (SETL-2). Two scenes: rectangles and hexagons.
 //!
 //! The headless tests in `tests/sandbox.rs` and `tests/frames.rs` include
 //! this file and drive it like a person, so everything they read is `pub`.
@@ -15,26 +13,15 @@ pub mod playground;
 
 use eframe::egui;
 use egui::{
-    Align2, Button, CentralPanel, Color32, FontId, Frame, Id, Panel, Pos2, RichText, ScrollArea,
-    Sense, Slider, Stroke, StrokeKind, TextWrapMode, Ui, UiBuilder, pos2, vec2,
+    Align2, Button, CentralPanel, Color32, FontId, Frame, Id, Panel, Pos2, ScrollArea, Sense,
+    Slider, Stroke, StrokeKind, Ui, UiBuilder, pos2, vec2,
 };
 use playground::{Demo, Opts, Scale};
 use ve_backdrop::{Backdrop, Lit};
 use ve_frame::{Applied, FloatLook, FrameAction, LandMode, Shape, Size, Slot, SlotId};
 use ve_settle::frames::{Frames, LandAt, Seat, View};
-use ve_settle::{Axis, BodyDesc, BodyId, MAX_VERTICES, Params, Poly, Rect, Side, Vec2, World};
+use ve_settle::{Axis, BodyId, Params, Poly, Rect, Side, Vec2, World};
 use ve_theme::{Tokens, UiExt as _};
-
-/// Space between a widget's frame and its content.
-const PAD: f32 = 8.0;
-/// The corner a widget is resized by.
-const HANDLE: f32 = 14.0;
-/// Seconds between two content changes when the content lives by itself.
-const AUTO_EVERY: f32 = 0.35;
-/// The smallest size a dash panel comes in.
-const SMALLEST_PANEL: egui::Vec2 = vec2(250.0, 120.0);
-/// How much content a widget can hold.
-const MAX_AMOUNT: u32 = 24;
 
 fn to_pos(v: Vec2) -> Pos2 {
     pos2(v.x, v.y)
@@ -59,246 +46,62 @@ fn from_rect(r: egui::Rect) -> Rect {
     }
 }
 
-/// What a sandbox widget shows; each kind grows in its own direction.
-/// They are the size of real dash panels: 250 to 450 points wide, 120 to
-/// 400 tall.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum Kind {
-    /// A sessions panel, lines of text: grows down.
-    Log,
-    /// A usage panel, a row of bars: grows to the right.
-    Bars,
-    /// A machine panel, one big number over detail lines: grows down slowly.
-    Stat,
-    /// A grid of cells: grows both ways.
-    Grid,
-    /// A plain tile with a convex outline (hexagon, half hexagon,
-    /// triangle): only its name, the size it was added with.
-    Tile,
-}
-
-/// The outlines "Add ..." offers besides the rectangle (SETL-4).
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum Outline {
-    /// A hexagon, flat on top and bottom.
-    Hexagon,
-    /// Half a hexagon, cut straight on this side.
-    HalfHexagon(Side),
-    /// A triangle with its tip on this side.
-    Triangle(Side),
-}
-
-impl Outline {
-    fn poly(self) -> Poly {
-        match self {
-            Outline::Hexagon => Poly::unit_hexagon(),
-            Outline::HalfHexagon(side) => Poly::unit_half_hexagon(side),
-            Outline::Triangle(side) => Poly::unit_triangle(side),
-        }
-    }
-
-    fn name(self) -> &'static str {
-        match self {
-            Outline::Hexagon => "hexagon",
-            Outline::HalfHexagon(_) => "half hexagon",
-            Outline::Triangle(_) => "triangle",
-        }
-    }
-
-    /// The size a tile of this outline is added with: pieces of one
-    /// honeycomb, so they fit each other.
-    fn size(self) -> egui::Vec2 {
-        let upright = |side: Side| matches!(side, Side::Left | Side::Right);
-        match self {
-            Outline::Hexagon => vec2(180.0, 156.0),
-            Outline::HalfHexagon(side) if upright(side) => vec2(90.0, 156.0),
-            Outline::HalfHexagon(_) => vec2(180.0, 78.0),
-            Outline::Triangle(side) if upright(side) => vec2(78.0, 90.0),
-            Outline::Triangle(_) => vec2(90.0, 78.0),
-        }
-    }
-}
-
-impl Kind {
-    /// Every kind, in the order "Add widget" cycles through.
-    pub const ALL: [Kind; 4] = [Kind::Log, Kind::Bars, Kind::Stat, Kind::Grid];
-
-    fn name(self) -> &'static str {
-        match self {
-            Kind::Log => "sessions",
-            Kind::Bars => "usage",
-            Kind::Stat => "machine",
-            Kind::Grid => "grid",
-            Kind::Tile => "tile",
-        }
-    }
-
-    fn start_amount(self) -> u32 {
-        match self {
-            Kind::Log => 7,
-            Kind::Bars => 18,
-            Kind::Stat => 3,
-            Kind::Grid => 20,
-            Kind::Tile => 0,
-        }
-    }
-
-    /// The smallest a widget of this kind can be squeezed to.
-    fn min_size(self) -> Vec2 {
-        match self {
-            Kind::Log => Vec2::new(180.0, 90.0),
-            Kind::Bars => Vec2::new(170.0, 110.0),
-            Kind::Stat => Vec2::new(170.0, 90.0),
-            Kind::Grid => Vec2::new(160.0, 100.0),
-            Kind::Tile => Vec2::new(60.0, 52.0),
-        }
-    }
-}
-
-/// A widget of the sandbox, living on one body.
-pub struct Item {
-    /// Its body.
-    pub id: BodyId,
-    /// What it shows.
-    pub kind: Kind,
-    /// Its title.
-    pub name: String,
-    /// How much content it has (lines, bars, cells).
-    pub amount: u32,
-    /// A size set by hand with the corner handle, instead of the content's.
-    pub user_size: Option<egui::Vec2>,
-}
-
-impl Item {
-    /// Draw the content; the space it takes is the size the body wants.
-    fn content(&self, ui: &mut Ui, tokens: &Tokens) {
-        if self.kind == Kind::Tile {
-            ui.vertical_centered(|ui| ui.label(RichText::new(&self.name).strong()));
-            return;
-        }
-        // No panel is smaller than the smallest real one.
-        ui.set_min_size(SMALLEST_PANEL - vec2(2.0 * PAD, 2.0 * PAD));
-        ui.label(RichText::new(&self.name).strong());
-        match self.kind {
-            Kind::Tile => {}
-            Kind::Log => {
-                for line in 0..self.amount {
-                    ui.label(
-                        RichText::new(format!("12:00:{line:02}  session {line:02}  opus  working"))
-                            .monospace()
-                            .color(tokens.colors.text_muted),
-                    );
-                }
-            }
-            Kind::Bars => {
-                ui.horizontal(|ui| {
-                    ui.spacing_mut().item_spacing.x = 4.0;
-                    for bar in 0..self.amount {
-                        let (rect, _) = ui.allocate_exact_size(vec2(13.0, 130.0), Sense::hover());
-                        let level = 0.25 + 0.75 * ((bar * 37 % 11) as f32 / 10.0);
-                        let fill = egui::Rect::from_min_max(
-                            pos2(rect.min.x, rect.max.y - rect.height() * level),
-                            rect.max,
-                        );
-                        ui.painter().rect_filled(fill, 2.0, tokens.colors.accent);
-                    }
-                });
-            }
-            Kind::Stat => {
-                ui.label(RichText::new("37 %").monospace().size(44.0));
-                for line in 0..self.amount {
-                    ui.label(
-                        RichText::new(format!("core {line:02}  load 0.{:02}", line * 7 % 100))
-                            .monospace()
-                            .color(tokens.colors.text_muted),
-                    );
-                }
-            }
-            Kind::Grid => {
-                let side = (self.amount as f32).sqrt().ceil().max(1.0) as u32;
-                ui.spacing_mut().item_spacing = vec2(4.0, 4.0);
-                for row in 0..self.amount.div_ceil(side) {
-                    ui.horizontal(|ui| {
-                        for col in 0..side.min(self.amount - row * side) {
-                            let (rect, _) =
-                                ui.allocate_exact_size(vec2(46.0, 46.0), Sense::hover());
-                            let color = tokens.colors.cat[((row + col) % 5) as usize];
-                            ui.painter().rect_filled(rect, 4.0, color);
-                        }
-                    });
-                }
-            }
-        }
-    }
-}
-
-/// The widgets the sandbox starts with.
+/// The widgets the sandbox starts with: enough demo frames of one shape to
+/// fill the width and run past the bottom of the window (the bottom wall is
+/// open, the arena scrolls).
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Scene {
-    /// Enough widgets to fill the width and run past the bottom of the
-    /// window (the bottom wall is open, the arena scrolls): the layout
-    /// under real pressure, as a full dash.
-    Full,
-    /// Five widgets floating in a closed box.
-    Few,
-    /// Pieces of a honeycomb (hexagons, half hexagons, triangles) and two
-    /// panels in a closed box: convex outlines at work (SETL-4).
-    Shapes,
-    /// The same pieces seeded pressed into each other, a tight honeycomb:
-    /// the scene SETL-14 (a tile dropped on it jumps) was found in.
-    Tight,
-    /// Real `ve_frame` widgets on the bodies (SETL-7): the frame
-    /// playground's demo widgets, rectangles and hexagons mixed, enough to
-    /// run past the bottom of the window, on the `ve_backdrop` grid.
-    Frames,
+    /// Rectangular frames: with and without sides, footer and size switch,
+    /// in three scales.
+    Rectangles,
+    /// Hexagonal frames: with side bars, with wings and plain; they nest.
+    Hexagons,
 }
 
 impl Scene {
+    /// Both, in the order of the tabs.
+    pub const ALL: [Scene; 2] = [Scene::Rectangles, Scene::Hexagons];
+
     /// The parameters the scene starts with.
     pub fn params(self) -> Params {
         let mut p = Params::default();
-        if matches!(self, Scene::Full | Scene::Frames) {
-            p.walls.bottom = false;
-        }
-        if self == Scene::Frames {
-            // gravity packs the frames; a home would hold each where it was seeded
-            p.home_stiffness = 0.0;
-            // without a home to brake it, what a landing widget pushes away must not fly on
-            p.max_speed = p.glide_speed;
-            // gravity packs the stack: a push goes outward, down the whole of it
-            p.push_out = true;
-        }
+        p.walls.bottom = false;
+        // gravity packs the frames; a home would hold each where it was seeded
+        p.home_stiffness = 0.0;
+        // without a home to brake it, what a landing widget pushes away must not fly on
+        p.max_speed = p.glide_speed;
+        // gravity packs the stack: a push goes outward, down the whole of it
+        p.push_out = true;
         p
     }
 
-    /// Whether the scene fills more than the window and is topped up when
-    /// the window grows.
-    fn fills(self) -> bool {
-        matches!(self, Scene::Full | Scene::Frames)
+    /// The name on its tab.
+    pub fn name(self) -> &'static str {
+        match self {
+            Scene::Rectangles => "Rectangles",
+            Scene::Hexagons => "Hexagons",
+        }
     }
 
-    /// How the scene is seeded: the width of a column and the height of a
-    /// row of the seeding grid, and the area of an average widget, points².
-    fn pitch(self) -> (f32, f32, f32) {
-        match self {
-            Scene::Frames => (250.0, 150.0, FRAME_AREA),
-            _ => (290.0, 190.0, AVERAGE_AREA),
-        }
+    /// The `n`-th demo widget of this scene: the `n`-th of its shape in
+    /// [`mixed`].
+    pub fn demo(self, n: u32) -> Demo {
+        let hex = self == Scene::Hexagons;
+        // the n-th of that shape in the mixed list, which repeats every twelve
+        let of_shape: Vec<u32> = (0..12).filter(|k| mixed(*k).opts.hex == hex).collect();
+        mixed(of_shape[n as usize % of_shape.len()])
     }
 }
 
-/// How much of the arena's area the full scene fills with widgets: more
+/// How much of the arena's area a scene fills with widgets: more
 /// than one window, so it runs past the bottom.
 const FULL_FILL: f32 = 1.8;
 /// The arena has at least this size before the scene is seeded.
 const SEED_SIZE: egui::Vec2 = vec2(480.0, 320.0);
-/// The area of an average sandbox widget, points², for the full scene's count.
-const AVERAGE_AREA: f32 = 330.0 * 230.0;
-
-/// The area of an average demo frame, points², for the frames scene's count.
+/// The area of an average demo frame, points², for the scene's count.
 const FRAME_AREA: f32 = 300.0 * 200.0;
 
-/// The demo widget the frames scene adds as its `n`-th: rectangles and
+/// The `n`-th demo widget of the frames playground's mix: rectangles and
 /// hexagons of the three scales, with and without sides, side bars, wings,
 /// footer and size switch, mixed so that neighbours differ.
 pub fn mixed(n: u32) -> Demo {
@@ -326,31 +129,6 @@ pub fn mixed(n: u32) -> Demo {
     let (bits, hex, scale, wings) = kinds[n as usize % kinds.len()];
     let demo = Demo::new(Opts::from_bits(bits, hex), scale);
     if wings { demo.with_wings() } else { demo }
-}
-
-/// Which frames the frames scene holds.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum Tab {
-    /// Rectangles only.
-    Rectangles,
-    /// Hexagons only.
-    Hexagons,
-    /// Both, as [`mixed`] has them.
-    Mixed,
-}
-
-impl Tab {
-    /// The `n`-th demo widget of this tab.
-    pub fn demo(self, n: u32) -> Demo {
-        let hex = match self {
-            Tab::Mixed => return mixed(n),
-            Tab::Rectangles => false,
-            Tab::Hexagons => true,
-        };
-        // the n-th of that shape in the mixed list, which repeats every twelve
-        let of_shape: Vec<u32> = (0..12).filter(|k| mixed(*k).opts.hex == hex).collect();
-        mixed(of_shape[n as usize % of_shape.len()])
-    }
 }
 
 /// What the layout has to know about a demo widget.
@@ -414,24 +192,20 @@ impl Overlay {
 pub struct Sandbox {
     /// The simulation.
     pub world: World,
-    /// The widgets on its bodies.
-    pub items: Vec<Item>,
-    /// The framed widgets on its bodies (the frames scene).
+    /// The framed widgets on its bodies.
     pub frames: Frames<Demo>,
     /// How a floating frame sets itself off, and what happens when one is
     /// put back out of view.
     pub look: FloatLook,
     pub land: LandMode,
-    /// The background of the frames scene, and whether it is drawn.
+    /// The background behind the frames, and whether it is drawn.
     pub backdrop: Backdrop,
     pub backdrop_on: bool,
     /// What the frames fed the backdrop last frame.
     pub lit: Vec<Lit>,
     /// The last thing a frame's menu did.
     pub message: String,
-    /// Which frames the frames scene holds.
-    pub tab: Tab,
-    /// The frames scene grows to the right instead of down: gravity
+    /// The scene grows to the right instead of down: gravity
     /// pulls left, the right wall is open and the bottom one closed, and
     /// the arena scrolls sideways.
     pub sideways: bool,
@@ -457,8 +231,6 @@ pub struct Sandbox {
     pub selected: Option<BodyId>,
     /// Debug overlay layers.
     pub overlay: Overlay,
-    /// Content grows and shrinks by itself.
-    pub auto: bool,
     /// A widget dropped after a drag makes that place its home.
     pub rehome_on_drop: bool,
     /// The area the bodies live in, in screen points: the visible part.
@@ -467,37 +239,22 @@ pub struct Sandbox {
     pub arena: egui::Rect,
     /// The widgets it starts with; Reset seeds them again.
     pub scene: Scene,
-    /// How far the arena is scrolled down, points (the full scene runs
-    /// past the bottom of the window).
+    /// How far the arena is scrolled down, points (the scene runs past the
+    /// bottom of the window).
     pub scroll: f32,
     seeded: bool,
-    /// The arena area (points²) the full scene was filled for; when the
+    /// The arena area (points²) the scene was filled for; when the
     /// window grows past it, more widgets are added.
     filled_for: f32,
     seq: u32,
     rng: u32,
-    auto_clock: f32,
-    grab_offset: egui::Vec2,
-    resize_from: Option<ResizeStart>,
-    /// The vertex a drag that began on an edge's "+" put there and moves.
-    vertex_drag: Option<(BodyId, usize)>,
-    /// How many tiles the "Add ..." buttons added: the half hexagon and
-    /// the triangle turn a quarter with each one.
-    turns: usize,
-}
-
-/// Where a resize by the corner handle began.
-struct ResizeStart {
-    pointer: Pos2,
-    size: egui::Vec2,
-    home: Option<Vec2>,
 }
 
 impl Sandbox {
-    /// The app as eframe starts it: theme installed, a few widgets seeded
-    /// on the first frame.
+    /// The app as eframe starts it: theme installed, the rectangles scene
+    /// seeded on the first frame.
     pub fn new(cc: &eframe::CreationContext<'_>) -> Self {
-        Self::with_scene(cc, Scene::Full)
+        Self::with_scene(cc, Scene::Rectangles)
     }
 
     /// The app starting with `scene`.
@@ -512,7 +269,6 @@ impl Sandbox {
         };
         Self {
             world: World::new(Rect::default(), scene.params()),
-            items: Vec::new(),
             frames: Frames::new(),
             look: FloatLook::default(),
             land: LandMode::default(),
@@ -520,7 +276,6 @@ impl Sandbox {
             backdrop_on: true,
             lit: Vec::new(),
             message: String::new(),
-            tab: Tab::Mixed,
             sideways: false,
             scroll_x: 0.0,
             due: 0,
@@ -531,8 +286,7 @@ impl Sandbox {
             paused: false,
             selected: None,
             // the frames are the picture there; the layers are a click away
-            overlay: Overlay::all(scene != Scene::Frames),
-            auto: false,
+            overlay: Overlay::all(false),
             rehome_on_drop: true,
             arena: egui::Rect::NOTHING,
             scene,
@@ -541,11 +295,6 @@ impl Sandbox {
             filled_for: 0.0,
             seq: 0,
             rng: 0x2545_f491,
-            auto_clock: 0.0,
-            grab_offset: egui::Vec2::ZERO,
-            resize_from: None,
-            vertex_drag: None,
-            turns: 0,
         }
     }
 
@@ -601,40 +350,6 @@ impl Sandbox {
         self.rng
     }
 
-    /// Add a widget of the next kind with its middle at the world point
-    /// `at` (or at a spot picked inside the walls).
-    pub fn add_widget(&mut self, at: Option<Pos2>) -> BodyId {
-        if self.scene == Scene::Frames {
-            return self.add_frame(at);
-        }
-        let kind = Kind::ALL[self.seq as usize % Kind::ALL.len()];
-        self.seq += 1;
-        let at = at.unwrap_or_else(|| {
-            let (rx, ry) = (self.random() % 1000, self.random() % 1000);
-            let inner = to_rect(self.world.bounds()).shrink(60.0);
-            pos2(
-                inner.min.x + inner.width().max(0.0) * rx as f32 / 1000.0,
-                inner.min.y + inner.height().max(0.0) * ry as f32 / 1000.0,
-            )
-        });
-        // The real size is known after the first frame drew the content.
-        let guess = Vec2::new(300.0, 200.0);
-        let id = self.world.add(
-            BodyDesc::new(from_pos(at), guess)
-                .min_size(kind.min_size())
-                .home(Some(from_pos(at))),
-        );
-        self.items.push(Item {
-            id,
-            kind,
-            name: format!("{} {}", kind.name(), self.seq),
-            amount: kind.start_amount(),
-            user_size: None,
-        });
-        self.selected = Some(id);
-        id
-    }
-
     /// Add the next demo widget in its frame with its middle at the world
     /// point `at` (or at a spot picked inside the walls).
     pub fn add_frame(&mut self, at: Option<Pos2>) -> BodyId {
@@ -646,7 +361,7 @@ impl Sandbox {
                 inner.min.y + inner.height().max(0.0) * ry as f32 / 1000.0,
             )
         });
-        let demo = self.tab.demo(self.seq);
+        let demo = self.scene.demo(self.seq);
         self.seq += 1;
         let seat = seat(&demo);
         let slot = self.frames.add(&mut self.world, demo, seat, from_pos(at));
@@ -659,7 +374,7 @@ impl Sandbox {
     /// goes back to: the scene's, turned a quarter when it grows sideways.
     pub fn defaults(&self) -> Params {
         let mut p = self.scene.params();
-        if self.scene == Scene::Frames && self.sideways {
+        if self.sideways {
             p.gravity_side = Some(Side::Left);
             p.walls.bottom = true;
             p.walls.right = false;
@@ -669,7 +384,7 @@ impl Sandbox {
 
     /// How many widgets the scene holds, floating frames included.
     pub fn count(&self) -> usize {
-        self.items.len() + self.frames.dock.len() + self.due
+        self.frames.dock.len() + self.due
     }
 
     /// Forget every framed widget and keep the switches of the layout.
@@ -693,62 +408,12 @@ impl Sandbox {
         };
     }
 
-    /// Add a tile with `outline` with its middle at the world point `at`
-    /// (or at a spot picked inside the walls).
-    pub fn add_shape(&mut self, outline: Outline, at: Option<Pos2>) -> BodyId {
-        let at = at.unwrap_or_else(|| {
-            let (rx, ry) = (self.random() % 1000, self.random() % 1000);
-            let inner = to_rect(self.world.bounds()).shrink(60.0);
-            pos2(
-                inner.min.x + inner.width().max(0.0) * rx as f32 / 1000.0,
-                inner.min.y + inner.height().max(0.0) * ry as f32 / 1000.0,
-            )
-        });
-        self.seq += 1;
-        let size = outline.size();
-        let id = self.world.add(
-            BodyDesc::new(from_pos(at), Vec2::new(size.x, size.y))
-                .min_size(Kind::Tile.min_size())
-                .home(Some(from_pos(at)))
-                .outline(outline.poly()),
-        );
-        self.items.push(Item {
-            id,
-            kind: Kind::Tile,
-            name: format!("{} {}", outline.name(), self.seq),
-            amount: 0,
-            user_size: Some(size),
-        });
-        self.selected = Some(id);
-        id
-    }
-
-    /// Where vertex `index` of a body's shape is on the screen.
-    pub fn vertex_pos(&self, id: BodyId, index: usize) -> Option<Pos2> {
-        let shape = self.world.body(id)?.shape();
-        shape.points().get(index).map(|&p| self.screen_pos(p))
-    }
-
-    /// Where the "+" of the edge from vertex `edge` to the next one is on
-    /// the screen: its middle.
-    pub fn plus_pos(&self, id: BodyId, edge: usize) -> Option<Pos2> {
-        let body = self.world.body(id)?;
-        let shape = match body.outline {
-            Some(_) => body.shape(),
-            None => Poly::rect(&body.rect),
-        };
-        let points = shape.points();
-        let (a, b) = (*points.get(edge)?, points[(edge + 1) % points.len()]);
-        Some(self.screen_pos((a + b) * 0.5))
-    }
-
     fn remove_selected(&mut self) {
         if let Some(id) = self.selected.take() {
             if let Some(slot) = self.frames.slot(id) {
                 self.frames.remove(&mut self.world, slot);
             }
             self.world.remove(id);
-            self.items.retain(|item| item.id != id);
         }
     }
 
@@ -758,164 +423,52 @@ impl Sandbox {
         self.drop_frames();
         self.world = World::new(from_rect(self.arena), *self.world.params());
         (self.scroll, self.scroll_x, self.due) = (0.0, 0.0, 0);
-        self.items.clear();
         self.selected = None;
-        self.vertex_drag = None;
         // Nothing is seeded or topped up again until Reset.
         self.seeded = true;
         self.filled_for = f32::INFINITY;
-    }
-
-    fn selected_item(&mut self) -> Option<&mut Item> {
-        let id = self.selected?;
-        self.items.iter_mut().find(|item| item.id == id)
     }
 
     pub fn reset(&mut self) {
         self.drop_frames();
         self.world = World::new(from_rect(self.arena), self.defaults());
         (self.scroll, self.scroll_x, self.due) = (0.0, 0.0, 0);
-        self.items.clear();
         self.selected = None;
         self.seq = 0;
         self.seeded = false;
         self.filled_for = 0.0;
     }
 
-    /// The first widgets of the scene.
+    /// The first widgets of the scene: enough to fill [`FULL_FILL`]
+    /// windows, measured and laid out with the next frame
+    /// ([`Sandbox::seed_frames`]).
     fn seed(&mut self) {
         self.seeded = true;
-        if self.scene.fills() {
-            self.seed_full();
-            return;
-        }
-        if matches!(self.scene, Scene::Shapes | Scene::Tight) {
-            self.seed_shapes(self.scene == Scene::Tight);
-            return;
-        }
-        let spots = [
-            (0.2, 0.25),
-            (0.5, 0.2),
-            (0.8, 0.3),
-            (0.3, 0.7),
-            (0.65, 0.65),
-        ];
-        for (fx, fy) in spots {
-            let at = self.arena.min + vec2(self.arena.width() * fx, self.arena.height() * fy);
-            self.add_widget(Some(at));
-        }
-        self.selected = None;
-    }
-
-    /// A row of hexagons closed by half hexagons at its ends, triangles
-    /// for the notches above and below it, a second row of hexagons and
-    /// two panels. Their homes are where they are seeded, a little apart;
-    /// gravity closes them up, and the homes keep the triangles from
-    /// wedging the row apart (nothing rubs here).
-    fn seed_shapes(&mut self, tight: bool) {
-        let gap = self.world.params().gap;
-        let origin = self.arena.min + vec2(gap, gap);
-        let at = |x: f32, y: f32| Some(origin + vec2(x, y));
-        let (hex, half) = (Outline::Hexagon.size(), 90.0);
-        let pitch = hex.x + gap;
-        let first = half + gap + hex.x / 2.0;
-        for i in 0..4 {
-            self.add_shape(Outline::Hexagon, at(first + pitch * i as f32, hex.y / 2.0));
-        }
-        self.add_shape(
-            Outline::HalfHexagon(Side::Left),
-            at(half / 2.0, hex.y / 2.0),
-        );
-        let right = first + pitch * 3.0 + hex.x / 2.0 + gap + half / 2.0;
-        self.add_shape(Outline::HalfHexagon(Side::Right), at(right, hex.y / 2.0));
-        for i in 0..3 {
-            let notch = first + pitch * (i as f32 + 0.5);
-            self.add_shape(Outline::Triangle(Side::Bottom), at(notch, 39.0));
-            // Under the notch, not pressed into it (SETL-14).
-            let y = if tight {
-                hex.y / 2.0 + 67.0
-            } else {
-                hex.y + 80.0
-            };
-            self.add_shape(Outline::Triangle(Side::Top), at(notch, y));
-        }
-        let (row, half_row) = if tight {
-            (hex.y * 1.5 + 30.0, hex.y + 69.0)
-        } else {
-            (hex.y * 2.2, hex.y * 2.0)
-        };
-        for i in 0..3 {
-            self.add_shape(Outline::Hexagon, at(first + pitch * i as f32, row));
-        }
-        self.add_shape(
-            Outline::HalfHexagon(Side::Top),
-            at(first + pitch * 3.0, half_row),
-        );
-        self.add_widget(at(right + 250.0, 120.0));
-        self.add_widget(at(right + 250.0, 420.0));
+        let a = self.arena;
+        self.filled_for = a.width() * a.height();
+        self.due += self.full_count(a);
         self.selected = None;
     }
 
     /// How many widgets fill [`FULL_FILL`] arenas of this size.
     fn full_count(&self, arena: egui::Rect) -> usize {
-        ((arena.width() * arena.height() * FULL_FILL) / self.scene.pitch().2)
+        ((arena.width() * arena.height() * FULL_FILL) / FRAME_AREA)
             .ceil()
             .clamp(8.0, 120.0) as usize
     }
 
-    /// Enough widgets to fill [`FULL_FILL`] windows, seeded on a grid a
-    /// little tighter than they fit (a little offset per row so they are
-    /// not lined up from the start): they land lifted and push each other
-    /// apart until the arena is packed.
-    fn seed_full(&mut self) {
-        let a = self.arena;
-        self.filled_for = a.width() * a.height();
-        self.add_rows(self.full_count(a), a.min.y);
-        self.selected = None;
-    }
-
     /// The window grew (a tiling window manager sizes it after the first
-    /// frame, or the user did): add widgets below the lowest one until the
-    /// full scene fills [`FULL_FILL`] of the new arena again.
+    /// frame, or the user did): add widgets until the scene fills
+    /// [`FULL_FILL`] of the new arena again.
     fn top_up(&mut self) {
         let a = self.arena;
         let area = a.width() * a.height();
-        if !self.scene.fills() || area <= self.filled_for * 1.05 {
+        if area <= self.filled_for * 1.05 {
             return;
         }
         self.filled_for = area;
-        let missing = self.full_count(a).saturating_sub(self.count());
-        let lowest = self
-            .world
-            .bodies()
-            .iter()
-            .map(|b| b.rect.max.y)
-            .fold(a.min.y, f32::max);
-        let keep = self.selected;
-        self.add_rows(missing, lowest);
-        self.selected = keep;
-    }
-
-    /// `count` widgets in rows across the arena from `top` down.
-    fn add_rows(&mut self, count: usize, top: f32) {
-        if self.scene == Scene::Frames {
-            // measured and laid out with the next frame (`seed_frames`)
-            self.due += count;
-            return;
-        }
-        let a = self.arena;
-        let (column, dy, _) = self.scene.pitch();
-        let cols = (a.width() / column).ceil().max(1.0) as usize;
-        let dx = a.width() / cols as f32;
-        for i in 0..count {
-            let (row, col) = (i / cols, i % cols);
-            let shift = if row % 2 == 1 { dx * 0.2 } else { 0.0 };
-            let at = pos2(
-                a.min.x + dx * (col as f32 + 0.5) + shift,
-                top + dy * (row as f32 + 0.5),
-            );
-            self.add_widget(Some(pos2(at.x.min(a.max.x - 60.0), at.y)));
-        }
+        // measured and laid out with the next frame (`seed_frames`)
+        self.due += self.full_count(a).saturating_sub(self.count());
     }
 
     /// The framed widgets that are due, before they are shown once: each
@@ -1022,24 +575,6 @@ impl Sandbox {
         self.frames.hold_picks();
     }
 
-    /// Content that lives by itself: now and then one widget gets more or
-    /// less of it.
-    fn auto_content(&mut self, dt: f32) {
-        self.auto_clock += dt;
-        if self.auto_clock < AUTO_EVERY || self.items.is_empty() {
-            return;
-        }
-        self.auto_clock = 0.0;
-        let pick = self.random() as usize % self.items.len();
-        let grow = self.random() % 5 < 3;
-        let item = &mut self.items[pick];
-        item.amount = if grow {
-            (item.amount + 1).min(MAX_AMOUNT)
-        } else {
-            item.amount.saturating_sub(1).max(1)
-        };
-    }
-
     fn controls(&mut self, ui: &mut Ui) {
         ui.section_header(
             "Simulation",
@@ -1065,20 +600,13 @@ impl Sandbox {
             }
             if ui
                 .button("Add widget")
-                .on_hover_text("Add a widget of the next kind (log, bars, stat, grid) at a spot inside the arena. Double-clicking the arena adds one there.")
+                .on_hover_text("Add the scene's next demo widget at a spot inside the arena; it lands lifted and the others make room. Double-clicking empty arena adds one there.")
                 .clicked()
             {
-                self.add_widget(None);
+                self.add_frame(None);
             }
             let chosen = self.selected.is_some();
             let none = "Not available: no widget is selected. Click one first.";
-            let framed = self.scene == Scene::Frames;
-            let content = chosen && !framed;
-            let none_or_frame = if framed {
-                "Not available in the frames scene: a frame's size comes from its size switch and its sizes, not from an amount of content."
-            } else {
-                none
-            };
             if ui
                 .add_enabled(chosen, Button::new("Remove selected"))
                 .on_hover_text("Remove the selected widget; the others close the hole.")
@@ -1086,48 +614,6 @@ impl Sandbox {
                 .clicked()
             {
                 self.remove_selected();
-            }
-            if ui
-                .add_enabled(content, Button::new("Grow"))
-                .on_hover_text("Give the selected widget one more line, bar or cell, so it wants more room.")
-                .on_disabled_hover_text(none_or_frame)
-                .clicked()
-                && let Some(item) = self.selected_item()
-            {
-                item.amount = (item.amount + 1).min(MAX_AMOUNT);
-            }
-            if ui
-                .add_enabled(content, Button::new("Shrink"))
-                .on_hover_text("Take one line, bar or cell from the selected widget.")
-                .on_disabled_hover_text(none_or_frame)
-                .clicked()
-                && let Some(item) = self.selected_item()
-            {
-                item.amount = item.amount.saturating_sub(1).max(1);
-            }
-            if ui
-                .add_enabled(content, Button::new("Auto size"))
-                .on_hover_text("Forget the size set by hand: the selected widget wants the size of its content again.")
-                .on_disabled_hover_text(none_or_frame)
-                .clicked()
-                && let Some(item) = self.selected_item()
-            {
-                item.user_size = None;
-            }
-        });
-        ui.horizontal_wrapped(|ui| {
-            let sides = [Side::Left, Side::Top, Side::Right, Side::Bottom];
-            let side = sides[self.turns % sides.len()];
-            let pieces = [
-                (Outline::Hexagon, "Add hexagon", "Add a hexagon tile: a body whose outline is a convex polygon. Hexagons nest where rectangles would overlap."),
-                (Outline::HalfHexagon(side), "Add half hexagon", "Add half a hexagon, cut straight on one side (the next side with each click): the piece that closes a honeycomb against a wall."),
-                (Outline::Triangle(side), "Add triangle", "Add a triangle tile (its tip on the next side with each click): it settles into the notch between two hexagons."),
-            ];
-            for (outline, label, tip) in pieces {
-                if ui.button(label).on_hover_text(tip).clicked() {
-                    self.add_shape(outline, None);
-                    self.turns += 1;
-                }
             }
         });
         ui.horizontal(|ui| {
@@ -1141,7 +627,7 @@ impl Sandbox {
             if ui
                 .danger_button(
                     "Clear scene",
-                    "Remove every widget and keep the parameters: an empty arena to build a case in by hand (Add widget, Add hexagon, double-click the arena). Reset seeds the scene again.",
+                    "Remove every widget and keep the parameters: an empty arena to build a case in by hand (Add widget, double-click the arena). Reset seeds the scene again.",
                 )
                 .clicked()
             {
@@ -1165,28 +651,7 @@ impl Sandbox {
             let defaults = self.defaults();
             self.world.set_params(defaults);
         }
-        ui.horizontal(|ui| {
-            ui.label("Scene").on_hover_text("The widgets the sandbox starts with; picking one resets it.");
-            let mut scene = self.scene;
-            ui.selectable_value(&mut scene, Scene::Full, "full")
-                .on_hover_text("Enough widgets to fill the width and run past the bottom of the window: the bottom wall is open and the arena scrolls. The layout under real pressure.");
-            ui.selectable_value(&mut scene, Scene::Few, "few")
-                .on_hover_text("Five widgets floating in a closed box.");
-            ui.selectable_value(&mut scene, Scene::Shapes, "shapes")
-                .on_hover_text("Hexagons, half hexagons, triangles and two panels in a closed box: bodies with convex outlines; triangles fill the notches between hexagons. Select one to edit its outline: drag a square to move a vertex, drag or click a + to put a new one on an edge.");
-            ui.selectable_value(&mut scene, Scene::Tight, "tight")
-                .on_hover_text("The shapes scene seeded pressed together: a tight honeycomb. Known bug SETL-14 was found here: \"Add half hexagon\" drops a tile on the pack, and in the headless test it moved 43 points in one frame (a jump; a glide is under 32). Watch the new tile right after the click.");
-            ui.selectable_value(&mut scene, Scene::Frames, "frames")
-                .on_hover_text("Real ve_frame widgets on the bodies: the frame playground's demo widgets, rectangles and hexagons mixed, enough to run past the bottom, on the ve_backdrop grid. Use their size switch, their ☰ menu (pop out, back), fold them by the ▾, drag them. The overlay layers start off here.");
-            if scene != self.scene {
-                self.scene = scene;
-                self.overlay = Overlay::all(scene != Scene::Frames);
-                self.reset();
-            }
-        });
         self.frame_controls(ui);
-        ui.checkbox(&mut self.auto, "Content changes by itself")
-            .on_hover_text("Now and then a widget gets one more or one less line, bar or cell, like live data.");
         ui.checkbox(&mut self.rehome_on_drop, "Drop sets home")
             .on_hover_text("A dragged widget makes the place it is dropped its home spot. Off: it is pulled back to its old home.");
 
@@ -1217,88 +682,65 @@ impl Sandbox {
         self.param_sliders(ui);
     }
 
-    /// The switches of the frames scene.
+    /// The switches of the frames on the bodies.
     fn frame_controls(&mut self, ui: &mut Ui) {
         ui.section_header(
             "Frames",
-            "The frames scene: ve_frame widgets on the bodies of the world.",
+            "How the ve_frame widgets on the bodies of the world behave.",
         );
-        let on = self.scene == Scene::Frames;
-        let off =
-            "Not available: only the frames scene has framed widgets. Pick \"frames\" under Scene.";
-        ui.add_enabled_ui(on, |ui| {
-            ui.checkbox(&mut self.frames.auto_pick, "Layout picks sizes")
-                .on_hover_text("A frame whose size switch is on auto is shown in the size the layout picks: one step wider (min, nom, wide) when its row has the room for it, one step down when it is pressed. One frame changes at a time. Off: frames on auto keep the size they have.")
-                .on_disabled_hover_text(off);
-            ui.checkbox(&mut self.frames.ghosts, "Ghost slots")
-                .on_hover_text("A widget popped out as a window keeps its body in the world, drawn as a dashed ghost; click it to put the widget back. Off: its body leaves the world and the others close up.")
-                .on_disabled_hover_text(off);
-            ui.checkbox(&mut self.frames.stretch_hexagons, "Hexagons stretch to line up")
-                .on_hover_text("Vertex attraction may resize a hexagon by up to its range (Attraction range) to line its faces up with its neighbours'. Off: hexagons keep the size their hints give and line up by sliding along each other's faces only. Experimental (SETL-20): a hexagon at a wall and one nested under it can take turns growing and sliding until the world cools.")
-                .on_disabled_hover_text(off);
-            let mut window = self.frames.land_at == LandAt::Window;
-            ui.checkbox(&mut window, "Land where the window is")
-                .on_hover_text("A floating widget put back into the layout lands where its window was, like a drop. Off: it returns to the place it left.")
-                .on_disabled_hover_text(off);
-            self.frames.land_at = if window { LandAt::Window } else { LandAt::Home };
-            let mut follow = self.land == LandMode::Follow;
-            ui.checkbox(&mut follow, "Follow")
-                .on_hover_text("When a widget is put back at a place that is scrolled out of view. On: the view scrolls there. Off: the view stays and a marker on its edge points at the widget; click the marker to go there.")
-                .on_disabled_hover_text(off);
-            self.land = if follow { LandMode::Follow } else { LandMode::Stay };
-            let mut sideways = self.sideways;
-            ui.checkbox(&mut sideways, "Grow to the right")
-                .on_hover_text("Turn the scene a quarter: gravity pulls left, the left, top and bottom walls are hard edges, the right side is open and the arena scrolls sideways as the world grows there. Off: gravity pulls up, the bottom is open and it scrolls down. Changing it seeds the scene again.")
-                .on_disabled_hover_text(off);
-            if sideways != self.sideways {
-                self.sideways = sideways;
-                self.reset();
-            }
-            ui.checkbox(&mut self.backdrop_on, "Backdrop")
-                .on_hover_text("The ve_backdrop grid behind the frames: light gathers around them, more around the floating ones and the one on top.")
-                .on_disabled_hover_text(off);
-            ui.checkbox(&mut self.backdrop.settings.glass, "Glass")
-                .on_hover_text("The backdrop's emulated transparency: a dimmed copy of the desktop wallpaper under the grid.")
-                .on_disabled_hover_text(off);
-            ui.weak(&self.message)
-                .on_hover_text("The last thing a frame's menu did.");
-        });
+        ui.checkbox(&mut self.frames.auto_pick, "Layout picks sizes")
+                .on_hover_text("A frame whose size switch is on auto is shown in the size the layout picks: one step wider (min, nom, wide) when its row has the room for it, one step down when it is pressed. One frame changes at a time. Off: frames on auto keep the size they have.");
+        ui.checkbox(&mut self.frames.ghosts, "Ghost slots")
+                .on_hover_text("A widget popped out as a window keeps its body in the world, drawn as a dashed ghost; click it to put the widget back. Off: its body leaves the world and the others close up.");
+        ui.checkbox(&mut self.frames.stretch_hexagons, "Hexagons stretch to line up")
+                .on_hover_text("Vertex attraction may resize a hexagon by up to its range (Attraction range) to line its faces up with its neighbours'. Off: hexagons keep the size their hints give and line up by sliding along each other's faces only. Experimental (SETL-20): a hexagon at a wall and one nested under it can take turns growing and sliding until the world cools.");
+        let mut window = self.frames.land_at == LandAt::Window;
+        ui.checkbox(&mut window, "Land where the window is")
+                .on_hover_text("A floating widget put back into the layout lands where its window was, like a drop. Off: it returns to the place it left.");
+        self.frames.land_at = if window { LandAt::Window } else { LandAt::Home };
+        let mut follow = self.land == LandMode::Follow;
+        ui.checkbox(&mut follow, "Follow")
+                .on_hover_text("When a widget is put back at a place that is scrolled out of view. On: the view scrolls there. Off: the view stays and a marker on its edge points at the widget; click the marker to go there.");
+        self.land = if follow {
+            LandMode::Follow
+        } else {
+            LandMode::Stay
+        };
+        let mut sideways = self.sideways;
+        ui.checkbox(&mut sideways, "Grow to the right")
+                .on_hover_text("Turn the scene a quarter: gravity pulls left, the left, top and bottom walls are hard edges, the right side is open and the arena scrolls sideways as the world grows there. Off: gravity pulls up, the bottom is open and it scrolls down. Changing it seeds the scene again.");
+        if sideways != self.sideways {
+            self.sideways = sideways;
+            self.reset();
+        }
+        ui.checkbox(&mut self.backdrop_on, "Backdrop")
+                .on_hover_text("The ve_backdrop grid behind the frames: light gathers around them, more around the floating ones and the one on top.");
+        ui.checkbox(&mut self.backdrop.settings.glass, "Glass")
+                .on_hover_text("The backdrop's emulated transparency: a dimmed copy of the desktop wallpaper under the grid.");
+        ui.weak(&self.message)
+            .on_hover_text("The last thing a frame's menu did.");
     }
 
-    /// The tabs of the frames scene: which frames it holds. They work in
-    /// every scene: picking one outside the frames scene switches to it.
+    /// The scenes, as tabs above the arena.
     fn tabs(&mut self, ui: &mut Ui) {
-        let framed = self.scene == Scene::Frames;
         let mut picked = None;
         ui.horizontal(|ui| {
-            let tabs = [
-                (Tab::Rectangles, "Rectangles", "Rectangular frames only: with and without sides, footer and size switch, in three scales."),
-                (Tab::Hexagons, "Hexagons", "Hexagonal frames only: with side bars, with wings and plain; they nest."),
-                (Tab::Mixed, "Mixed", "Rectangles and hexagons together."),
-            ];
-            for (value, label, tip) in tabs {
-                let tip = if framed {
-                    format!("{tip} Picking a tab seeds the scene again.")
-                } else {
-                    format!("{tip} Picking a tab switches to the frames scene (Scene: frames) and seeds it.")
+            for scene in Scene::ALL {
+                let tip = match scene {
+                    Scene::Rectangles => "Rectangular frames: with and without sides, footer and size switch, in three scales.",
+                    Scene::Hexagons => "Hexagonal frames: with side bars, with wings and plain; they nest.",
                 };
                 if ui
-                    .selectable_label(framed && self.tab == value, label)
-                    .on_hover_text(tip)
+                    .selectable_label(self.scene == scene, scene.name())
+                    .on_hover_text(format!("{tip} Enough to fill the width and run past the bottom of the window. Picking a tab seeds the scene again."))
                     .clicked()
                 {
-                    picked = Some(value);
+                    picked = Some(scene);
                 }
             }
         });
-        if let Some(tab) = picked
-            && (tab != self.tab || !framed)
-        {
-            self.tab = tab;
-            if !framed {
-                self.scene = Scene::Frames;
-                self.overlay = Overlay::all(false);
-            }
+        if let Some(scene) = picked {
+            self.scene = scene;
             self.reset();
         }
     }
@@ -1556,7 +998,7 @@ impl Sandbox {
         );
 
         ui.checkbox(&mut p.push_out, "Push outward")
-            .on_hover_text("In a world open away from gravity (the bottom wall open, gravity up): a contact along gravity's axis moves only the widget farther out, by the whole of it, so a push runs down a whole stack at once and nothing is pushed toward gravity's wall. Off: both widgets give half. On in the frames scene, where gravity packs the frames and there are no homes.");
+            .on_hover_text("In a world open away from gravity (the bottom wall open, gravity up): a contact along gravity's axis moves only the widget farther out, by the whole of it, so a push runs down a whole stack at once and nothing is pushed toward gravity's wall. Off: both widgets give half. On in the sandbox's scenes, where gravity packs the frames and there are no homes.");
         ui.section_header("Motion", "Speeds, so that things glide and never jump.");
         knob(
             ui,
@@ -1616,7 +1058,6 @@ impl Sandbox {
         let tokens = ui.tokens();
         let arena = ui.available_rect_before_wrap();
         self.arena = arena;
-        let framed = self.scene == Scene::Frames;
         // the slider under the pointer, if it has something to show here
         let hovered: Option<Option<Effect>> = ui.data_mut(|d| d.remove_temp(Effect::id()));
         let hovered = hovered.flatten();
@@ -1624,22 +1065,11 @@ impl Sandbox {
             self.effect = hovered;
         }
         // first, so everything else is drawn on top; filled once the frames are laid out
-        let backdrop = (framed && self.backdrop_on).then(|| self.backdrop.reserve(ui.painter()));
-        let background = ui
-            .allocate_rect(arena, Sense::click())
-            .on_hover_text("The arena. Drag a widget to move it, drag its lower right corner to resize it, double-click empty space to add one. Scroll when the widgets run past the bottom.");
-        if background.double_clicked() {
-            let at = background
-                .interact_pointer_pos()
-                .map(|p| to_pos(self.world_pos(p)));
-            self.add_widget(at);
-        } else if background.clicked() {
-            self.selected = None;
-        }
-        // the frames scene scrolls in an egui scroll area, which takes the wheel itself
-        if !framed && ui.rect_contains_pointer(arena) {
-            self.scroll -= ui.input(|i| i.smooth_scroll_delta.y);
-        }
+        let backdrop = self
+            .backdrop_on
+            .then(|| self.backdrop.reserve(ui.painter()));
+        ui.allocate_rect(arena, Sense::hover())
+            .on_hover_text("The arena. Drag a widget by any part that is not a control to move it, double-click empty space to add one, click it to select none. Scroll when the widgets run past the bottom.");
         self.world.set_bounds(from_rect(arena));
         // Not before the window has a real size: on the first frame it can
         // still be tiny, and the scene would start with a few widgets.
@@ -1654,35 +1084,51 @@ impl Sandbox {
             let began = std::time::Instant::now();
             self.world.advance(dt);
             self.solver_ms = began.elapsed().as_secs_f32() * 1000.0;
-            if self.auto {
-                self.auto_content(dt);
-            }
         }
 
         self.scroll = self.scroll.clamp(0.0, self.max_scroll());
-        // before the bodies are counted: a frame that pops out takes its body along
-        if framed {
-            self.frames_ui(ui);
-        }
-        // Solid bodies first, lifted ones above them, the dragged one on top.
-        let mut order: Vec<usize> = (0..self.world.bodies().len()).collect();
-        order.sort_by_key(|&i| {
-            let b = &self.world.bodies()[i];
-            (b.dragged, b.lifted)
-        });
-        for i in order {
-            self.body_ui(ui, i, &tokens);
-        }
-        self.vertex_ui(ui, &tokens);
+        self.frames_ui(ui);
+        self.empty_space_clicks(ui);
         self.paint_overlay(ui, &tokens);
         if let Some(effect) = self.effect {
             self.paint_effect(ui, &tokens, effect);
         }
-        if !framed {
-            self.paint_scrollbar(ui, &tokens);
-        }
         if let Some(slot) = backdrop {
             self.backdrop.fill(ui.painter(), slot, arena, &self.lit);
+        }
+    }
+
+    /// A click on empty arena selects nothing, a double click adds a widget
+    /// there. (The scroll area over the arena takes the pointer's clicks
+    /// itself, so they are read from the input: not over a floating window,
+    /// with no body under the pointer.)
+    fn empty_space_clicks(&mut self, ui: &Ui) {
+        let (single, double, pos) = ui.input(|i| {
+            let primary = egui::PointerButton::Primary;
+            (
+                i.pointer.button_clicked(primary),
+                i.pointer.button_double_clicked(primary),
+                i.pointer.interact_pos(),
+            )
+        });
+        let Some(pos) = pos.filter(|p| self.arena.contains(*p)) else {
+            return;
+        };
+        // not over a floating window or a popup
+        let layer = ui.ctx().layer_id_at(pos);
+        let on_arena =
+            layer.is_none_or(|l| l == ui.layer_id() || l.order == egui::Order::Background);
+        if !(single || double) || !on_arena {
+            return;
+        }
+        let at = self.world_pos(pos);
+        if self.world.bodies().iter().any(|b| b.rect.contains(at)) {
+            return;
+        }
+        if double {
+            self.add_frame(Some(to_pos(at)));
+        } else {
+            self.selected = None;
         }
     }
 
@@ -1771,247 +1217,6 @@ impl Sandbox {
         lits.sort_by_key(|l| !l.floating);
         lits.truncate(ve_backdrop::MAX_LIT);
         lits
-    }
-
-    /// A thin bar on the right edge: which part of the content is shown.
-    fn paint_scrollbar(&self, ui: &Ui, tokens: &Tokens) {
-        let (a, total) = (self.arena, self.content_height());
-        if total <= a.height() + 0.5 {
-            return;
-        }
-        let track = egui::Rect::from_min_max(pos2(a.max.x - 6.0, a.min.y), a.max);
-        let top = a.min.y + a.height() * self.scroll / total;
-        let thumb = egui::Rect::from_min_size(
-            pos2(track.min.x, top),
-            vec2(track.width(), a.height() * a.height() / total),
-        );
-        ui.painter()
-            .rect_filled(thumb, 3.0, tokens.colors.line_strong);
-        ui.interact(track, Id::new("settle_scrollbar"), Sense::hover())
-            .on_hover_text(format!(
-                "Scrolled {:.0} of {:.0} points: the widgets run past the bottom of the window. Scroll over the arena to see them.",
-                self.scroll,
-                total - a.height()
-            ));
-    }
-
-    fn body_ui(&mut self, ui: &mut Ui, index: usize, tokens: &Tokens) {
-        let body = &self.world.bodies()[index];
-        let (id, rect, lifted) = (body.id, self.screen_rect(body.rect), body.lifted);
-        let (min_size, home) = (to_vec(body.min_size), body.home);
-        // A body with an outline is drawn as the solver sees it.
-        let outline: Option<Vec<Pos2>> = body.outline.map(|_| {
-            let shape = body.shape();
-            shape.points().iter().map(|&p| self.screen_pos(p)).collect()
-        });
-        let Some(item_index) = self.items.iter().position(|item| item.id == id) else {
-            return;
-        };
-        let selected = self.selected == Some(id);
-
-        let painter = ui.painter().with_clip_rect(self.arena);
-        let fill = if lifted {
-            tokens.colors.surface_raised
-        } else {
-            tokens.colors.surface
-        };
-        let stroke = if selected {
-            Stroke::new(tokens.stroke.medium, tokens.colors.accent)
-        } else {
-            Stroke::new(tokens.stroke.thin, tokens.colors.line)
-        };
-        if let Some(points) = outline {
-            painter.add(egui::Shape::convex_polygon(points, fill, stroke));
-        } else {
-            painter.rect_filled(rect, tokens.radius.m, fill);
-            painter.rect_stroke(rect, tokens.radius.m, stroke, StrokeKind::Inside);
-        }
-
-        // The content is drawn at its own size and clipped to the body, so
-        // what it measures is what it wants, however squeezed it is now.
-        let mut child = ui.new_child(
-            UiBuilder::new()
-                .id_salt(("settle_content", id.0))
-                .max_rect(rect.shrink(PAD)),
-        );
-        child.set_clip_rect(rect.shrink(2.0).intersect(self.arena));
-        child.style_mut().wrap_mode = Some(TextWrapMode::Extend);
-        self.items[item_index].content(&mut child, tokens);
-        let content = child.min_rect().size() + vec2(2.0 * PAD, 2.0 * PAD);
-        let want = self.items[item_index].user_size.unwrap_or(content);
-        self.world.set_want(id, Vec2::new(want.x, want.y));
-
-        let response = ui
-            .interact(
-                rect,
-                Id::new(("settle_body", id.0)),
-                Sense::click_and_drag(),
-            )
-            .on_hover_text(format!(
-                "{}: drag to move it, click to select it. The others glide out of its way.",
-                self.items[item_index].name
-            ));
-        if response.clicked() {
-            self.selected = Some(id);
-        }
-        if response.drag_started() {
-            self.selected = Some(id);
-            self.world.grab(id);
-            let pointer = response.interact_pointer_pos().unwrap_or(rect.center());
-            self.grab_offset = rect.center() - pointer;
-        }
-        if response.dragged()
-            && let Some(pointer) = response.interact_pointer_pos()
-        {
-            self.world
-                .drag_to(id, self.world_pos(pointer + self.grab_offset));
-        }
-        if response.drag_stopped() {
-            self.world.release(id, self.rehome_on_drop);
-        }
-
-        let handle = egui::Rect::from_min_max(rect.max - vec2(HANDLE, HANDLE), rect.max);
-        let resize = ui
-            .interact(handle, Id::new(("settle_resize", id.0)), Sense::click_and_drag())
-            .on_hover_text("Drag: set this widget's size by hand; it follows at the grow speed. Double-click: back to the size of its content.");
-        if resize.drag_started()
-            && let Some(pointer) = resize.interact_pointer_pos()
-        {
-            self.selected = Some(id);
-            self.resize_from = Some(ResizeStart {
-                pointer,
-                size: rect.size(),
-                home,
-            });
-        }
-        if resize.dragged()
-            && let Some(pointer) = resize.interact_pointer_pos()
-            && let Some(start) = &self.resize_from
-        {
-            let size = (start.size + (pointer - start.pointer)).max(min_size);
-            self.items[item_index].user_size = Some(size);
-            // A body grows about its middle; moving the home by half the
-            // change keeps the top left corner where it is.
-            if let Some(start_home) = start.home {
-                let half = (size - start.size) * 0.5;
-                self.world
-                    .set_home(id, Some(start_home + Vec2::new(half.x, half.y)));
-            }
-        }
-        if resize.drag_stopped() {
-            self.resize_from = None;
-        }
-        if resize.double_clicked() {
-            self.items[item_index].user_size = None;
-        }
-        let grip = if resize.hovered() || resize.dragged() {
-            tokens.colors.accent
-        } else {
-            tokens.colors.line_strong
-        };
-        for inset in [4.0, 8.0] {
-            painter.line_segment(
-                [rect.max - vec2(inset, 3.0), rect.max - vec2(3.0, inset)],
-                Stroke::new(tokens.stroke.thin, grip),
-            );
-        }
-    }
-
-    /// The selected body's outline to edit (SETL-4): a square on every
-    /// vertex to drag (it stops where the outline would dent), a "+" in
-    /// the middle of every edge to put a new vertex there.
-    fn vertex_ui(&mut self, ui: &mut Ui, tokens: &Tokens) {
-        let Some(id) = self.selected else {
-            return;
-        };
-        let Some(body) = self.world.body(id) else {
-            return;
-        };
-        if body.dragged {
-            return;
-        }
-        let has_outline = body.outline.is_some();
-        let count = body.outline.map_or(4, |o| o.points().len());
-        let painter = ui.painter().with_clip_rect(self.arena);
-        let color = tokens.colors.accent;
-        // A plain rectangle keeps its corner for resizing: its vertices
-        // can be moved once it has an outline (a "+" gives it one).
-        if has_outline {
-            for index in 0..count {
-                let Some(at) = self.vertex_pos(id, index) else {
-                    continue;
-                };
-                let handle = egui::Rect::from_center_size(at, vec2(11.0, 11.0));
-                let response = ui
-                    .interact(handle, Id::new(("settle_vertex", id.0, index)), Sense::click_and_drag())
-                    .on_hover_text("A vertex of the outline. Drag: move it; it stops where the outline would dent (convex shapes only) and at the body's rectangle. Double-click: take it out (a triangle keeps its three).");
-                if response.dragged()
-                    && let Some(pointer) = response.interact_pointer_pos()
-                {
-                    self.world.move_vertex(id, index, self.world_pos(pointer));
-                }
-                if response.double_clicked() {
-                    self.world.remove_vertex(id, index);
-                }
-                let fill = if response.hovered() || response.dragged() {
-                    color
-                } else {
-                    tokens.colors.surface_raised
-                };
-                painter.rect_filled(handle.shrink(2.0), 0.0, fill);
-                painter.rect_stroke(
-                    handle.shrink(2.0),
-                    0.0,
-                    Stroke::new(tokens.stroke.medium, color),
-                    StrokeKind::Inside,
-                );
-            }
-        }
-        let full = count >= MAX_VERTICES;
-        for edge in 0..count {
-            let Some(at) = self.plus_pos(id, edge) else {
-                continue;
-            };
-            let handle = egui::Rect::from_center_size(at, vec2(11.0, 11.0));
-            let sense = if full {
-                Sense::hover()
-            } else {
-                Sense::click_and_drag()
-            };
-            let response = ui.interact(handle, Id::new(("settle_plus", id.0, edge)), sense);
-            let response = if full {
-                response.on_hover_text(format!(
-                    "Not available: the outline is full ({MAX_VERTICES} vertices). Double-click a vertex to take one out."
-                ))
-            } else {
-                response.on_hover_text("Click or drag: put a new vertex on this edge (and drag it where it should be). The outline stays convex: a vertex in the middle of a straight edge can only go outward, as far as the body's rectangle.")
-            };
-            if !full && (response.clicked() || response.drag_started()) {
-                let index = self.world.insert_vertex(id, self.world_pos(at));
-                self.vertex_drag = index.filter(|_| response.drag_started()).map(|i| (id, i));
-            }
-            if response.dragged()
-                && let Some((body, index)) = self.vertex_drag
-                && let Some(pointer) = response.interact_pointer_pos()
-            {
-                self.world.move_vertex(body, index, self.world_pos(pointer));
-            }
-            if response.drag_stopped() {
-                self.vertex_drag = None;
-            }
-            let tint = if full {
-                tokens.colors.line
-            } else if response.hovered() || response.dragged() {
-                color
-            } else {
-                tokens.colors.line_strong
-            };
-            painter.circle_filled(at, 4.5, tokens.colors.surface_raised);
-            painter.circle_stroke(at, 4.5, Stroke::new(tokens.stroke.thin, tint));
-            for d in [vec2(2.5, 0.0), vec2(0.0, 2.5)] {
-                painter.line_segment([at - d, at + d], Stroke::new(tokens.stroke.thin, tint));
-            }
-        }
     }
 
     fn paint_overlay(&self, ui: &Ui, tokens: &Tokens) {
@@ -2747,7 +1952,7 @@ impl eframe::App for Sandbox {
             });
         // At rest nothing is recomputed and nothing asks for a new frame
         // (content that lives by itself needs its clock, though).
-        if !self.paused && (self.auto || !self.world.is_at_rest()) {
+        if !self.paused && !self.world.is_at_rest() {
             ctx.request_repaint();
         }
     }

@@ -22,7 +22,18 @@ or landed. Read `AGENTS.md` first; FEATURES.md areas SETL, FRM hold the detail. 
 
 Then: commit on the branch, `just test` + `just lint`, `tpm work ready --note "..."` saying how to try each point.
 
-## State of each
+## Progress in the fresh conversation (12 Oct 2026, afternoon)
+
+- Items 1 and 2 done (commit 6c3f008): tabs work in every scene, `Frames::auto_pick` off by default; the user
+  later said: no test for the tabs (both tab tests dropped).
+- The user's follow-up (12:20): drop Mixed, one sandbox of real frames (Rectangles, Hexagons), plain-box
+  scenes gone, their guards headless: done (next commit). `tests/frames.rs` is now `tests/sandbox.rs`,
+  `tests/scenes.rs` holds the old scenes as worlds.
+- Found and fixed on the way: hexagons tip to tip bounced (`geom::contact`, SETL-4), pushed stacks faster than a
+  glide (SETL-21).
+- Left: item 3 (hex attraction strength, SETL-20) and item 4 (group drag, id SETL-22 claimed).
+
+## State of each (at the handoff)
 
 1. Started. `each_tab_takes_a_real_click` (last test in `ve_settle/tests/frames.rs`, commit `eaa86be`) presses,
    releases and moves the pointer in frames of their own, as a real click; it **passes headless**, so the bug is

@@ -64,14 +64,22 @@ versions follow [Semantic Versioning](https://semver.org/). Feature IDs refer to
   second.
 - ve_settle: `Frames::auto_pick` is off by default: frames on auto keep their size unless the layout's size pick
   is turned on; in a busy scene the picks kept the world moving (SETL-5).
-- ve_settle sandbox: the frames tabs work in every scene; picking one outside the frames scene switches to it
-  (they were disabled there) (SETL-7).
+- ve_settle sandbox: one sandbox of real `ve_frame` widgets: its scenes are the tabs Rectangles (the default
+  of a plain `cargo run -p ve_settle --example sandbox`) and Hexagons (`-- hexagons`); the Mixed tab, the
+  plain-box scenes (full, few, shapes, tight) with their widget kinds, corner handle, grow / shrink, content by
+  itself, tile buttons and outline editing are gone (`-- frames` is no longer needed). Their physics lives on as
+  headless worlds in `tests/scenes.rs`, the sandbox's kittests are in `tests/sandbox.rs` (SETL-2, SETL-3,
+  SETL-7).
 
 ### Fixed
 
 - ve_settle: two outlines that do not overlap are kept the gap apart by their true distance, not by the distance
   across an edge normal: hexagons side by side meeting tip to tip were pushed 0.8 points too far each time and
   bounced, so a scene with them wobbled until it cooled (SETL-4). The hard pass runs up to 16 rounds (was 8).
+  `ve_settle::contact` is that contact (`sat` keeps the gap with corners, as rectangles meet).
+- ve_settle: a frame put back on a full stack, or the body that gives way out of an overfilled row, no longer
+  pushes the frames under it two glides a step and more: what a lifted body pushes is a glide a step, all passes
+  together, and the yielder keeps at most half a glide of speed (SETL-21).
 - ve_settle: `Frames::clear` keeps handing out new ids, so a new scene's frames no longer start from what the last
   scene's widgets under the same ids learned of their side columns; the sandbox clears its frames on a new tab or
   Restart instead of making new ones. The rectangles tab opens at its sizes: 0 of 21 frames change size after
