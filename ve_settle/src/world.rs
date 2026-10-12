@@ -2270,16 +2270,21 @@ impl World {
                 a.seated |= seated;
                 b.seated |= seated;
                 // A body that stands at a hard wall does not go through
-                // it: what would push it there moves the other one.
+                // it: it goes up to the wall, and what is left of the push
+                // moves the other one. (All of it to the other one left the
+                // room at the walls unused: a row a little too full between
+                // them pushed its middle back and forth for ever, overlapped.)
                 let (mut da, mut db) = (straight_a - slide_a, straight_b + slide_b);
                 for axis in Axis::BOTH {
-                    let held = |b: &Body, d: f32| at_hard_wall(b, d, axis, &hard, &walls);
-                    if held(a, da[axis]) {
-                        db[axis] -= da[axis];
-                        da[axis] = 0.0;
-                    } else if held(b, db[axis]) {
-                        da[axis] -= db[axis];
-                        db[axis] = 0.0;
+                    let take = |b: &Body, d: f32| hard_take(b, d, axis, &hard, &walls);
+                    let ta = take(a, da[axis]);
+                    if ta != da[axis] {
+                        db[axis] -= da[axis] - ta;
+                        da[axis] = ta;
+                    } else {
+                        let tb = take(b, db[axis]);
+                        da[axis] -= db[axis] - tb;
+                        db[axis] = tb;
                     }
                 }
                 // In a world open away from gravity nothing is pushed
@@ -2504,6 +2509,18 @@ impl World {
                 self.bodies[i].lifted = false;
             }
         }
+    }
+}
+
+/// The part of a move by `d` along `axis` a solid body can make before the
+/// hard wall it would go through: all of it where no hard wall is in the way.
+fn hard_take(b: &Body, d: f32, axis: Axis, hard: &Rect, walls: &crate::params::Walls) -> f32 {
+    if !at_hard_wall(b, d, axis, hard, walls) {
+        d
+    } else if d < 0.0 {
+        (hard.min[axis] - b.rect.min[axis]).min(0.0).max(d)
+    } else {
+        (hard.max[axis] - b.rect.max[axis]).max(0.0).min(d)
     }
 }
 

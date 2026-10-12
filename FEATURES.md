@@ -1055,6 +1055,11 @@ up and Packery's "others flow around the dragged one". No app uses it yet.
   (`tests/core.rs`), kittest `a_frame_dropped_near_the_bottom_stays_where_it_is_dropped`. Seen on the way: the
   window-narrowing kittest leaves two rectangles 4 points in each other for a step with some damping / drag
   values (damping 11 and drag 0 as well), a weakness of the contact solver under a moving wall, not of the drag.
+  Found and fixed (12 Oct 2026, with the pin's wider headers it was 9 points): a push that would take a body
+  through a hard wall went all to its neighbour, so the room between the body and the hard wall (the gap at a
+  closed wall) was never used; a row a little too full between two walls pushed its middle body back and forth
+  between its neighbours for ever, in them. Now the body goes up to the wall and only the rest of the push moves
+  the other one (`hard_take` in `pairs_pass`); kittest `resizing_the_window_keeps_everything_between_the_walls`.
 - ✅ **SETL-22 Group drag** (user, round 4, 12 Oct 2026: "dragging one of a cluster stuck together moves the
   rest; how to break one off"). A group is found when the drag starts (`World::cluster`): flood fill over solid
   bodies within the gap + `CLUSTER_SLACK` (1 point) of each other, by their true shapes (hexagons face to face
