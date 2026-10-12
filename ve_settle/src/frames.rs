@@ -877,9 +877,16 @@ impl<W> Frames<W> {
             }
         }
         if held && grip.drag_stopped() {
-            world.release(body_id, self.rehome_on_drop);
+            // alone, an outline glides into a free cell near where it was dropped (SETL-28)
+            if self.group.len() <= 1 {
+                world.release_to_cell(body_id, self.rehome_on_drop);
+            } else {
+                world.release(body_id, self.rehome_on_drop);
+            }
             for (m, _) in std::mem::take(&mut self.group) {
-                world.release(m, self.rehome_on_drop);
+                if m != body_id {
+                    world.release(m, self.rehome_on_drop);
+                }
             }
             self.epoch += 1;
         }

@@ -1671,3 +1671,125 @@ fn a_pinned_frame_stays_put_and_unpins_from_its_menu() {
     watch.frames(&mut h, 2);
     assert!(!h.state().world.body(body).unwrap().pinned);
 }
+
+/// How many faces of body `id` lie against a face of another outline: antiparallel, the gap apart within
+/// `slack`, side by side for at least a quarter of the shorter one.
+fn faces_against(world: &ve_settle::World, id: BodyId, slack: f32) -> usize {
+    let gap = world.params().gap;
+    let faces = |p: &Poly| {
+        let pts = p.points().to_vec();
+        let mid = p.centroid();
+        (0..pts.len())
+            .map(|i| {
+                let (a, b) = (pts[i], pts[(i + 1) % pts.len()]);
+                let len = (b - a).length();
+                let u = (b - a) * (1.0 / len);
+                let mut n = ve_settle::Vec2::new(-u.y, u.x);
+                if (a - mid).dot(n) < 0.0 {
+                    n = -n;
+                }
+                (a, b, u, n, len)
+            })
+            .collect::<Vec<_>>()
+    };
+    let me = world.body(id).expect("body").shape();
+    faces(&me)
+        .into_iter()
+        .filter(|&(a0, a1, u, n, la)| {
+            world
+                .bodies()
+                .iter()
+                .filter(|o| o.id != id && o.outline.is_some())
+                .any(|o| {
+                    faces(&o.shape()).into_iter().any(|(b0, b1, ub, nb, lb)| {
+                        let (s0, s1, t0, t1) = (a0.dot(u), a1.dot(u), b0.dot(u), b1.dot(u));
+                        let overlap = s0.max(s1).min(t0.max(t1)) - s0.min(s1).max(t0.min(t1));
+                        u.dot(ub) < -0.98
+                            && n.dot(nb) < -0.98
+                            && ((b0 - a0).dot(n) - gap).abs() <= slack
+                            && overlap >= 0.25 * la.min(lb)
+                    })
+                })
+        })
+        .count()
+}
+
+/// SETL-28 (user, 12 Oct 2026 16:19: "the Hexagons scene as a packed honeycomb"): the scene is laid out
+/// cell by cell and rests so: every hexagon lies face to face with another, the gap apart within a point,
+/// most with two faces or more.
+#[test]
+fn the_hexagons_scene_is_a_honeycomb_at_rest() {
+    let (h, _watch) = sandbox_in(Scene::Hexagons);
+    let world = &h.state().world;
+    let ids: Vec<BodyId> = world.bodies().iter().map(|b| b.id).collect();
+    assert!(ids.len() >= 12, "{} hexagons", ids.len());
+    for &id in &ids {
+        assert!(faces_against(world, id, 1.0) >= 1, "#{} alone", id.0);
+    }
+    let two = ids
+        .iter()
+        .filter(|&&id| faces_against(world, id, 1.0) >= 2)
+        .count();
+    assert!(
+        two * 2 >= ids.len(),
+        "{two} of {} with two faces or more",
+        ids.len()
+    );
+}
+
+/// SETL-28: a hexagon dragged off its place and let go beside a free cell glides into it and lies face
+/// to face there (let go as before, it stays 40 points off).
+#[test]
+fn a_hexagon_let_go_near_a_free_cell_glides_into_it() {
+    let (mut h, mut watch) = sandbox_in(Scene::Hexagons);
+    // the lowest one in view (at the edge of what is shown, so the drag goes through little), to its
+    // nearest other free cell in view, and let go 40 points beside it
+    let bottom = h.state().world.bounds().min.y + h.state().arena.height() - 40.0;
+    let (slot, body) = {
+        let s = h.state();
+        let footed = |b: &&Body| {
+            let slot = s.frames.slot(b.id).and_then(|id| s.frames.dock.get(id));
+            slot.is_some_and(|w| w.widget.opts.footer) && b.rect.max.y < bottom
+        };
+        let last = s
+            .world
+            .bodies()
+            .iter()
+            .filter(footed)
+            .max_by(|a, b| a.rect.max.y.partial_cmp(&b.rect.max.y).unwrap());
+        let body = last.expect("a hexagon with a footer").id;
+        (s.frames.slot(body).expect("its widget"), body)
+    };
+    let at = body_rect(&h, slot).center();
+    let cells = h.state().world.free_cells(body);
+    let cell = cells
+        .iter()
+        .copied()
+        .filter(|c| (*c - at).length() > 60.0 && c.y < bottom - 150.0)
+        .min_by(|a, b| (*a - at).length().partial_cmp(&(*b - at).length()).unwrap())
+        .expect("a free cell");
+    // beside it toward the middle, where neither gravity nor a wall brings it in
+    let middle = h.state().world.bounds().center().x;
+    let to = cell + ve_settle::Vec2::new(if cell.x < middle { 40.0 } else { -40.0 }, 0.0) - at;
+    drag_by(
+        &mut h,
+        &mut watch,
+        slot,
+        vec2(to.x, to.y),
+        egui::Modifiers::NONE,
+    );
+    let world = &h.state().world;
+    let b = world.body(body).unwrap();
+    assert!(b.nesting().is_none() && !b.dragged);
+    assert!((b.rect.center() - at).length() > 40.0, "it moved");
+    assert!(
+        faces_against(world, body, 1.0) >= 1,
+        "face to face: {:?}",
+        b.rect
+    );
+    assert!(
+        (b.rect.center() - cell).length() < 2.0,
+        "in the cell it was let go near: {:?} {cell:?}",
+        b.rect.center()
+    );
+}

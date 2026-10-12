@@ -537,6 +537,32 @@ impl Sandbox {
             let guess = guess.map_or(vec2(240.0, 120.0), to_vec);
             frames.outer(slot, size).unwrap_or(guess)
         };
+        // Hexagons are packed cell by cell, each where it lies face to face with what is there nearest
+        // gravity's wall: they nest as a honeycomb (SETL-28). Gravity alone packs them tip to tip.
+        let (hexes, fresh): (Vec<SlotId>, Vec<SlotId>) = fresh.into_iter().partition(|&slot| {
+            self.frames
+                .dock
+                .get(slot)
+                .is_some_and(|s| seat(&s.widget).shape == Shape::Hex)
+        });
+        // each at its size first, then one by one into their cells
+        let bodies: Vec<BodyId> = hexes.iter().filter_map(|&s| self.frames.body(s)).collect();
+        for &slot in &hexes {
+            self.frames
+                .place(&mut self.world, slot, Vec2::new(a.center().x, a.center().y));
+        }
+        for slot in hexes {
+            let size = size_of(&self.frames, slot, Size::Nom);
+            let Some(body) = self.frames.body(slot) else {
+                continue;
+            };
+            let next = bodies.iter().position(|&b| b == body).map_or(0, |i| i + 1);
+            let Some(at) = self.world.pack_cell(body, &bodies[next..]) else {
+                continue;
+            };
+            self.frames.place(&mut self.world, slot, at);
+            placed.push(Rect::from_center_size(at, Vec2::new(size.x, size.y)));
+        }
         if self.sideways {
             // columns that fit the height, each body right of what lies left of it
             let (mut y, mut column) = (a.min.y + gap, a.min.x + gap);
@@ -1003,6 +1029,13 @@ impl Sandbox {
             &mut p.friction,
             0.0..=4.0,
             "How steep a slanted edge holds a tile that gravity presses onto it (the slope's tangent). 2 holds on a hexagon's 60° edges, so nested tiles stay where they sat down; 0 is ice: tiles slide along every slope and wedge each other apart.",
+        );
+        knob(
+            ui,
+            "nest range",
+            &mut p.nest_range,
+            0.0..=200.0,
+            "How far a hexagon let go on its own glides into a free cell, points: a place where it lies face to face with a neighbour (in a notch of the honeycomb first), the gap apart, in nothing. Its middle moves at most this far, at a glide, over the others. 0 lets it go where it is dropped. A group dragged together is let go where it is.",
         );
 
         ui.section_header(
@@ -1728,6 +1761,39 @@ impl Sandbox {
                     }
                 }
             }
+            Effect::Nest => {
+                let outlined = || self.world.bodies().iter().filter(|b| b.outline.is_some());
+                for body in outlined() {
+                    painter.circle_stroke(
+                        self.screen_pos(body.rect.center()),
+                        p.nest_range,
+                        Stroke::new(thin, faint(c.status.ok.solid, 0.6)),
+                    );
+                }
+                let chosen = self
+                    .selected
+                    .and_then(|id| self.world.body(id))
+                    .filter(|b| b.outline.is_some())
+                    .or_else(|| outlined().next());
+                if let Some(body) = chosen {
+                    let shape = body.shape();
+                    for cell in self.world.free_cells(body.id) {
+                        let d = cell - body.rect.center();
+                        let pts: Vec<Pos2> = shape
+                            .points()
+                            .iter()
+                            .map(|q| self.screen_pos(*q + d))
+                            .collect();
+                        let near = d.length() <= p.nest_range;
+                        let color = if near {
+                            c.status.ok.solid
+                        } else {
+                            c.line_strong
+                        };
+                        painter.add(egui::Shape::closed_line(pts, Stroke::new(thin, color)));
+                    }
+                }
+            }
             Effect::Grid => {
                 if p.grid_pitch < 4.0 {
                     return;
@@ -1890,6 +1956,9 @@ pub enum Effect {
     Attract,
     /// Friction: the slanted edges it acts on.
     Friction,
+    /// Nesting: how far a dropped hexagon looks for a free cell, and the
+    /// free cells of the selected one.
+    Nest,
     /// The grid: its lines across the arena.
     Grid,
     /// The solver's passes: the contacts it worked on in the last step.
@@ -1913,6 +1982,7 @@ impl Effect {
             "snap range" | "snap stiffness" => Self::Snap,
             "attract range" | "attract strength" => Self::Attract,
             "friction" => Self::Friction,
+            "nest range" => Self::Nest,
             "grid pitch" | "grid stiffness" => Self::Grid,
             "iterations" => Self::Contacts,
             "rest threshold" | "rest steps" => Self::Rest,
@@ -1941,6 +2011,9 @@ impl Effect {
                 "the attraction range as a circle around every vertex, and the edges being pulled"
             }
             Self::Friction => "the slanted edges friction holds a widget on",
+            Self::Nest => {
+                "the nest range as a circle around the middle of every hexagon, and the free cells of the selected one (the first hexagon when none is selected)"
+            }
             Self::Grid => "the grid's lines every pitch, from the walls' corner",
             Self::Contacts => {
                 "every contact the solver worked on in the last step, a line between the two thicker the deeper they were, with how many there were"

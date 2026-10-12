@@ -977,7 +977,38 @@ up and Packery's "others flow around the dragged one". No app uses it yet.
   (their slanted faces 22.7 apart, past gap + range 22), and to nest one would have to leave the wall against
   gravity, which a slide never does (the body toward gravity's side does not slide, a slide past a wall is
   blocked). A honeycomb under gravity needs attraction as a force that can hold a body off the wall, as the
-  rectangles' corner snap (1500) holds against gravity (600); open question for the user.
+  rectangles' corner snap (1500) holds against gravity (600); open question for the user. Answered by SETL-28:
+  the honeycomb is laid out cell by cell, and the solver holds it.
+- ✅ **SETL-28 Hexagons pack as a honeycomb** (user, 12 Oct 2026 16:19: "the Hexagons scene as a packed
+  honeycomb: faces flush, no gaps, against the gravity side; a hex dropped near the pack snaps into a free
+  cell; if the solver can't, say why"). Why gravity alone could not: it packs hexagons tip to tip against its
+  wall, and a nested hexagon would have to stay off the wall, which nothing asked of it (a slide never leaves
+  the wall against gravity, SETL-20). But once nested, the solver holds a honeycomb: a hexagon on a 60° face
+  is seated (friction 2, SETL-15) and pushes its neighbours along gravity only. So the pack is laid out, not
+  waited for. `ve_settle/src/nest.rs` (no dependencies): the *free cells* of an outline, every place where a
+  face of it lies on a face of a neighbour (antiparallel, the gap apart, side by side for a quarter of the
+  shorter face) with the ends lined up either way, centred, slid along until a closed wall stops it, or on two
+  faces at once (into the notch between two neighbours, the two face lines solved together), plus flat against
+  gravity's wall; none in anything or past a closed wall. `World::free_cells(id)`, `World::pack_cell(id,
+  later)` (the cell nearest gravity's wall, then the low end across it, among those against a body), and
+  `World::release_to_cell(id, rehome)`: a lone outline let go within `Params::nest_range` (80 points, 0 off) of
+  a free cell glides into it (the one against most neighbours, then the nearest), a glide a step over the
+  others without pushing them, then lands (`Body::nesting`). The sandbox seeds the Hexagons scene cell by
+  cell (`seed_frames`), `ve_settle::frames` lets a frame dragged alone go into a cell, and a slider "nest
+  range" (Outlines) shows the range around every hexagon and the selected one's free cells. Vertex attraction
+  around it (SETL-20): a rigid outline against faces of two directions (in a notch) is *wedged* and asked for
+  no slide; the pulls of a pair are drawn once it is known which face the body slides along; a pull on the
+  body toward gravity shows the other's slide only when the other can make it; a rigid outline's pull shows
+  only its slide (faces in range but farther apart than the gap are not attraction's to close). Tests
+  `tests/nest.rs` (one size packs as a honeycomb, every hexagon face to face and most with two; the sandbox's
+  four sizes pack and rest as laid out; a drop near the pack glides into a notch, the others stay; without
+  gravity only the cell brings a dropped hexagon to the face), kittests
+  `the_hexagons_scene_is_a_honeycomb_at_rest`, `a_hexagon_let_go_near_a_free_cell_glides_into_it`,
+  `the_pulls_of_the_hexagons_scene_are_done_at_rest`. Not done: with the four sizes of the sandbox (heights 86
+  to 236) a honeycomb without holes is impossible; the greedy pack leaves some (about 60 % of the area is
+  frames); it takes the frames in the scene's order and does not pick the one that fits a hole best. Dragging
+  a hexagon *through* the pack still pushes the hexagons on its way, which may dip up to 18 points into a
+  neighbour for a moment (SETL-17). A frame added later (Add, a window that grows) is dropped lifted, not packed.
 - ✅ **SETL-27 Pin a widget in place** (user, 12 Oct 2026 16:19). `World::set_pinned` / `Body::pinned`: a
   pinned body never moves, gives, stretches or slides; in every contact pass the other one takes the whole push
   (as at a hard wall), a held body may lie over it and it stays, it is never the yielder, snaps nothing itself

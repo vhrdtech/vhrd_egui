@@ -7,6 +7,10 @@ versions follow [Semantic Versioning](https://semver.org/). Feature IDs refer to
 
 ### Added
 
+- ve_settle: free cells and the honeycomb (SETL-28): `World::free_cells`, `World::pack_cell` (lay outlines out
+  one by one, hexagons nest as a honeycomb), `World::release_to_cell` and `Params::nest_range` (80; a lone
+  outline let go near a free cell glides into it), `Body::nesting`. The sandbox's Hexagons scene is packed cell
+  by cell, a hexagon dragged alone and let go near a cell goes into it, slider "nest range".
 - ve_settle: feature `frame` with `ve_settle::frames`: `ve_frame` widgets on the bodies of a `World`. `Frames<W>`
   keeps a `Dock` of widgets and one body each; `show` draws every `WidgetFrame` on its body and reads the body
   from it (a hexagon's outline with faces at 60°, `hex_outline`; rigid sizes for min, nom and hexagons, bodies a
@@ -90,6 +94,9 @@ versions follow [Semantic Versioning](https://semver.org/). Feature IDs refer to
 
 ### Fixed
 
+- ve_settle: vertex attraction no longer shows pulls that cannot be done: a rigid outline wedged in a notch is
+  asked for no slide, a pair's pulls follow the face the body really slides along, and a rigid outline's pull
+  shows only its slide (SETL-20, SETL-28).
 - ve_settle sandbox: a replayed recording got every input 5 frames late (the harness's own first frames); a
   pass egui runs again no longer steps the world twice or records a frame twice (SETL-24).
 - ve_settle: a row a little too full between two closed walls no longer leaves two rigid bodies in each other: a

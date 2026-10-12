@@ -1,6 +1,7 @@
 //! The world: bodies, forces, contacts and the fixed step that moves them.
 
 use crate::geom::{Axis, Hit, Poly, Rect, Side, Vec2, contact, sat};
+use crate::nest;
 use crate::params::Params;
 
 /// Overlaps below this (points) count as touching.
@@ -280,6 +281,9 @@ pub struct Body {
     /// How far the walls (their gap lines, `walls_pass`) moved it this step
     /// (SETL-25).
     walled: Vec2,
+    /// The free cell it glides into after a drop (SETL-28), while it is on
+    /// its way: held by the world, not by the user.
+    nest: Option<Vec2>,
     prev: Rect,
 }
 
@@ -321,6 +325,12 @@ impl Body {
             Some(outline) => outline.fit(rect),
             None => Poly::rect(rect),
         }
+    }
+
+    /// The free cell it is gliding into after a drop, if it is on its way
+    /// there ([`World::release_to_cell`], SETL-28).
+    pub fn nesting(&self) -> Option<Vec2> {
+        self.nest
     }
 
     /// How much vertex attraction adds to the size on each axis (negative:
@@ -656,6 +666,7 @@ impl World {
             walled: Vec2::ZERO,
             shoved: Vec2::ZERO,
             landed: LANDED_STEPS,
+            nest: None,
             prev: rect,
         });
         self.wake();
@@ -822,9 +833,10 @@ impl World {
             if b.pinned {
                 return false;
             }
-            let changed = !b.dragged;
+            let changed = !b.dragged || b.nest.is_some();
             b.dragged = true;
             b.lifted = true;
+            b.nest = None;
             b.drag_target = b.rect.center();
             b.vel = Vec2::ZERO;
             changed
@@ -846,6 +858,8 @@ impl World {
         self.change(id, |b| {
             let changed = b.dragged;
             b.dragged = false;
+            // (on its way into a cell: it stops where it is)
+            b.nest = None;
             if changed {
                 b.landed = 0;
             }
@@ -854,6 +868,90 @@ impl World {
             }
             changed
         });
+    }
+
+    /// Let go of a grabbed body with an outline near a free cell (SETL-28):
+    /// where its middle is within [`Params::nest_range`] of a place where it
+    /// lies face to face with a neighbour, or flat against gravity's wall,
+    /// without lying in anything, it glides there (at a glide, over the
+    /// others, which it does not push) and lands; else it is let go as by
+    /// [`World::release`]. A body without an outline is let go as by
+    /// [`World::release`]. Returns the cell's middle.
+    pub fn release_to_cell(&mut self, id: BodyId, rehome: bool) -> Option<Vec2> {
+        let cell = self
+            .body(id)
+            .filter(|b| b.dragged && b.outline.is_some())
+            .and_then(|b| {
+                let cells = self.cells_for(id, &[]);
+                nest::nearest(&cells, self.params.nest_range).map(|c| b.rect.center() + c.shift)
+            });
+        match cell {
+            Some(at) => {
+                self.change(id, |b| {
+                    b.nest = Some(at);
+                    if rehome {
+                        b.home = Some(at);
+                    }
+                    true
+                });
+                Some(at)
+            }
+            None => {
+                self.release(id, rehome);
+                None
+            }
+        }
+    }
+
+    /// The middles of the free cells for body `id` (SETL-28): where it lies
+    /// face to face with another body, the gap apart, or flat against the
+    /// closed wall gravity pulls to, in nothing and within the closed walls.
+    pub fn free_cells(&self, id: BodyId) -> Vec<Vec2> {
+        let Some(b) = self.body(id) else {
+            return Vec::new();
+        };
+        let center = b.rect.center();
+        self.cells_for(id, &[])
+            .into_iter()
+            .map(|c| center + c.shift)
+            .collect()
+    }
+
+    /// The middle of the cell a pack puts body `id` in next (SETL-28): of
+    /// its free cells ([`World::free_cells`]) the one nearest gravity's side,
+    /// then the low end across it, among those against another body when
+    /// there are any. Laid out one by one with [`World::put`], bodies with
+    /// a hexagon outline nest as a honeycomb. The bodies in `later` are not
+    /// there yet (laid out after this one).
+    pub fn pack_cell(&self, id: BodyId, later: &[BodyId]) -> Option<Vec2> {
+        let b = self.body(id)?;
+        let cells = self.cells_for(id, later);
+        nest::pack_pick(&b.shape(), &cells, self.params.gravity_side)
+            .map(|c| b.rect.center() + c.shift)
+    }
+
+    fn cells_for(&self, id: BodyId, skip: &[BodyId]) -> Vec<nest::Cell> {
+        let Some(b) = self.body(id) else {
+            return Vec::new();
+        };
+        let others: Vec<Poly> = self
+            .bodies
+            .iter()
+            .filter(|o| o.id != id && !skip.contains(&o.id) && (!o.dragged || o.nest.is_some()))
+            .map(|o| match o.nest {
+                // one on its way to a cell is as good as there
+                Some(at) => o.shape().translate(at - o.rect.center()),
+                None => o.shape(),
+            })
+            .collect();
+        let room = nest::Room {
+            others: &others,
+            bounds: self.bounds,
+            walls: self.params.walls,
+            gravity: self.params.gravity_side,
+            gap: self.params.gap,
+        };
+        nest::cells(&b.shape(), &room)
     }
 
     /// The bodies stuck together with `id` (SETL-22): those it touches (the
@@ -1084,6 +1182,19 @@ impl World {
         self.awake = self.awake.saturating_add(1);
         let time = self.awake as f32 * dt;
         let cool = (1.0 - (time - COOL_AFTER) / COOL_SECS).clamp(0.0, 1.0);
+        // On the way into a cell (SETL-28): a glide a step, then let go.
+        let glide = p.glide_speed * dt;
+        for b in &mut self.bodies {
+            if let Some(at) = b.nest {
+                let to = at - b.drag_target;
+                b.drag_target += to.clamp_length(glide);
+                if (at - b.rect.center()).length() < 1e-3 {
+                    b.nest = None;
+                    b.dragged = false;
+                    b.landed = 0;
+                }
+            }
+        }
         self.pick_yielder();
         let pulled = self.attract_pass(dt, cool);
         self.snap_pass();
@@ -1499,6 +1610,40 @@ impl World {
             }
             (wall, body)
         };
+        // A rigid outline that lies against faces of two directions (in a
+        // notch of a honeycomb, SETL-28) cannot slide along either: each
+        // slide would take it into the other face. It is wedged, and no slide
+        // is asked of it (they were drawn as pulls that never got done).
+        let wedged: Vec<bool> = (0..self.bodies.len())
+            .map(|i| {
+                let a = &self.bodies[i];
+                if !on
+                    || !free[i]
+                    || a.outline.is_none()
+                    || !Axis::BOTH.into_iter().all(|x| a.rigid(x))
+                {
+                    return false;
+                }
+                let me = a.shape_in(&rest[i]);
+                let mut normals: Vec<Vec2> = Vec::new();
+                for (j, o) in self.bodies.iter().enumerate() {
+                    if j == i || !free[j] || o.outline.is_none() {
+                        continue;
+                    }
+                    let other = o.shape_in(&rest[j]);
+                    normals.extend(
+                        face_pairs(&me, &other, p.gap, range)
+                            .into_iter()
+                            .map(|(.., n)| n),
+                    );
+                }
+                normals.iter().enumerate().any(|(k, n)| {
+                    normals[k + 1..]
+                        .iter()
+                        .any(|m| (n.x * m.y - n.y * m.x).abs() > 0.3)
+                })
+            })
+            .collect();
         for i in 0..self.bodies.len() {
             // Per edge (axis, high end): how far it is pulled along the
             // axis and how firmly, and whether that is into line with a
@@ -1510,7 +1655,7 @@ impl World {
             let mut partners: Vec<usize> = Vec::new();
             // A slide that would have run into something (see below) waits
             // until something changes.
-            let blocked = self.bodies[i].slide_blocked;
+            let blocked = self.bodies[i].slide_blocked || wedged[i];
             let homed = self.bodies[i].home.is_some() && p.home_stiffness > 0.0;
             let mut lined = [[false; 2]; 2];
             let mut held = [[false; 2]; 2];
@@ -1533,6 +1678,9 @@ impl World {
                 // face and its width for a flat one (a face grows with the
                 // size across it), on the edges that are free to move.
                 let mut faced = [[(0.0f32, 0.0f32); 2]; 2];
+                // the neighbour whose face it slides along, and the pulls to draw
+                let mut slider: Option<usize> = None;
+                let mut pending = Vec::new();
                 let shape_rest = self.bodies[i].shape_in(&rest[i]);
                 let shape_now = self.bodies[i].shape_in(&now[i]);
                 for j in 0..self.bodies.len() {
@@ -1589,8 +1737,16 @@ impl World {
                         let (axis, sign) = (side.axis(), if side.is_low() { -1.0 } else { 1.0 });
                         (now[i].center()[axis] - now[j].center()[axis]) * sign > 0.0
                     });
+                    // the other one slides (it lies farther from gravity's side), unless it cannot:
+                    // wedged, its slide blocked, or held by its home
+                    let o = &self.bodies[j];
+                    let theirs = sinks
+                        && !wedged[j]
+                        && !o.slide_blocked
+                        && !(o.home.is_some() && p.home_stiffness > 0.0);
                     if mine {
                         nearest = far;
+                        slider = Some(j);
                         slide = if sinks || blocked || homed {
                             Vec2::ZERO
                         } else {
@@ -1625,35 +1781,31 @@ impl World {
                             }
                         }
                     }
-                    for (_, _, n, from, to) in pairs {
-                        // shown with the slide where it is done: by this body,
-                        // or by the one nested under it
-                        let mut to = if (mine && !blocked) || sinks {
-                            to
-                        } else {
-                            to - along
-                        };
-                        // a rigid body's vertex is pulled no farther along
-                        // the face than the slide takes it: the rest is a
-                        // difference in length it cannot take
-                        if rigid {
-                            let error = to - from;
-                            let off = error - n * error.dot(n);
-                            let goes = if (mine && !blocked) || sinks {
-                                along
-                            } else {
-                                Vec2::ZERO
-                            };
-                            to -= off - goes;
-                        }
-                        self.pulls.push(Pull {
-                            body: self.bodies[i].id,
-                            from,
-                            to,
-                            grip: 1.0,
-                            locked: (to - from).max_abs() < Pull::LOCKED,
-                        });
+                    // drawn once it is known which face the body slides along
+                    for (.., from, to) in pairs {
+                        pending.push((j, from, to, along, theirs, rigid));
                     }
+                }
+                // Shown with the slide where it is done: by this body along the
+                // face it slides on, or by the one nested under it.
+                for (j, from, to, along, theirs, rigid) in pending {
+                    let done = (slider == Some(j) && !blocked) || theirs;
+                    let mut to = if done { to } else { to - along };
+                    // A rigid body's vertex is pulled as far as the slide takes
+                    // it, no farther: the rest along the face is a difference in
+                    // length it cannot take, and across it, faces in range but
+                    // farther apart than the gap, a way nothing here moves it
+                    // (contacts and gravity do, SETL-28).
+                    if rigid {
+                        to = from + if done { along } else { Vec2::ZERO };
+                    }
+                    self.pulls.push(Pull {
+                        body: self.bodies[i].id,
+                        from,
+                        to,
+                        grip: 1.0,
+                        locked: (to - from).max_abs() < Pull::LOCKED,
+                    });
                 }
                 for axis in Axis::BOTH {
                     for high in [false, true] {
@@ -2012,7 +2164,13 @@ impl World {
             for j in i + 1..self.bodies.len() {
                 let (a, b) = pair_mut(&mut self.bodies, i, j);
                 // (a held body may lie over a pinned one, which stays)
-                if a.dragged == b.dragged || a.pinned || b.pinned {
+                // (one gliding into a free cell goes over the others)
+                if a.dragged == b.dragged
+                    || a.pinned
+                    || b.pinned
+                    || a.nest.is_some()
+                    || b.nest.is_some()
+                {
                     continue;
                 }
                 let Some(hit) = touch(a, b, gap, prefer) else {

@@ -105,6 +105,10 @@ pub struct Params {
     /// 2 holds on a hexagon's 60° edges; 0 lets everything slide, as on
     /// ice (SETL-15). Only between bodies of which one has an outline.
     pub friction: f32,
+    /// How far a dropped outline glides into a free cell (SETL-28): the
+    /// farthest its middle moves to lie face to face with a neighbour,
+    /// points ([`crate::World::release_to_cell`]). 0 turns it off.
+    pub nest_range: f32,
     /// Bulge of a body's pillow with no pressure on it, points: how far
     /// the middle of each edge stands out of the rectangle in the solver's
     /// eyes. 0 (the default) keeps a calm row lined up exactly.
@@ -200,6 +204,7 @@ impl Params {
         fix(&mut self.attract_range, d.attract_range, 0.0, big);
         fix(&mut self.attract_strength, d.attract_strength, 0.0, big);
         fix(&mut self.friction, d.friction, 0.0, big);
+        fix(&mut self.nest_range, d.nest_range, 0.0, big);
         fix(&mut self.bulge_rest, d.bulge_rest, 0.0, big);
         fix(&mut self.bulge_from, d.bulge_from, 0.0, big);
         fix(&mut self.bulge_gain, d.bulge_gain, 0.0, big);
@@ -239,6 +244,7 @@ impl Params {
             attract_range: mix(self.attract_range, to.attract_range),
             attract_strength: mix(self.attract_strength, to.attract_strength),
             friction: mix(self.friction, to.friction),
+            nest_range: mix(self.nest_range, to.nest_range),
             bulge_rest: mix(self.bulge_rest, to.bulge_rest),
             bulge_from: mix(self.bulge_from, to.bulge_from),
             bulge_gain: mix(self.bulge_gain, to.bulge_gain),
@@ -276,6 +282,7 @@ impl Default for Params {
             attract_range: 16.0,
             attract_strength: 12.0,
             friction: 2.0,
+            nest_range: 80.0,
             bulge_rest: 0.0,
             bulge_from: 2.0,
             bulge_gain: 1.0,

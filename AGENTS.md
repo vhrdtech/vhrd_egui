@@ -62,9 +62,9 @@ Cargo workspace, edition 2024, one shared version (`[workspace.package]`).
   footer; sides; rectangle or hexagon), sizes (`SizeMode`, `SizeHints`, `auto_size`), `Dock` (moves between
   grid, egui window, OS window), `Remote` (send to another machine), the playground example.
 - `ve_settle/` — the physics layout: `World` of bodies (rectangles, convex outlines) that settle under gravity,
-  homes, walls and contacts, no dependencies (`world.rs`, `geom.rs`, `params.rs`); with the feature `frame`,
-  `frames.rs` draws `ve_frame` widgets on the bodies (`Frames`: outline and size from the frame, pop out and back,
-  the size pick for frames on auto). The sandbox example (real frames in two scenes, rectangles and hexagons);
+  homes, walls and contacts, no dependencies (`world.rs`, `geom.rs`, `params.rs`; `nest.rs`: free cells for an
+  outline, the honeycomb pack); with the feature `frame`, `frames.rs` draws `ve_frame` widgets on the bodies
+  (`Frames`: outline and size from the frame, pop out and back, the size pick for frames on auto). The sandbox example (real frames in two scenes, rectangles and hexagons);
   its kittests include the example; `tests/scenes.rs` keeps the first plain-box scenes as headless worlds.
 - `ve_app/` — the application shell apps are built on: `Shell` (an `eframe::App`) with menu bar, egui_tiles of
   widgets opened from the `WidgetInfo` registry, About / Settings / Debug windows, status bar, persisted

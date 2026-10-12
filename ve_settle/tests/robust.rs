@@ -52,6 +52,7 @@ fn random(rng: &mut Rng, base: &Params) -> Params {
         dt: 1.0 / rng.in_range(30.0, 480.0),
         drag: rng.in_range(0.0, 0.5),
         push_out: rng.next() < 0.5,
+        nest_range: rng.in_range(0.0, 200.0),
     }
 }
 
