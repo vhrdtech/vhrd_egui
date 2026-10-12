@@ -447,9 +447,12 @@ impl Demo {
 /// entries in the ☰ menu. Each is called with the widget's slot.
 #[derive(Default)]
 pub struct Host<'h> {
-    pub header: Option<(f32, &'h mut dyn FnMut(&mut Ui, SlotId))>,
-    pub menu: Option<&'h mut dyn FnMut(&mut Ui, SlotId)>,
+    pub header: Option<(f32, HostUi<'h>)>,
+    pub menu: Option<HostUi<'h>>,
 }
+
+/// What a hosting app draws for the widget in slot `SlotId`.
+pub type HostUi<'h> = &'h mut dyn FnMut(&mut Ui, SlotId);
 
 /// The room the ☆ takes in a header, points.
 const STAR_W: f32 = 14.0;
