@@ -1269,18 +1269,19 @@ fn dragging_one_of_a_group_moves_the_group_and_alt_takes_it_alone() {
     watch.rest(&mut h);
     assert_eq!(h.state().world.cluster(ba).len(), 2, "stuck together");
 
+    // (not as far as the right wall, which takes speed off the one it stops: SETL-25)
     let before = (body_rect(&h, a), body_rect(&h, b));
     drag_by(
         &mut h,
         &mut watch,
         a,
-        vec2(120.0, 160.0),
+        vec2(60.0, 160.0),
         egui::Modifiers::NONE,
     );
     let after = (body_rect(&h, a), body_rect(&h, b));
     let moved = |from: Rect, to: Rect| to.center() - from.center();
     let (ma, mb) = (moved(before.0, after.0), moved(before.1, after.1));
-    assert!(ma.length() > 100.0, "the dragged one moved: {ma:?}");
+    assert!(ma.length() > 80.0, "the dragged one moved: {ma:?}");
     assert!(
         (ma - mb).length() < 2.0,
         "the other came along: {ma:?} {mb:?}"
@@ -1476,5 +1477,57 @@ fn replay() {
                 eprintln!("frame {n}: #{} dropped at {:?}", id.0, b.rect);
             }
         }
+    }
+}
+
+/// User, 12 Oct 2026 15:53: "a widget dropped at a wall still jumps out". Dragged past the arena's left
+/// edge (over the controls) or its right edge and let go, a frame glides back in at a glide, and that glide
+/// was its speed when it got inside: it coasted on 35 points off the wall. A wall now gives a body no speed
+/// beyond stopping it, so it rests against the wall (the gap away).
+#[test]
+fn a_frame_dropped_past_a_side_wall_comes_to_rest_against_it() {
+    for (side, by) in [("left", vec2(-700.0, 120.0)), ("right", vec2(900.0, 120.0))] {
+        let (mut h, mut watch) = sandbox();
+        let slot = find(&h, |d| {
+            !d.opts.hex && d.opts.footer && d.title() == "medium LISMFX"
+        });
+        let r = h.state().screen_rect(body_rect(&h, slot));
+        let from = pos2(r.center().x, r.max.y - 8.0);
+        h.hover_at(from);
+        watch.frame(&mut h);
+        h.drag_at(from);
+        watch.frame(&mut h);
+        for n in 1..=30 {
+            h.hover_at(from + by * (n as f32 / 30.0));
+            watch.frame(&mut h);
+        }
+        h.drop_at(from + by);
+        let (bounds, gap) = (h.state().world.bounds(), h.state().world.params().gap);
+        // how far it ever got from the wall's gap line once inside
+        let off = |r: Rect| match side {
+            "left" => r.min.x - (bounds.min.x + gap),
+            _ => bounds.max.x - gap - r.max.x,
+        };
+        let mut farthest = f32::NEG_INFINITY;
+        for _ in 0..240 {
+            watch.frame(&mut h);
+            farthest = farthest.max(off(body_rect(&h, slot)));
+            if std::env::var("TRACE").is_ok() {
+                let w = &h.state().world;
+                let b = w.body(h.state().frames.body(slot).unwrap()).unwrap();
+                eprintln!(
+                    "{side} off {:.1} y {:.1} vel {:.0?} lifted {} load {:.1}",
+                    off(b.rect),
+                    b.rect.min.y,
+                    b.vel,
+                    b.lifted,
+                    b.load().max_abs()
+                );
+            }
+        }
+        watch.rest(&mut h);
+        let end = off(body_rect(&h, slot));
+        assert!(end.abs() < 1.0, "{side}: rests {end} from the wall");
+        assert!(farthest < 2.0, "{side}: coasted {farthest} off the wall");
     }
 }

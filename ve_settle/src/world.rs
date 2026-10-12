@@ -88,6 +88,10 @@ pub const COOL_SECS: f32 = 3.0;
 const HARD_PASSES: u32 = 16;
 /// A corner snaps to no body faster than this, points/s (as [`DRAG_FROM`]).
 const SNAP_MOVING: f32 = DRAG_FROM;
+/// A body let go is still settling in this many steps after it landed
+/// (half a second): what a wall moves it by then gives it no speed, even
+/// where it landed in a full row (SETL-25).
+const LANDED_STEPS: u32 = 60;
 /// [`Params::drag`] acts on the speed above this, points/s: twice what the
 /// default gravity and damping reach, so slow settling stays as it was.
 const DRAG_FROM: f32 = 120.0;
@@ -262,6 +266,15 @@ pub struct Body {
     net: Vec2,
     /// Whether contacts with an outline moved it this step.
     nudged: bool,
+    /// Its speed before the contacts of this step: what a wall moved it by
+    /// beyond stopping that gives it no speed (SETL-25).
+    coast: Vec2,
+    /// Steps since it was let go and landed (0 until it has landed):
+    /// [`LANDED_STEPS`] and more for a body never dropped.
+    landed: u32,
+    /// How far the walls (their gap lines, `walls_pass`) moved it this step
+    /// (SETL-25).
+    walled: Vec2,
     prev: Rect,
 }
 
@@ -627,6 +640,9 @@ impl World {
             aloft: 0,
             net: Vec2::ZERO,
             nudged: false,
+            coast: Vec2::ZERO,
+            walled: Vec2::ZERO,
+            landed: LANDED_STEPS,
             prev: rect,
         });
         self.wake();
@@ -813,6 +829,9 @@ impl World {
         self.change(id, |b| {
             let changed = b.dragged;
             b.dragged = false;
+            if changed {
+                b.landed = 0;
+            }
             if rehome && changed {
                 b.home = Some(b.rect.center());
             }
@@ -1008,6 +1027,13 @@ impl World {
             b.slide_pull = b.slide_pull.clamp_length(SLIDE_MAX);
             b.slid = 0.0;
             b.net = Vec2::ZERO;
+            b.walled = Vec2::ZERO;
+            // (counted from a drop: one just added is not settling in)
+            b.landed = if b.lifted && b.landed < LANDED_STEPS {
+                0
+            } else {
+                b.landed.saturating_add(1)
+            };
             b.nudged = false;
             b.seated = false;
             b.prev = b.rect;
@@ -1096,7 +1122,27 @@ impl World {
                 } else {
                     limit
                 };
-                b.vel = (travelled * (1.0 / dt)).clamp_length(limit);
+                // A wall only ever takes speed away: what it moved the body
+                // beyond stopping it (a body within the gap of it, or brought
+                // back in from past it) is position, not speed, so the body
+                // stays at the wall instead of coasting off it (user, 12 Oct
+                // 2026, SETL-25).
+                let mut vel = (travelled * (1.0 / dt)).clamp_length(limit);
+                // (A pressed body is part of a full row or column, which a
+                // wall sends on its way: SETL-11.)
+                let free = b.landed < LANDED_STEPS || b.load().max_abs() <= YIELD_BULGE;
+                for axis in Axis::BOTH {
+                    let w = b.walled[axis];
+                    if w == 0.0 || !free {
+                        continue;
+                    }
+                    let s = w.signum();
+                    let stopping = (-b.coast[axis] * s).max(0.0);
+                    let excess = (w.abs() / dt - stopping).max(0.0);
+                    let along = vel[axis] * s;
+                    vel[axis] = s * (along - excess).max(along.min(0.0));
+                }
+                b.vel = vel;
             }
         }
         // An edge still closing in keeps the world awake, and for smaller
@@ -1966,6 +2012,7 @@ impl World {
                 // pushed it by (SETL-17): held between the two it has not
                 // moved, and a neighbour can push it again.
                 let back = depth - squeezed * 0.5;
+                b.walled[axis] -= side.dir()[axis] * back;
                 if side.is_low() {
                     b.rect.min[axis] += depth;
                     b.rect.max[axis] += depth - squeezed;
@@ -2565,6 +2612,7 @@ fn integrate(b: &mut Body, p: &Params, dt: f32, cool: f32) -> f32 {
         b.vel = b.vel * (1.0 / (1.0 + p.drag * fast * dt));
     }
     b.rect = b.rect.translate(b.vel * dt);
+    b.coast = b.vel;
     let drift = p.home_drift + (1.0 - hold) * PRESSED_DRIFT;
     if drift > 0.0
         && let Some(home) = &mut b.home

@@ -653,3 +653,54 @@ fn a_pushed_body_stops_within_a_short_way() {
     assert!(default < 70.0, "ran on {default}");
     assert!(glass > 1.6 * default, "glass {glass}, default {default}");
 }
+
+/// A body dragged next to one resting under the top wall and let go `inside` points closer than the gap
+/// (negative: farther): the gap between the two when let go, the widest it gets after, and at rest.
+fn drop_beside(inside: f32) -> (f32, f32, f32) {
+    let p = Params {
+        home_stiffness: 0.0,
+        max_speed: Params::default().glide_speed,
+        ..Params::default()
+    };
+    let mut w = World::new(Rect::from_min_size(Vec2::ZERO, Vec2::new(1400.0, 800.0)), p);
+    let size = Vec2::new(280.0, 160.0);
+    let a = w.add(BodyDesc::new(Vec2::new(500.0, p.gap + 80.0), size).home(None));
+    let b = w.add(BodyDesc::new(Vec2::new(1100.0, p.gap + 80.0), size).home(None));
+    assert!(w.settle(6_000).is_some());
+    let (ra, rb) = (w.body(a).unwrap().rect, w.body(b).unwrap().rect);
+    w.grab(b);
+    let to = Vec2::new(ra.max.x + p.gap - inside + size.x * 0.5, rb.center().y);
+    let from = rb.center();
+    for n in 1..=30 {
+        w.drag_to(b, from + (to - from) * (n as f32 / 30.0));
+        w.advance(1.0 / 60.0);
+    }
+    let gap = |w: &World| w.body(b).unwrap().rect.min.x - w.body(a).unwrap().rect.max.x;
+    let held = gap(&w);
+    w.release(b, true);
+    let mut widest = held;
+    for _ in 0..6_000 {
+        if !w.step() {
+            break;
+        }
+        widest = widest.max(gap(&w));
+    }
+    (held, widest, gap(&w))
+}
+
+/// User, 12 Oct 2026 15:53: "hard to snap two widgets together, they jump apart when dropped next to each
+/// other". Not reproduced headless: let go next to its neighbour, closer than the gap or a little farther, a
+/// body parts at most 2 points more than the drag had already pushed the two apart, and they rest the gap
+/// apart, flush. The case the user hits needs a recording (SETL-24).
+#[test]
+fn two_bodies_dropped_next_to_each_other_stay_together() {
+    let p = Params::default();
+    for inside in [-3.0, 0.0, 2.0, 4.0, 6.0, 12.0, 30.0] {
+        let (held, widest, rest) = drop_beside(inside);
+        assert!((rest - p.gap).abs() < 0.1, "{inside}: {rest} apart at rest");
+        assert!(
+            widest <= held.max(p.gap) + 2.5,
+            "{inside}: let go {held} apart, then {widest}"
+        );
+    }
+}

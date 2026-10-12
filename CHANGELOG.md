@@ -106,6 +106,9 @@ versions follow [Semantic Versioning](https://semver.org/). Feature IDs refer to
   (SETL-20).
 - ve_settle: a frame dropped near the open bottom (or anywhere next to frames it just pushed aside) no longer runs
   off after them: a corner does not snap to a body moving faster than 120 points/s (SETL-23).
+- ve_settle: a frame dropped past a side wall (or within its gap) comes to rest against the wall instead of
+  coasting 35 points off it: a wall gives a body that is not pressed, or was just let go, no speed beyond
+  stopping it (SETL-25).
 - ve_settle: `World::max_overlap` measured a bulged rectangle against an outline by its pillow and reported
   overlaps that were not there; it measures the two as they meet (SETL-17).
 
