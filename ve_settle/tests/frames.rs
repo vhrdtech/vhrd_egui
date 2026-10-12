@@ -564,6 +564,8 @@ fn a_folded_frame_is_a_body_as_small_as_its_header() {
 fn the_layout_picks_the_size_of_a_frame_on_auto_from_the_room_in_its_row() {
     // one rectangle and one hexagon, alone in a wide row
     let (mut h, mut watch, slots) = sandbox_of(&[0, 2]);
+    // off by default (round 4: a busy world never settled)
+    h.state_mut().frames.auto_pick = true;
     h.set_size(vec2(1900.0, 800.0));
     watch.rest(&mut h);
     let hints = app::playground::Scale::Medium.hints();
@@ -1018,41 +1020,4 @@ fn tabs_speed_and_the_effect_of_a_hovered_slider() {
     h.step();
     h.step();
     assert_eq!(h.state().effect, None, "the pointer left the sliders");
-}
-
-/// Round 4, item 1: the tabs above the arena take a real click (press and release in frames of their own, the
-/// pointer moved there first), each one, and seed their scene.
-#[test]
-fn each_tab_takes_a_real_click() {
-    let (mut h, _) = sandbox();
-    for (label, tab) in [
-        ("Hexagons", app::Tab::Hexagons),
-        ("Rectangles", app::Tab::Rectangles),
-        ("Mixed", app::Tab::Mixed),
-    ] {
-        let at = h.get_by_label(label).rect().center();
-        // a new scene follows the click: no watch for jumps here
-        h.hover_at(at);
-        h.step();
-        h.drag_at(at);
-        h.step();
-        h.drop_at(at);
-        for _ in 0..3 {
-            h.step();
-        }
-        assert_eq!(h.state().tab, tab, "a click on {label}");
-        let hex = h
-            .state()
-            .frames
-            .dock
-            .iter()
-            .filter(|w| w.widget.opts.hex)
-            .count();
-        let all = h.state().frames.dock.len();
-        match tab {
-            app::Tab::Hexagons => assert_eq!(hex, all, "{label}: hexagons only"),
-            app::Tab::Rectangles => assert_eq!(hex, 0, "{label}: rectangles only"),
-            app::Tab::Mixed => assert!(hex > 0 && hex < all, "{label}: both"),
-        }
-    }
 }

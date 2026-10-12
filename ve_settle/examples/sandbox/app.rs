@@ -1265,27 +1265,40 @@ impl Sandbox {
         });
     }
 
-    /// The tabs of the frames scene: which frames it holds.
+    /// The tabs of the frames scene: which frames it holds. They work in
+    /// every scene: picking one outside the frames scene switches to it.
     fn tabs(&mut self, ui: &mut Ui) {
-        let on = self.scene == Scene::Frames;
-        let off = "Not available: the tabs choose the frames of the frames scene. Pick \"frames\" under Scene.";
-        let mut tab = self.tab;
+        let framed = self.scene == Scene::Frames;
+        let mut picked = None;
         ui.horizontal(|ui| {
-            ui.add_enabled_ui(on, |ui| {
-                let tabs = [
-                    (Tab::Rectangles, "Rectangles", "Rectangular frames only: with and without sides, footer and size switch, in three scales."),
-                    (Tab::Hexagons, "Hexagons", "Hexagonal frames only: with side bars, with wings and plain; they nest."),
-                    (Tab::Mixed, "Mixed", "Rectangles and hexagons together."),
-                ];
-                for (value, label, tip) in tabs {
-                    ui.selectable_value(&mut tab, value, label)
-                        .on_hover_text(format!("{tip} Picking a tab seeds the scene again."))
-                        .on_disabled_hover_text(off);
+            let tabs = [
+                (Tab::Rectangles, "Rectangles", "Rectangular frames only: with and without sides, footer and size switch, in three scales."),
+                (Tab::Hexagons, "Hexagons", "Hexagonal frames only: with side bars, with wings and plain; they nest."),
+                (Tab::Mixed, "Mixed", "Rectangles and hexagons together."),
+            ];
+            for (value, label, tip) in tabs {
+                let tip = if framed {
+                    format!("{tip} Picking a tab seeds the scene again.")
+                } else {
+                    format!("{tip} Picking a tab switches to the frames scene (Scene: frames) and seeds it.")
+                };
+                if ui
+                    .selectable_label(framed && self.tab == value, label)
+                    .on_hover_text(tip)
+                    .clicked()
+                {
+                    picked = Some(value);
                 }
-            });
+            }
         });
-        if tab != self.tab {
+        if let Some(tab) = picked
+            && (tab != self.tab || !framed)
+        {
             self.tab = tab;
+            if !framed {
+                self.scene = Scene::Frames;
+                self.overlay = Overlay::all(false);
+            }
             self.reset();
         }
     }

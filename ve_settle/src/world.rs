@@ -85,7 +85,7 @@ pub const COOL_AFTER: f32 = 12.0;
 /// See [`COOL_AFTER`].
 pub const COOL_SECS: f32 = 3.0;
 /// Passes of the hard constraints (cores, walls) per step, at most.
-const HARD_PASSES: u32 = 8;
+const HARD_PASSES: u32 = 16;
 
 /// Names a body for as long as it lives; never reused within a world.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord)]

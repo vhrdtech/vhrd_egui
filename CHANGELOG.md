@@ -62,9 +62,16 @@ versions follow [Semantic Versioning](https://semver.org/). Feature IDs refer to
   2 minutes to under 25 s. Apps on vhrd_egui may want the same in their own `Cargo.toml` (a dependency's profile
   is not inherited). The ve_settle sandbox shows the build profile (debug / release) next to its frames per
   second.
+- ve_settle: `Frames::auto_pick` is off by default: frames on auto keep their size unless the layout's size pick
+  is turned on; in a busy scene the picks kept the world moving (SETL-5).
+- ve_settle sandbox: the frames tabs work in every scene; picking one outside the frames scene switches to it
+  (they were disabled there) (SETL-7).
 
 ### Fixed
 
+- ve_settle: two outlines that do not overlap are kept the gap apart by their true distance, not by the distance
+  across an edge normal: hexagons side by side meeting tip to tip were pushed 0.8 points too far each time and
+  bounced, so a scene with them wobbled until it cooled (SETL-4). The hard pass runs up to 16 rounds (was 8).
 - ve_settle: `Frames::clear` keeps handing out new ids, so a new scene's frames no longer start from what the last
   scene's widgets under the same ids learned of their side columns; the sandbox clears its frames on a new tab or
   Restart instead of making new ones. The rectangles tab opens at its sizes: 0 of 21 frames change size after

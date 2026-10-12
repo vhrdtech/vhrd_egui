@@ -524,3 +524,20 @@ fn nested_hexagons_end_vertex_to_vertex() {
     // the upper one lies on the wall and stays where it is: the lower one slides
     assert!((ra.min.x - 120.0).abs() < 0.1, "no creep: {ra:?}");
 }
+
+/// Round 4: two hexagons side by side meet tip to tip. Kept a gap apart
+/// they part by what is missing of the gap between the tips, not by the
+/// gap across a slanted face: that is larger, and the push threw them
+/// apart every half second, so a scene with them never came to rest.
+#[test]
+fn hexagons_tip_to_tip_part_by_their_true_distance() {
+    let hex = Poly::unit_hexagon();
+    let a = hex.fit(&Rect::from_min_size(v(0.0, 0.0), v(300.0, 156.0)));
+    let b = hex.fit(&Rect::from_min_size(v(305.856, 0.0), v(300.0, 156.0)));
+    let hit = ve_settle::sat(&a, &b, |_| 6.0, Vec2::ZERO).expect("inside the gap");
+    assert!(close(hit.normal, v(1.0, 0.0)), "{hit:?}");
+    assert!((hit.depth - 0.144).abs() < 1e-3, "{hit:?}");
+    // farther than the gap: no contact
+    let c = hex.fit(&Rect::from_min_size(v(306.5, 0.0), v(300.0, 156.0)));
+    assert_eq!(ve_settle::sat(&a, &c, |_| 6.0, Vec2::ZERO), None);
+}

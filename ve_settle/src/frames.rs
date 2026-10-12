@@ -414,8 +414,8 @@ pub struct Frames<W> {
     pub dock: Dock<W>,
     /// The OS window whose grid is the world; widgets sent to another window leave it.
     pub viewport: ViewportSlot,
-    /// Whether the layout picks the size of frames on auto (on by default). Off: they keep the pick they
-    /// have.
+    /// Whether the layout picks the size of frames on auto (off by default: in a busy world the picks keep
+    /// it moving). Off: they keep the pick they have.
     pub auto_pick: bool,
     /// Whether a widget that floats keeps its body in the world, drawn as a ghost that puts it back when
     /// clicked (off by default: the body leaves and the others close up).
@@ -454,7 +454,7 @@ impl<W> Frames<W> {
         Self {
             dock: Dock::new(),
             viewport: ViewportSlot::MAIN,
-            auto_pick: true,
+            auto_pick: false,
             ghosts: false,
             rehome_on_drop: true,
             land_at: LandAt::default(),
@@ -810,8 +810,16 @@ impl<W> Frames<W> {
         }
 
         // under the frame, so the frame's own controls keep their clicks
+        // a body out of view gets an empty grip: the bare intersection would be an
+        // inverted rectangle, and egui still finds it near the edge of the view
+        let seen = rect.intersect(view.clip);
+        let seen = if seen.is_positive() {
+            seen
+        } else {
+            egui::Rect::NOTHING
+        };
         let grip = ui.interact(
-            rect.intersect(view.clip),
+            seen,
             Id::new(("ve_settle::frame", id.0)),
             Sense::click_and_drag(),
         );

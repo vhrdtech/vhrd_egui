@@ -758,7 +758,10 @@ up and Packery's "others flow around the dragged one". No app uses it yet.
   `Poly::unit_rect`, `unit_hexagon`, `unit_half_hexagon(side)` (closes a honeycomb against a side),
   `unit_triangle(side)`. Contacts of a pair with an outline go through `sat` on the two shapes (own code, no
   parry2d; `outline_hit` in `world.rs`): hexagons nest where their rectangles would overlap, a triangle rises into
-  the notch between two hexagons, rectangles and polygons mix. Along a slanted edge a body slides at most half a glide per
+  the notch between two hexagons, rectangles and polygons mix. Two shapes apart are kept the gap apart by their
+  true distance (`geom::apart`): across a slanted face two hexagons meeting tip to tip looked 0.8 points deeper
+  in the gap than they were, and that push threw them apart every half second, so the sideways frames scene
+  wobbled until it cooled (round 4; test `hexagons_tip_to_tip_part_by_their_true_distance`). Along a slanted edge a body slides at most half a glide per
   step, as with the pillow. Outline bodies do not bulge and never yield (their shape is not
   pressure), corner snapping (SETL-8) leaves them alone, `max_overlap` measures them by their outline.
   Editing: `World::insert_vertex(id, at)` puts a vertex on the outline nearest to a point (a plain rectangle gets
@@ -825,7 +828,8 @@ up and Packery's "others flow around the dragged one". No app uses it yet.
   walls less every body that shares some of its height, since neighbours move aside), and steps down when it was
   pressed along the row (`Body::load`) for two looks in a row. One that stepped down stays there until something
   changes (a widget added or gone, a size switch, a drop, the window), so it cannot go up and down for ever.
-  Switch "Layout picks sizes" in the sandbox; kittest
+  Off by default since round 4 (user, 12 Oct 2026: "feels like jelly, everything wobbles and never settles"):
+  `Frames::auto_pick` is false, switch "Layout picks sizes" in the sandbox turns it on; kittest
   `the_layout_picks_the_size_of_a_frame_on_auto_from_the_room_in_its_row` (two frames alone go wide, the window
   narrows and they step down and hold, off keeps the picks). Not done: the pick is not part of the solver (a row
   is judged by rectangles, also for hexagons that nest); it looks at the width only; nothing weighs which frame

@@ -659,6 +659,44 @@ pub struct Hit {
     pub depth: f32,
 }
 
+/// How far apart two convex polygons are and the unit direction from `a`'s
+/// nearest point to `b`'s; `None` when they touch or overlap.
+fn apart(a: &Poly, b: &Poly) -> Option<(f32, Vec2)> {
+    // they overlap unless some edge normal separates them
+    let separated = a.normals().chain(b.normals()).any(|n| {
+        let (a_lo, a_hi) = a.project(n);
+        let (b_lo, b_hi) = b.project(n);
+        a_hi < b_lo || b_hi < a_lo
+    });
+    if !separated {
+        return None;
+    }
+    let mut best: Option<(f32, Vec2, Vec2)> = None;
+    let mut look = |from: &Poly, to: &Poly, flip: bool| {
+        for &p in from.points() {
+            for i in 0..to.len {
+                let (q, r) = (to.pts[i], to.pts[(i + 1) % to.len]);
+                let e = r - q;
+                let len2 = e.dot(e);
+                let t = if len2 > 1e-12 {
+                    ((p - q).dot(e) / len2).clamp(0.0, 1.0)
+                } else {
+                    0.0
+                };
+                let near = q + e * t;
+                let d = (near - p).length();
+                if best.is_none_or(|(bd, _, _)| d < bd) {
+                    best = Some(if flip { (d, near, p) } else { (d, p, near) });
+                }
+            }
+        }
+    };
+    look(a, b, false);
+    look(b, a, true);
+    let (d, on_a, on_b) = best?;
+    (d > 1e-4).then(|| (d, (on_b - on_a) * (1.0 / d)))
+}
+
 /// Depths closer than this count as a tie, broken by the preferred direction.
 const TIE: f32 = 1e-3;
 
@@ -668,9 +706,18 @@ const TIE: f32 = 1e-3;
 /// them. Ties (two ridges meeting tip to tip) go to the normal that pushes
 /// `b` most along `prefer`, then to the first found; with `prefer` zero
 /// they are split: the tied normals are averaged (two mirrored slopes
-/// give the straight axis between them). The answer depends on nothing
+/// give the straight axis between them). Polygons that do not overlap are
+/// kept the gap apart by their true distance: across an edge normal two
+/// tips that meet look closer than they are. The answer depends on nothing
 /// but the inputs.
 pub fn sat(a: &Poly, b: &Poly, gap: impl Fn(Vec2) -> f32, prefer: Vec2) -> Option<Hit> {
+    // Apart, they are kept the gap apart by their true distance: across an
+    // edge normal two tips that meet (hexagons side by side) look closer than
+    // they are, and a push by that much throws them apart (round 4).
+    if let Some((d, normal)) = apart(a, b) {
+        let depth = gap(normal) - d;
+        return (depth > 0.0).then_some(Hit { normal, depth });
+    }
     let mut best: Option<Hit> = None;
     // With no preference: the sum of the tied normals, averaged at the end.
     let mut tied = Vec2::ZERO;
