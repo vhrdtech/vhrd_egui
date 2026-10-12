@@ -55,6 +55,9 @@ versions follow [Semantic Versioning](https://semver.org/). Feature IDs refer to
 - ve_settle: group drag (SETL-22): `World::cluster` finds the bodies stuck together with one (the gap and
   `CLUSTER_SLACK` apart, none against a closed wall); dragging a frame in `ve_settle::frames` moves its group
   along, Alt held takes it alone.
+- ve_settle: `Params::drag` (default 0.05): a drag on speed above 120 points/s, so a frame pushed aside runs on
+  about 62 points instead of about 113 like on glass; settling under gravity is unchanged;
+  sandbox slider "drag" (0 is the old feel) (SETL-23).
 - ve_frame: `FrameState::set_layout_size` / `layout_size`: a layout gives a hexagon in a grid its whole size, as
   a floating one has its window's (FRM-2, SETL-20).
 
@@ -98,6 +101,8 @@ versions follow [Semantic Versioning](https://semver.org/). Feature IDs refer to
   nearer end vertex to vertex instead of resting centred with both ends off; a rigid outline's bounding box is no
   longer pulled (it could not follow): in the sandbox's Hexagons scene every pull locks at rest (22 of 86 before)
   (SETL-20).
+- ve_settle: a frame dropped near the open bottom (or anywhere next to frames it just pushed aside) no longer runs
+  off after them: a corner does not snap to a body moving faster than 120 points/s (SETL-23).
 - ve_settle: `World::max_overlap` measured a bulged rectangle against an outline by its pillow and reported
   overlaps that were not there; it measures the two as they meet (SETL-17).
 

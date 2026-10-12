@@ -801,6 +801,7 @@ fn random_params(seed: &mut u32, base: &ve_settle::Params) -> ve_settle::Params 
         max_speed: pick(100.0, 6000.0),
         iterations: 1 + pick(0.0, 63.0) as u32,
         dt: 1.0 / pick(30.0, 480.0),
+        drag: pick(0.0, 0.5),
         ..*base
     }
 }
@@ -1297,4 +1298,51 @@ fn dragging_one_of_a_group_moves_the_group_and_alt_takes_it_alone() {
     let (ma, mb) = (moved(before.0, after.0), moved(before.1, after.1));
     assert!(ma.length() > 300.0, "the dragged one moved: {ma:?}");
     assert!(mb.length() < 2.0, "the other stayed: {mb:?}");
+}
+
+/// User, 12 Oct 2026 15:35: a widget dropped near the arena's edge or past it jumped away from the edge
+/// instead of settling. Dragged down through the stack and dropped near the open bottom, it pushed the frames
+/// under it out, and its corner snapped to theirs and took on their speed: it ran off after them, 30 points
+/// and more away from the top where gravity has it. Now a corner does not snap to a body pushed aside faster
+/// than settling goes, and the drag (`Params::drag`) stops the pushed ones sooner.
+#[test]
+fn a_frame_dropped_near_the_bottom_stays_where_it_is_dropped() {
+    let (mut h, mut watch) = sandbox();
+    let slot = find(&h, |d| {
+        !d.opts.hex && d.opts.footer && d.title() == "medium LISMFX"
+    });
+    let r = h.state().screen_rect(body_rect(&h, slot));
+    let from = pos2(r.center().x, r.max.y - 8.0);
+    let by = vec2(0.0, 560.0);
+    h.hover_at(from);
+    watch.frame(&mut h);
+    h.drag_at(from);
+    watch.frame(&mut h);
+    for n in 1..=30 {
+        h.hover_at(from + by * (n as f32 / 30.0));
+        watch.frame(&mut h);
+    }
+    h.drop_at(from + by);
+    // the frame of the drop: the body takes the pointer's last step
+    watch.frame(&mut h);
+    let world = &h.state().world;
+    let at: Vec<f32> = world.bodies().iter().map(|b| b.rect.min.y).collect();
+    let mine = h.state().frames.body(slot).expect("a body");
+    let mine = world
+        .bodies()
+        .iter()
+        .position(|b| b.id == mine)
+        .expect("in the world");
+    // how far each runs on down, away from gravity's side
+    let mut ran = vec![0.0f32; at.len()];
+    for _ in 0..300 {
+        watch.frame(&mut h);
+        for (i, b) in h.state().world.bodies().iter().enumerate() {
+            ran[i] = ran[i].max(b.rect.min.y - at[i]);
+        }
+    }
+    assert!(ran[mine] < 3.0, "the dropped one ran on {}", ran[mine]);
+    let most = ran.iter().copied().fold(0.0, f32::max);
+    // pushed out of its way they glide on 48 points (89 with drag 0)
+    assert!(most < 60.0, "a pushed one ran on {most}: {ran:?}");
 }

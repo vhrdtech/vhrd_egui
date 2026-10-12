@@ -852,6 +852,13 @@ impl Sandbox {
             0.0..=40.0,
             "Share of speed lost per second, 1/s. Low: bodies swing around their home; high: they creep.",
         );
+        knob(
+            ui,
+            "drag",
+            &mut p.drag,
+            0.0..=0.5,
+            "Drag that grows with speed, 1/point, on what is faster than 120 points/s: like friction on a table, a widget pushed aside or let go stops within a short way, while the slow drift under gravity does not change. At 0.05 (the default) a widget pushed aside runs on about 62 points after the push; 0 is a glass table (about 113).",
+        );
 
         ui.section_header("Contacts", "How bodies meet each other and the walls.");
         knob(
@@ -1787,9 +1794,8 @@ impl Effect {
         Some(match name {
             "gravity" => Self::Gravity,
             "home stiffness" | "home drift" => Self::Home,
-            "damping" | "grow speed" | "glide speed" | "max speed" | "steps per second" => {
-                Self::Motion
-            }
+            "damping" | "drag" | "grow speed" | "glide speed" | "max speed"
+            | "steps per second" => Self::Motion,
             "gap" => Self::Gap,
             "tension" | "restore" | "bulge at rest" | "bulge from" | "bulge gain" | "bulge max"
             | "bulge speed" => Self::Pressure,

@@ -86,6 +86,11 @@ pub const COOL_AFTER: f32 = 12.0;
 pub const COOL_SECS: f32 = 3.0;
 /// Passes of the hard constraints (cores, walls) per step, at most.
 const HARD_PASSES: u32 = 16;
+/// A corner snaps to no body faster than this, points/s (as [`DRAG_FROM`]).
+const SNAP_MOVING: f32 = DRAG_FROM;
+/// [`Params::drag`] acts on the speed above this, points/s: twice what the
+/// default gravity and damping reach, so slow settling stays as it was.
+const DRAG_FROM: f32 = 120.0;
 /// Two bodies within the gap and this much more of each other stick
 /// together for a group drag (SETL-22), points.
 pub const CLUSTER_SLACK: f32 = 1.0;
@@ -1251,7 +1256,12 @@ impl World {
                     consider(corner(&inner, ca) - from, Vec2::ZERO, 1.0);
                 }
                 for (j, o) in self.bodies.iter().enumerate() {
-                    if j == i || o.dragged || o.outline.is_some() {
+                    // Nor to one pushed aside faster than settling goes,
+                    // which is on its way somewhere. The snap takes on
+                    // the other's speed, and a body dropped next to a
+                    // stack it pushed out ran off after it, away from the
+                    // wall it was dropped at (user, 12 Oct 2026).
+                    if j == i || o.dragged || o.outline.is_some() || o.vel.length() > SNAP_MOVING {
                         continue;
                     }
                     for cb in CORNERS {
@@ -2548,6 +2558,12 @@ fn integrate(b: &mut Body, p: &Params, dt: f32, cool: f32) -> f32 {
     let damp = (-p.damping * dt).exp();
     let pull = b.gravity_pull + b.home_pull + b.snap_pull + b.grid_pull + b.slide_pull;
     b.vel = ((b.vel + pull * (dt * cool)) * (damp * cool)).clamp_length(p.max_speed);
+    // drag growing with the speed above DRAG_FROM, implicit so a large step
+    // never turns it round; slow settling is left as it was
+    let fast = b.vel.length() - DRAG_FROM;
+    if fast > 0.0 {
+        b.vel = b.vel * (1.0 / (1.0 + p.drag * fast * dt));
+    }
     b.rect = b.rect.translate(b.vel * dt);
     let drift = p.home_drift + (1.0 - hold) * PRESSED_DRIFT;
     if drift > 0.0

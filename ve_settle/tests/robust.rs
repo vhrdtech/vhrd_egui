@@ -50,6 +50,7 @@ fn random(rng: &mut Rng, base: &Params) -> Params {
         rest_eps: rng.in_range(0.0005, 0.5),
         rest_steps: 1 + (rng.next() * 239.0) as u32,
         dt: 1.0 / rng.in_range(30.0, 480.0),
+        drag: rng.in_range(0.0, 0.5),
         push_out: rng.next() < 0.5,
     }
 }

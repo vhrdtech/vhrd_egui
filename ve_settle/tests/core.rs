@@ -615,3 +615,41 @@ fn bodies_snapped_together_fall_as_fast_as_one_alone() {
         "alone {alone}, together {together}"
     );
 }
+
+/// How far `b` runs on after a body dragged into it at 25 points a step stops, with `drag` (no gravity, no
+/// homes, speed held to a glide as in the sandbox).
+fn run_on_after_a_push(drag: f32) -> f32 {
+    let p = Params {
+        gravity_side: None,
+        home_stiffness: 0.0,
+        drag,
+        max_speed: Params::default().glide_speed,
+        ..Params::default()
+    };
+    let mut w = World::new(Rect::from_min_size(Vec2::ZERO, Vec2::new(3000.0, 800.0)), p);
+    let size = Vec2::new(200.0, 100.0);
+    let a = w.add(BodyDesc::new(Vec2::new(300.0, 400.0), size).home(None));
+    let b = w.add(BodyDesc::new(Vec2::new(506.0, 400.0), size).home(None));
+    assert!(w.settle(5_000).is_some());
+    w.grab(a);
+    let start = w.body(a).unwrap().rect.center();
+    for n in 1..=12 {
+        w.drag_to(a, start + Vec2::new(25.0 * n as f32, 0.0));
+        w.step();
+    }
+    let stopped = w.body(b).unwrap().rect.center();
+    w.release(a, true);
+    assert!(w.settle(5_000).is_some());
+    (w.body(b).unwrap().rect.center() - stopped).length()
+}
+
+/// User, 12 Oct 2026: "more friction by default, it feels like a glass table". With the default drag a body
+/// pushed aside stops in about half the way once the push ends (62 points, half of it gliding out from under
+/// the one that pushed it); with drag 0 it runs on 113, so the slider can still go glassy.
+#[test]
+fn a_pushed_body_stops_within_a_short_way() {
+    let default = run_on_after_a_push(Params::default().drag);
+    let glass = run_on_after_a_push(0.0);
+    assert!(default < 70.0, "ran on {default}");
+    assert!(glass > 1.6 * default, "glass {glass}, default {default}");
+}

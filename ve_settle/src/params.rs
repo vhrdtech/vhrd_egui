@@ -60,6 +60,13 @@ pub struct Params {
     pub home_drift: f32,
     /// Velocity damping, 1/s: the share of speed lost per second.
     pub damping: f32,
+    /// Drag that grows with speed, 1/point: on top of `damping` a body
+    /// faster than 120 points/s loses this times its speed above that of
+    /// each point/s per second (as air does). A fast body (pushed aside,
+    /// let go) stops within a short way, while slow settling under gravity
+    /// does not change. 0 is a glass table. (0.1 and more break a full
+    /// row's shift (SETL-11) and the rest of a full field: SETL-23.)
+    pub drag: f32,
     /// Free space kept between bodies and to the walls.
     pub gap: f32,
     /// How readily bodies give when there is no room, 0..=1: the share of
@@ -182,6 +189,7 @@ impl Params {
         fix(&mut self.home_stiffness, d.home_stiffness, 0.0, big);
         fix(&mut self.home_drift, d.home_drift, 0.0, big);
         fix(&mut self.damping, d.damping, 0.0, big);
+        fix(&mut self.drag, d.drag, 0.0, big);
         fix(&mut self.gap, d.gap, 0.0, big);
         fix(&mut self.tension, d.tension, 0.0, 1.0);
         fix(&mut self.restore, d.restore, 0.0, big);
@@ -220,6 +228,7 @@ impl Params {
             home_stiffness: mix(self.home_stiffness, to.home_stiffness),
             home_drift: mix(self.home_drift, to.home_drift),
             damping: mix(self.damping, to.damping),
+            drag: mix(self.drag, to.drag),
             gap: mix(self.gap, to.gap),
             tension: mix(self.tension, to.tension),
             restore: mix(self.restore, to.restore),
@@ -256,6 +265,7 @@ impl Default for Params {
             home_stiffness: 30.0,
             home_drift: 0.0,
             damping: 10.0,
+            drag: 0.05,
             gap: 6.0,
             tension: 0.5,
             restore: 2.0,

@@ -970,6 +970,27 @@ up and Packery's "others flow around the dragged one". No app uses it yet.
   gravity, which a slide never does (the body toward gravity's side does not slide, a slide past a wall is
   blocked). A honeycomb under gravity needs attraction as a force that can hold a body off the wall, as the
   rectangles' corner snap (1500) holds against gravity (600); open question for the user.
+- ✅ **SETL-23 Friction by default; a drop near the edge stays** (user, 12 Oct 2026 15:33: "more friction by
+  default, it feels like a glass table"; 15:35 bug: "dropping a widget close to the arena edge, or past/below
+  it, makes it jump away from the edge"). Bodies get their speed from how far the contacts moved them, so frames
+  pushed aside by a drag or a landing kept a glide of speed and coasted on with only `damping` (10/s) to stop
+  them: about 113 points after a push. New `Params::drag` (default 0.05, slider 0 to 0.5; 0 is the old glass
+  table): a drag growing with the speed above 120 points/s (`DRAG_FROM`, twice what gravity and damping reach),
+  so settling under gravity is as fast as before; `damping` stays 10. A pushed frame now runs on 62 points (half
+  of it the glide out from under the one that pushed it), the stack a frame was dropped into 48 instead of 89.
+  Stronger drag is not the default: at 0.1 and more a full row no longer shifts on in order (SETL-11,
+  `a_packed_field_gives_way_row_by_row_without_crushing`) and the open-bottom full field does not lock its
+  pulls at rest; braking only bodies the contacts no longer push kept those but left worlds that never rested.
+  Shorter still needs a push that gives less lasting speed, without the window-resize overlap that idea had
+  (SETL-21).
+  10. The jump: a frame dragged down through the stack and dropped near the open bottom had pushed the frames
+  under it out; its corner snapped to theirs and the snap takes on the other's speed, so it ran off after them,
+  60 points away from where it was dropped. A corner no longer snaps to a body faster than 120 points/s
+  (`SNAP_MOVING`). Dropped past a side wall or the right edge it glided back in at a glide and rested against
+  the wall already (checked in the kittest probe, no change needed). Tests `a_pushed_body_stops_within_a_short_way`
+  (`tests/core.rs`), kittest `a_frame_dropped_near_the_bottom_stays_where_it_is_dropped`. Seen on the way: the
+  window-narrowing kittest leaves two rectangles 4 points in each other for a step with some damping / drag
+  values (damping 11 and drag 0 as well), a weakness of the contact solver under a moving wall, not of the drag.
 - ✅ **SETL-22 Group drag** (user, round 4, 12 Oct 2026: "dragging one of a cluster stuck together moves the
   rest; how to break one off"). A group is found when the drag starts (`World::cluster`): flood fill over solid
   bodies within the gap + `CLUSTER_SLACK` (1 point) of each other, by their true shapes (hexagons face to face
