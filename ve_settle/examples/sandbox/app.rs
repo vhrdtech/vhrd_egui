@@ -1146,15 +1146,18 @@ impl Sandbox {
         if self.seeded {
             self.top_up();
         }
-        // the world's step this frame: as the frame took, or as the recording says
+        // the world's step this frame: as the frame took, or as the recording says. A pass egui runs again
+        // (a discarded one) has the frame's input once more and does not step the world again (SETL-24).
+        let again = ui.ctx().current_pass_index() > 0;
         let dt = match &mut self.replay_dt {
+            _ if again => 0.0,
             Some(queue) => queue.pop_front().unwrap_or(0.0),
             None => ui.input(|i| i.stable_dt).min(1.0 / 30.0),
         };
         if let Some(frame) = &mut self.taking {
             frame.dt = dt;
         }
-        if !self.paused {
+        if !self.paused && !again {
             let began = std::time::Instant::now();
             self.world.advance(dt);
             self.solver_ms = began.elapsed().as_secs_f32() * 1000.0;
@@ -2324,7 +2327,8 @@ impl eframe::App for Sandbox {
     fn ui(&mut self, ui: &mut Ui, _frame: &mut eframe::Frame) {
         let ctx = ui.ctx().clone();
         let bg = ui.tokens().colors.bg;
-        if self.recording.is_some() {
+        // a pass egui runs again has the same input: recorded once
+        if self.recording.is_some() && ctx.current_pass_index() == 0 {
             self.taking = Some(ctx.input(RecFrame::of));
             if ctx.input(|i| i.key_pressed(egui::Key::F9)) {
                 self.message = self.saved_message(&ctx);

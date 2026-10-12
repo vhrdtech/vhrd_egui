@@ -1349,15 +1349,16 @@ fn a_frame_dropped_near_the_bottom_stays_where_it_is_dropped() {
     assert!(most < 70.0, "a pushed one ran on {most}: {ran:?}");
 }
 
-/// The sandbox as a recording started it, before its first frame, replaying the recording's world steps.
-fn replaying(rec: &app::Recording) -> App {
+/// The sandbox as a recording started it, replaying the recording's world steps, and the frames still to
+/// give it: the harness runs a few frames of its own while it is built (the recording has them too).
+fn replaying(rec: &app::Recording) -> (App, &[app::RecFrame]) {
     let scene = Scene::ALL
         .into_iter()
         .find(|s| s.name() == rec.scene)
         .unwrap_or(Scene::Rectangles);
     let first = rec.frames.first().map_or([1250.0, 800.0], |f| f.size);
     let dts: std::collections::VecDeque<f32> = rec.frames.iter().map(|f| f.dt).collect();
-    Harness::builder()
+    let h = Harness::builder()
         .with_size(vec2(first[0], first[1]))
         .with_pixels_per_point(rec.pixels_per_point)
         .with_step_dt(1.0 / FPS)
@@ -1365,7 +1366,10 @@ fn replaying(rec: &app::Recording) -> App {
             let mut sandbox = Sandbox::with_scene(cc, scene);
             sandbox.replay_dt = Some(dts);
             sandbox
-        })
+        });
+    let left = h.state().replay_dt.as_ref().map_or(0, |q| q.len());
+    let ran = rec.frames.len() - left;
+    (h, &rec.frames[ran..])
 }
 
 /// Give the app the recorded frame `frame` (the first one is the frame the harness runs when it is built).
@@ -1439,8 +1443,8 @@ fn a_recorded_session_replays_to_the_same_world() {
     let json = serde_json::to_string(&rec).expect("json");
     let rec: app::Recording = serde_json::from_str(&json).expect("read back");
 
-    let mut h = replaying(&rec);
-    for frame in &rec.frames[1..] {
+    let (mut h, frames) = replaying(&rec);
+    for frame in frames {
         replay_frame(&mut h, frame);
     }
     assert_eq!(layout(&h), recorded);
@@ -1456,12 +1460,13 @@ fn replay() {
     };
     let json = std::fs::read_to_string(&path).expect("the recording");
     let rec: app::Recording = serde_json::from_str(&json).expect("a recording");
-    let mut h = replaying(&rec);
+    let (mut h, frames) = replaying(&rec);
+    let first = rec.frames.len() - frames.len();
     let mut watch = Watch {
         seen: HashMap::new(),
         worst_dip: 0.0,
     };
-    for (n, frame) in rec.frames.iter().enumerate().skip(1) {
+    for (n, frame) in frames.iter().enumerate().map(|(n, f)| (n + first, f)) {
         let before: HashMap<BodyId, Rect> = h
             .state()
             .world
@@ -1564,12 +1569,12 @@ fn a_frame_dropped_past_a_side_wall_comes_to_rest_against_it() {
 
 /// Replays `rec` frame by frame with the promises of [`Watch`] on every frame.
 fn replay_watched(rec: &app::Recording) -> App {
-    let mut h = replaying(rec);
+    let (mut h, frames) = replaying(rec);
     let mut watch = Watch {
         seen: HashMap::new(),
         worst_dip: 0.0,
     };
-    for frame in &rec.frames[1..] {
+    for frame in frames {
         replay_frame(&mut h, frame);
         watch.look(&h);
     }

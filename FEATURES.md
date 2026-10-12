@@ -1030,7 +1030,10 @@ up and Packery's "others flow around the dragged one". No app uses it yet.
   with the time recorded in the arena's top right corner (always from the start: a replay needs the scene from
   its seed, so no ring buffer); after a save a toast with the path and "Copy path" for 6 s; the last path stays in
   the Simulation section with a Copy button; the button's tooltip says what is saved and how far back. Kittest
-  `the_recording_shows_rec_and_a_save_shows_its_path`.
+  `the_recording_shows_rec_and_a_save_shows_its_path`. Fixed (12 Oct 2026): the replay fed the recording's
+  input from its second frame on, but the test harness runs 6 frames of its own while it is built, so every
+  event came 5 frames late (it showed once the pin's tooltips came in); the replay now starts where the build
+  left off. A pass egui runs again (a discarded one) neither steps the world nor records a second frame.
 - ✅ **SETL-23 Friction by default; a drop near the edge stays** (user, 12 Oct 2026 15:33: "more friction by
   default, it feels like a glass table"; 15:35 bug: "dropping a widget close to the arena edge, or past/below
   it, makes it jump away from the edge"). Bodies get their speed from how far the contacts moved them, so frames

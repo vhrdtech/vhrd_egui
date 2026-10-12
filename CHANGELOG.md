@@ -90,6 +90,8 @@ versions follow [Semantic Versioning](https://semver.org/). Feature IDs refer to
 
 ### Fixed
 
+- ve_settle sandbox: a replayed recording got every input 5 frames late (the harness's own first frames); a
+  pass egui runs again no longer steps the world twice or records a frame twice (SETL-24).
 - ve_settle: two outlines that do not overlap are kept the gap apart by their true distance, not by the distance
   across an edge normal: hexagons side by side meeting tip to tip were pushed 0.8 points too far each time and
   bounced, so a scene with them wobbled until it cooled (SETL-4). The hard pass runs up to 16 rounds (was 8).
