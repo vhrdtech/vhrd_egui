@@ -1019,3 +1019,40 @@ fn tabs_speed_and_the_effect_of_a_hovered_slider() {
     h.step();
     assert_eq!(h.state().effect, None, "the pointer left the sliders");
 }
+
+/// Round 4, item 1: the tabs above the arena take a real click (press and release in frames of their own, the
+/// pointer moved there first), each one, and seed their scene.
+#[test]
+fn each_tab_takes_a_real_click() {
+    let (mut h, _) = sandbox();
+    for (label, tab) in [
+        ("Hexagons", app::Tab::Hexagons),
+        ("Rectangles", app::Tab::Rectangles),
+        ("Mixed", app::Tab::Mixed),
+    ] {
+        let at = h.get_by_label(label).rect().center();
+        // a new scene follows the click: no watch for jumps here
+        h.hover_at(at);
+        h.step();
+        h.drag_at(at);
+        h.step();
+        h.drop_at(at);
+        for _ in 0..3 {
+            h.step();
+        }
+        assert_eq!(h.state().tab, tab, "a click on {label}");
+        let hex = h
+            .state()
+            .frames
+            .dock
+            .iter()
+            .filter(|w| w.widget.opts.hex)
+            .count();
+        let all = h.state().frames.dock.len();
+        match tab {
+            app::Tab::Hexagons => assert_eq!(hex, all, "{label}: hexagons only"),
+            app::Tab::Rectangles => assert_eq!(hex, 0, "{label}: rectangles only"),
+            app::Tab::Mixed => assert!(hex > 0 && hex < all, "{label}: both"),
+        }
+    }
+}
