@@ -1069,7 +1069,7 @@ impl Sandbox {
             .backdrop_on
             .then(|| self.backdrop.reserve(ui.painter()));
         ui.allocate_rect(arena, Sense::hover())
-            .on_hover_text("The arena. Drag a widget by any part that is not a control to move it, double-click empty space to add one, click it to select none. Scroll when the widgets run past the bottom.");
+            .on_hover_text("The arena. Drag a widget by any part that is not a control to move it; widgets stuck together away from the walls (with gravity none) move as a group, Alt held takes the one alone; double-click empty space to add one, click it to select none. Scroll when the widgets run past the bottom.");
         self.world.set_bounds(from_rect(arena));
         // Not before the window has a real size: on the first frame it can
         // still be tiny, and the scene would start with a few widgets.

@@ -1218,3 +1218,83 @@ fn the_pulls_of_the_hexagons_scene_are_done_at_rest() {
     let open: Vec<_> = pulls.iter().filter(|p| !p.locked).collect();
     assert!(open.is_empty(), "pulls not done at rest: {open:?}");
 }
+
+/// Drag the frame `slot` by its footer by `by`, with `modifiers` held, let go and wait for rest.
+fn drag_by(
+    h: &mut App,
+    watch: &mut Watch,
+    slot: SlotId,
+    by: egui::Vec2,
+    modifiers: egui::Modifiers,
+) {
+    let rect = h.state().screen_rect(body_rect(h, slot));
+    let from = pos2(rect.center().x, rect.max.y - 8.0);
+    h.event(egui::Event::ModifiersChanged(modifiers));
+    h.hover_at(from);
+    watch.frame(h);
+    h.drag_at(from);
+    watch.frame(h);
+    for n in 1..=30 {
+        h.hover_at(from + by * (n as f32 / 30.0));
+        watch.frame(h);
+    }
+    h.drop_at(from + by);
+    watch.frame(h);
+    h.event(egui::Event::ModifiersChanged(egui::Modifiers::NONE));
+    watch.rest(h);
+}
+
+/// Round 4, item 4 (SETL-22): two frames stuck together away from the walls (no gravity) move together when
+/// one is dragged; with Alt held the one dragged comes away alone.
+#[test]
+fn dragging_one_of_a_group_moves_the_group_and_alt_takes_it_alone() {
+    let (mut h, mut watch, slots) = sandbox_of(&[0, 3]);
+    let s = h.state_mut();
+    let mut p = *s.world.params();
+    p.gravity_side = None;
+    s.world.set_params(p);
+    // side by side in the middle, the gap apart
+    let (a, b) = (slots[0], slots[1]);
+    let (ba, bb) = (s.frames.body(a).unwrap(), s.frames.body(b).unwrap());
+    let (ra, rb) = (
+        s.world.body(ba).unwrap().rect,
+        s.world.body(bb).unwrap().rect,
+    );
+    let corner = s.world.bounds().min + ve_settle::Vec2::new(150.0, 250.0);
+    s.world.put(ba, corner + ra.size() * 0.5, ra.size());
+    let at = corner + ve_settle::Vec2::new(ra.size().x + p.gap, 0.0) + rb.size() * 0.5;
+    s.world.put(bb, at, rb.size());
+    watch.seen.clear();
+    watch.rest(&mut h);
+    assert_eq!(h.state().world.cluster(ba).len(), 2, "stuck together");
+
+    let before = (body_rect(&h, a), body_rect(&h, b));
+    drag_by(
+        &mut h,
+        &mut watch,
+        a,
+        vec2(120.0, 160.0),
+        egui::Modifiers::NONE,
+    );
+    let after = (body_rect(&h, a), body_rect(&h, b));
+    let moved = |from: Rect, to: Rect| to.center() - from.center();
+    let (ma, mb) = (moved(before.0, after.0), moved(before.1, after.1));
+    assert!(ma.length() > 100.0, "the dragged one moved: {ma:?}");
+    assert!(
+        (ma - mb).length() < 2.0,
+        "the other came along: {ma:?} {mb:?}"
+    );
+
+    let before = (body_rect(&h, a), body_rect(&h, b));
+    drag_by(
+        &mut h,
+        &mut watch,
+        a,
+        vec2(0.0, 400.0),
+        egui::Modifiers::ALT,
+    );
+    let after = (body_rect(&h, a), body_rect(&h, b));
+    let (ma, mb) = (moved(before.0, after.0), moved(before.1, after.1));
+    assert!(ma.length() > 300.0, "the dragged one moved: {ma:?}");
+    assert!(mb.length() < 2.0, "the other stayed: {mb:?}");
+}

@@ -970,6 +970,17 @@ up and Packery's "others flow around the dragged one". No app uses it yet.
   gravity, which a slide never does (the body toward gravity's side does not slide, a slide past a wall is
   blocked). A honeycomb under gravity needs attraction as a force that can hold a body off the wall, as the
   rectangles' corner snap (1500) holds against gravity (600); open question for the user.
+- ✅ **SETL-22 Group drag** (user, round 4, 12 Oct 2026: "dragging one of a cluster stuck together moves the
+  rest; how to break one off"). A group is found when the drag starts (`World::cluster`): flood fill over solid
+  bodies within the gap + `CLUSTER_SLACK` (1 point) of each other, by their true shapes (hexagons face to face
+  too); a group with any member against a closed wall belongs to the wall and is no group (a stack under gravity
+  would otherwise drag as one), so the one grabbed goes alone, as a lifted body does. `ve_settle::frames` grabs
+  every member, keeps each one's offset from the grabbed one while dragging and lets them all go together. **Alt**
+  held when the drag starts takes the grabbed one alone (breaks it off). Tests `tests/cluster.rs`, kittest
+  `dragging_one_of_a_group_moves_the_group_and_alt_takes_it_alone`. Open: in the sandbox's scenes everything
+  lies against the top wall under gravity, so groups show only with gravity none (or with homes on); whether
+  locked pulls (attracted only to each other) should also join bodies, and whether a group at a wall should drag
+  as one when it is small, is the user's call.
 - ✅ **SETL-21 Pushed stacks ran faster than a glide** (found in round 4, when the sandbox became rectangles
   only): a frame put back on top of a full stack, or a row's yielder (SETL-11) dropping out of a row a size
   switch overfilled, moved the frames under it 33 to 37 points a frame and faster each frame (the limit that reads

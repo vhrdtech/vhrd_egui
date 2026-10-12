@@ -437,6 +437,8 @@ pub struct Frames<W> {
     pick_clock: f32,
     bounds: Option<Rect>,
     grab_offset: egui::Vec2,
+    /// What is being dragged together, with each one's middle from the grabbed one's (SETL-22).
+    group: Vec<(BodyId, Vec2)>,
     view: Option<View>,
     /// The picks as they are were decided for the scene as a whole ([`Frames::hold_picks`]).
     hold: bool,
@@ -464,6 +466,7 @@ impl<W> Frames<W> {
             pick_clock: 0.0,
             bounds: None,
             grab_offset: egui::Vec2::ZERO,
+            group: Vec::new(),
             view: None,
             hold: false,
         }
@@ -834,16 +837,37 @@ impl<W> Frames<W> {
             let at = view.to_world(pressed);
             if !hex || body.shape().contains(at) {
                 shown.clicked = Some(id);
-                world.grab(body_id);
+                // the frames stuck together with it come along; Alt takes it alone (SETL-22)
+                let alone = ui.input(|i| i.modifiers.alt);
+                let members = if alone {
+                    vec![body_id]
+                } else {
+                    world.cluster(body_id)
+                };
+                let center = world.body(body_id).map_or(Vec2::ZERO, |b| b.rect.center());
+                self.group = members
+                    .into_iter()
+                    .filter_map(|m| world.body(m).map(|b| (m, b.rect.center() - center)))
+                    .collect();
+                for &(m, _) in &self.group {
+                    world.grab(m);
+                }
                 self.grab_offset = rect.center() - pressed;
             }
         }
         let held = world.body(body_id).is_some_and(|b| b.dragged);
         if let (true, true, Some(pointer)) = (held, grip.dragged(), pointer) {
-            world.drag_to(body_id, view.to_world(pointer + self.grab_offset));
+            let to = view.to_world(pointer + self.grab_offset);
+            world.drag_to(body_id, to);
+            for &(m, offset) in &self.group {
+                world.drag_to(m, to + offset);
+            }
         }
         if held && grip.drag_stopped() {
             world.release(body_id, self.rehome_on_drop);
+            for (m, _) in std::mem::take(&mut self.group) {
+                world.release(m, self.rehome_on_drop);
+            }
             self.epoch += 1;
         }
 

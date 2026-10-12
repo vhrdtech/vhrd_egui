@@ -86,6 +86,9 @@ pub const COOL_AFTER: f32 = 12.0;
 pub const COOL_SECS: f32 = 3.0;
 /// Passes of the hard constraints (cores, walls) per step, at most.
 const HARD_PASSES: u32 = 16;
+/// Two bodies within the gap and this much more of each other stick
+/// together for a group drag (SETL-22), points.
+pub const CLUSTER_SLACK: f32 = 1.0;
 
 /// Names a body for as long as it lives; never reused within a world.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord)]
@@ -810,6 +813,54 @@ impl World {
             }
             changed
         });
+    }
+
+    /// The bodies stuck together with `id` (SETL-22): those it touches (the
+    /// gap and [`CLUSTER_SLACK`] apart or closer), what they touch, and so
+    /// on, as long as none of them lies against a closed wall; `id` first.
+    /// A cluster at a wall belongs to the wall (a stack under gravity is not
+    /// a group), so then it is `id` alone, as it is for a lifted or unknown
+    /// body. Dragging one of a group moves the group.
+    pub fn cluster(&self, id: BodyId) -> Vec<BodyId> {
+        let Some(start) = self.bodies.iter().position(|b| b.id == id) else {
+            return Vec::new();
+        };
+        let alone = vec![id];
+        let solid = |b: &Body| !b.lifted && !b.dragged;
+        if !solid(&self.bodies[start]) {
+            return alone;
+        }
+        let p = &self.params;
+        let reach = p.gap + CLUSTER_SLACK;
+        let inner = Rect {
+            min: self.bounds.min + Vec2::splat(reach),
+            max: self.bounds.max - Vec2::splat(reach),
+        };
+        let at_wall = |b: &Body| {
+            let r = b.shape().bounds();
+            (p.walls.left && r.min.x < inner.min.x)
+                || (p.walls.top && r.min.y < inner.min.y)
+                || (p.walls.right && r.max.x > inner.max.x)
+                || (p.walls.bottom && r.max.y > inner.max.y)
+        };
+        let mut members = vec![start];
+        let mut next = 0;
+        while next < members.len() {
+            let a = &self.bodies[members[next]];
+            next += 1;
+            if at_wall(a) {
+                return alone;
+            }
+            for (j, o) in self.bodies.iter().enumerate() {
+                if members.contains(&j) || !solid(o) {
+                    continue;
+                }
+                if touch(a, o, reach, Vec2::ZERO).is_some_and(|h| h.depth > 0.0) {
+                    members.push(j);
+                }
+            }
+        }
+        members.into_iter().map(|i| self.bodies[i].id).collect()
     }
 
     fn change(&mut self, id: BodyId, f: impl FnOnce(&mut Body) -> bool) {

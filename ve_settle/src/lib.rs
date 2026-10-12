@@ -103,6 +103,6 @@ mod world;
 pub use geom::{Axis, Hit, MAX_VERTICES, Poly, Rect, Side, Vec2, contact, sat};
 pub use params::{Params, Walls};
 pub use world::{
-    Body, BodyDesc, BodyId, COOL_AFTER, COOL_SECS, CORE, Contact, PARAM_RAMP_STEPS, Pull, Snap,
-    World,
+    Body, BodyDesc, BodyId, CLUSTER_SLACK, COOL_AFTER, COOL_SECS, CORE, Contact, PARAM_RAMP_STEPS,
+    Pull, Snap, World,
 };

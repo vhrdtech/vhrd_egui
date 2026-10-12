@@ -52,6 +52,9 @@ versions follow [Semantic Versioning](https://semver.org/). Feature IDs refer to
   up to its range; sandbox checkbox "Hexagons stretch to line up" (SETL-20).
 - ve_settle sandbox: the iterations, rest threshold and rest steps sliders show their effect in the world too:
   the contacts of the last step, and which widgets are calm and whether the world rests (SETL-7).
+- ve_settle: group drag (SETL-22): `World::cluster` finds the bodies stuck together with one (the gap and
+  `CLUSTER_SLACK` apart, none against a closed wall); dragging a frame in `ve_settle::frames` moves its group
+  along, Alt held takes it alone.
 - ve_frame: `FrameState::set_layout_size` / `layout_size`: a layout gives a hexagon in a grid its whole size, as
   a floating one has its window's (FRM-2, SETL-20).
 
