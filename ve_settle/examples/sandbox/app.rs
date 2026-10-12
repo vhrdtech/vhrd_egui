@@ -256,6 +256,9 @@ pub struct Sandbox {
     pub replay_dt: Option<std::collections::VecDeque<f32>>,
     /// This frame's input, until its world step is known.
     taking: Option<RecFrame>,
+    /// The last recording saved, and when (egui's clock), for the toast and
+    /// the Simulation section.
+    pub last_saved: Option<(String, f64)>,
 }
 
 impl Sandbox {
@@ -306,6 +309,7 @@ impl Sandbox {
             recording: None,
             replay_dt: None,
             taking: None,
+            last_saved: None,
         }
     }
 
@@ -641,11 +645,11 @@ impl Sandbox {
             let recording = self.recording.is_some();
             if ui
                 .add_enabled(recording, Button::new("Save recording"))
-                .on_hover_text("Write everything the sandbox was given since it started (pointer, keys, window size, the time of each frame) to a new file under /tmp, also with F9. A test replays it frame by frame (`VE_SETTLE_REPLAY=<file> cargo test -p ve_settle --test sandbox replay`), so something odd you just saw can become a failing test: save right after it happened.")
+                .on_hover_text("The sandbox records all the time, from its start (the REC mark in the arena's corner says for how long): every frame's pointer, wheel, keys, modifier keys, window size and time step, not the picture. Saving writes all of it, from the start up to now, to a new file under /tmp (also with F9); the arena shows the path with a copy button. A test replays it frame by frame (`VE_SETTLE_REPLAY=<file> cargo test -p ve_settle --test sandbox replay -- --nocapture`), so something odd you just saw can become a failing test: save right after it happened. Restart the sandbox to start a fresh recording.")
                 .on_disabled_hover_text("Not available: this sandbox is not recording (a test or a replay).")
                 .clicked()
             {
-                self.message = self.saved_message();
+                self.message = self.saved_message(ui.ctx());
             }
             let chosen = self.selected.is_some();
             let none = "Not available: no widget is selected. Click one first.";
@@ -658,6 +662,20 @@ impl Sandbox {
                 self.remove_selected();
             }
         });
+        if let Some((path, _)) = self.last_saved.clone() {
+            ui.horizontal(|ui| {
+                ui.weak("Last recording:")
+                    .on_hover_text("The recording saved last (Save recording / F9).");
+                ve_basics::copyable_label(ui, path.clone());
+                if ui
+                    .small_button("Copy")
+                    .on_hover_text("Copy the path to the clipboard.")
+                    .clicked()
+                {
+                    ui.ctx().copy_text(path);
+                }
+            });
+        }
         ui.horizontal(|ui| {
             if ui
                 .button("Homes here")
@@ -1146,6 +1164,7 @@ impl Sandbox {
         self.frames_ui(ui);
         self.empty_space_clicks(ui);
         self.paint_overlay(ui, &tokens);
+        self.recording_ui(ui, &tokens);
         if let Some(effect) = self.effect {
             self.paint_effect(ui, &tokens, effect);
         }
@@ -1990,14 +2009,69 @@ impl Perf {
 }
 
 impl Sandbox {
-    fn saved_message(&self) -> String {
+    fn saved_message(&mut self, ctx: &egui::Context) -> String {
         match self.save_recording() {
             Ok(path) => {
                 eprintln!("ve_settle sandbox: recording saved to {}", path.display());
+                self.last_saved = Some((path.display().to_string(), ctx.input(|i| i.time)));
                 format!("Recording saved to {}", path.display())
             }
             Err(e) => format!("Recording not saved: {e}"),
         }
+    }
+
+    /// The REC mark in the arena's top right corner, and for a few seconds
+    /// after a save the path with a copy button (SETL-24).
+    fn recording_ui(&mut self, ui: &mut Ui, tokens: &Tokens) {
+        let Some(rec) = &self.recording else {
+            return;
+        };
+        let now = ui.input(|i| i.time);
+        let since = rec.frames.first().map_or(0.0, |f| now - f.time).max(0.0) as u64;
+        let corner = self.arena.right_top() + vec2(-12.0, 10.0);
+        egui::Area::new(egui::Id::new("ve_settle_rec"))
+            .fixed_pos(corner)
+            .pivot(egui::Align2::RIGHT_TOP)
+            .order(egui::Order::Foreground)
+            .show(ui.ctx(), |ui| {
+                egui::Frame::popup(ui.style()).show(ui, |ui| {
+                    ui.horizontal(|ui| {
+                        let (dot, _) = ui.allocate_exact_size(vec2(10.0, 10.0), Sense::hover());
+                        ui.painter().circle_filled(dot.center(), 4.5, tokens.colors.crit);
+                        ui.label(format!("REC {}:{:02}", since / 60, since % 60));
+                    });
+                })
+                .response
+                .on_hover_text(format!(
+                    "Recording since the sandbox started, {since} s: every frame's input (pointer, keys, window size, time step), not the picture. Save recording (Simulation) or F9 writes all of it to a file under /tmp; a test replays it."
+                ));
+            });
+        let Some((path, at)) = self.last_saved.clone() else {
+            return;
+        };
+        if now - at > 6.0 {
+            return;
+        }
+        ui.ctx().request_repaint();
+        egui::Area::new(egui::Id::new("ve_settle_saved"))
+            .fixed_pos(self.arena.center_bottom() + vec2(0.0, -24.0))
+            .pivot(egui::Align2::CENTER_BOTTOM)
+            .order(egui::Order::Foreground)
+            .show(ui.ctx(), |ui| {
+                egui::Frame::popup(ui.style()).show(ui, |ui| {
+                    ui.horizontal(|ui| {
+                        ui.label("Saved");
+                        ve_basics::copyable_label(ui, path.clone());
+                        if ui
+                            .button("Copy path")
+                            .on_hover_text("Copy the recording's path to the clipboard, to send it on or replay it.")
+                            .clicked()
+                        {
+                            ui.ctx().copy_text(path.clone());
+                        }
+                    });
+                });
+            });
     }
 }
 
@@ -2176,7 +2250,7 @@ impl eframe::App for Sandbox {
         if self.recording.is_some() {
             self.taking = Some(ctx.input(RecFrame::of));
             if ctx.input(|i| i.key_pressed(egui::Key::F9)) {
-                self.message = self.saved_message();
+                self.message = self.saved_message(&ctx);
             }
         }
         self.perf.frame(std::mem::take(&mut self.solver_ms));

@@ -3718,6 +3718,7 @@ dependencies = [
  "serde",
  "serde_json",
  "ve_backdrop",
+ "ve_basics",
  "ve_dash",
  "ve_frame",
  "ve_settle",

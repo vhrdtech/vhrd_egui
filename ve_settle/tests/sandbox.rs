@@ -1586,3 +1586,31 @@ fn recording_a_frame_dragged_into_a_big_one_does_not_throw_it() {
     let rec: app::Recording = serde_json::from_str(json).expect("a recording");
     replay_watched(&rec);
 }
+
+/// SETL-24: while recording the arena shows a REC mark with the time; a save shows the path with a copy
+/// button and keeps it in the Simulation section.
+#[test]
+fn the_recording_shows_rec_and_a_save_shows_its_path() {
+    let mut h = Harness::builder()
+        .with_size(vec2(1250.0, 1000.0))
+        .with_step_dt(1.0 / FPS)
+        .build_eframe(|cc| Sandbox::with_scene(cc, Scene::Rectangles).record(1.0));
+    for _ in 0..90 {
+        h.step();
+    }
+    assert!(
+        h.query_by_label_contains("REC 0:0").is_some(),
+        "the REC mark"
+    );
+    h.get_by_label("Save recording").click();
+    h.step();
+    h.step();
+    let path = h.state().last_saved.clone().expect("saved").0;
+    assert!(std::path::Path::new(&path).exists(), "{path}");
+    assert!(h.query_by_label("Copy path").is_some(), "the toast");
+    assert!(
+        h.query_all_by_label(&path).count() >= 1,
+        "the path is shown"
+    );
+    let _ = std::fs::remove_file(&path);
+}
