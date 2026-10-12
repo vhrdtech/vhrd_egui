@@ -327,8 +327,9 @@ impl Body {
     }
 
     /// Where it would be without vertex attraction: what captures are
-    /// decided on, so a pull never keeps itself alive.
-    fn rest_rect(&self) -> Rect {
+    /// decided on, so a pull never keeps itself alive, and the corners
+    /// corner snapping measures from.
+    pub fn rest_rect(&self) -> Rect {
         Rect {
             min: self.rect.min + self.stretch_lo,
             max: self.rect.max - self.stretch_hi,
@@ -377,7 +378,8 @@ pub struct Contact {
 pub struct Snap {
     /// The body whose corner it is.
     pub body: BodyId,
-    /// Where the corner is.
+    /// Where the corner is, as snapping measures it: a corner of
+    /// [`Body::rest_rect`] (one of [`World::snap_anchors`]).
     pub from: Vec2,
     /// Where it is pulled to: lined up with the other corner, the gap
     /// kept where the two face each other.
@@ -433,6 +435,9 @@ pub struct World {
     bodies: Vec<Body>,
     contacts: Vec<Contact>,
     snaps: Vec<Snap>,
+    /// Which corner of its body each snap is (for [`World::snaps`] after the
+    /// step).
+    snap_corners: Vec<(bool, bool)>,
     pulls: Vec<Pull>,
     yielder: Option<BodyId>,
     /// Steps in a row in which nothing moved more than a tremble.
@@ -462,6 +467,7 @@ impl World {
             bodies: Vec::new(),
             contacts: Vec::new(),
             snaps: Vec::new(),
+            snap_corners: Vec::new(),
             pulls: Vec::new(),
             yielder: None,
             quiet: 0,
@@ -1091,6 +1097,16 @@ impl World {
         }
         self.hard_pass();
         self.land_lifted();
+        // The snaps as the step leaves the bodies: from the corner where it
+        // is now, by the same way to go (the overlay draws them after the
+        // step; at the start of it they were one step behind, SETL-26).
+        for (snap, &ca) in self.snaps.iter_mut().zip(&self.snap_corners) {
+            if let Some(b) = self.bodies.iter().find(|b| b.id == snap.body) {
+                let now = corner(&b.rest_rect(), ca);
+                snap.to += now - snap.from;
+                snap.from = now;
+            }
+        }
         let mut moved = home_moved;
         if self.ramp > 0 {
             // still changing: not a moment to rest in
@@ -1271,8 +1287,24 @@ impl World {
     /// otherwise leave the body lined up with neither. A body under
     /// pressure (bulged) lets go in step with its bulge, and is no anchor
     /// for others either: it is about to slide out of line.
+    /// The corners corner snapping measures from, in world points: those of
+    /// [`Body::rest_rect`] of every body that snaps (no outline: a hexagon
+    /// lines up by its faces, SETL-20; not held). What the overlay draws the
+    /// snap range around.
+    pub fn snap_anchors(&self) -> Vec<(BodyId, Vec2)> {
+        self.bodies
+            .iter()
+            .filter(|b| !b.dragged && b.outline.is_none())
+            .flat_map(|b| {
+                let r = b.rest_rect();
+                CORNERS.map(|c| (b.id, corner(&r, c)))
+            })
+            .collect()
+    }
+
     fn snap_pass(&mut self) {
         self.snaps.clear();
+        self.snap_corners.clear();
         let p = self.params;
         for b in &mut self.bodies {
             b.snap_pull = Vec2::ZERO;
@@ -1300,7 +1332,7 @@ impl World {
             if a.dragged || hold[i] <= 0.0 || a.outline.is_some() {
                 continue;
             }
-            let mut winner: Option<(Snap, Vec2)> = None;
+            let mut winner: Option<(Snap, Vec2, (bool, bool))> = None;
             for ca in CORNERS {
                 let from = corner(&rest[i], ca);
                 // (distance, error, the other side's velocity, its hold)
@@ -1341,21 +1373,23 @@ impl World {
                 }
                 if let Some((dist, error, vel, other_hold)) = best {
                     let grip = (1.0 - dist / p.snap_range) * hold[i] * other_hold;
-                    if winner.is_none_or(|(w, _)| grip > w.grip) {
+                    if winner.is_none_or(|(w, ..)| grip > w.grip) {
                         let pull = (error * p.snap_stiffness + (vel - a.vel) * damping) * grip;
-                        let at = corner(&a.rect, ca);
+                        // drawn from where it is measured (SETL-26)
+                        let at = from;
                         let snap = Snap {
                             body: a.id,
                             from: at,
                             to: at + error,
                             grip,
                         };
-                        winner = Some((snap, pull));
+                        winner = Some((snap, pull, ca));
                     }
                 }
             }
-            if let Some((snap, pull)) = winner {
+            if let Some((snap, pull, ca)) = winner {
                 self.snaps.push(snap);
+                self.snap_corners.push(ca);
                 self.bodies[i].snap_pull = pull;
             }
         }

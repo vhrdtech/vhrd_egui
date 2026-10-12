@@ -1547,14 +1547,6 @@ impl Sandbox {
         let p = *self.world.params();
         let (thin, medium) = (tokens.stroke.thin, tokens.stroke.medium);
         let faint = |color: Color32, alpha: f32| color.gamma_multiply(alpha);
-        let corners = |r: egui::Rect| {
-            [
-                r.left_top(),
-                r.right_top(),
-                r.right_bottom(),
-                r.left_bottom(),
-            ]
-        };
         match effect {
             Effect::Gravity => {
                 let Some(side) = p.gravity_side else {
@@ -1631,14 +1623,14 @@ impl Sandbox {
                 }
             }
             Effect::Snap => {
-                for body in self.world.bodies() {
-                    for corner in corners(self.screen_rect(body.rect)) {
-                        painter.circle_stroke(
-                            corner,
-                            p.snap_range,
-                            Stroke::new(thin, faint(c.cat[3], 0.6)),
-                        );
-                    }
+                // where the solver measures from: a rectangle's corners
+                // without vertex attraction's stretch; hexagons do not snap
+                for (_, at) in self.world.snap_anchors() {
+                    painter.circle_stroke(
+                        self.screen_pos(at),
+                        p.snap_range,
+                        Stroke::new(thin, faint(c.cat[3], 0.6)),
+                    );
                 }
                 for snap in self.world.snaps() {
                     let (from, to) = (self.screen_pos(snap.from), self.screen_pos(snap.to));

@@ -61,6 +61,8 @@ versions follow [Semantic Versioning](https://semver.org/). Feature IDs refer to
 - ve_settle sandbox: "Save recording" / F9 writes the session's input (pointer, keys, window size, frame times)
   to a file under /tmp; `VE_SETTLE_REPLAY=<file> cargo test -p ve_settle --test sandbox replay` replays it
   (SETL-24).
+- ve_settle: `World::snap_anchors` (the corners corner snapping measures from) and `Body::rest_rect` public; the
+  sandbox draws the snap range around those, not around every box corner (SETL-26).
 - ve_frame: `FrameState::set_layout_size` / `layout_size`: a layout gives a hexagon in a grid its whole size, as
   a floating one has its window's (FRM-2, SETL-20).
 
@@ -112,6 +114,7 @@ versions follow [Semantic Versioning](https://semver.org/). Feature IDs refer to
 - ve_settle: a frame dragged into a resting one no longer throws it: what the held body pushes is no speed and
   counts against the glide a step lifted bodies push together (the user's recording: a big frame jumped 38 points
   in a frame) (SETL-25).
+- ve_settle: `World::snaps` start where the step left the corner, not where it was before it (SETL-26).
 - ve_settle: `World::max_overlap` measured a bulged rectangle against an outline by its pillow and reported
   overlaps that were not there; it measures the two as they meet (SETL-17).
 

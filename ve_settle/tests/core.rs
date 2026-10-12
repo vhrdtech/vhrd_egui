@@ -705,3 +705,74 @@ fn two_bodies_dropped_next_to_each_other_stay_together() {
         );
     }
 }
+
+/// SETL-26 (user, 12 Oct 2026: "the snap_range debug circles are inconsistent: some sit on their vertex,
+/// others noticeably away"): the overlay drew them at the corners of every body's box, but corner snapping
+/// measures from the box without vertex attraction's stretch and leaves outlines out (a hexagon's box corners
+/// are not its vertices). Now the overlay draws `World::snap_anchors`, and every snap starts at one of them.
+#[test]
+fn every_snap_starts_at_a_snap_anchor_and_hexagons_have_none() {
+    let p = Params {
+        home_stiffness: 0.0,
+        ..Params::default()
+    };
+    let mut w = World::new(Rect::from_min_size(Vec2::ZERO, Vec2::new(1200.0, 800.0)), p);
+    // a rectangle pair whose corners are near each other, one of them stretched by attraction, and a hexagon
+    let a = w.add(
+        BodyDesc::new(Vec2::new(300.0, 200.0), Vec2::new(200.0, 120.0))
+            .home(None)
+            .min_size(Vec2::new(150.0, 80.0)),
+    );
+    let b = w.add(
+        BodyDesc::new(
+            Vec2::new(300.0 + 206.0 + 9.0, 205.0),
+            Vec2::new(200.0, 124.0),
+        )
+        .home(None)
+        .min_size(Vec2::new(150.0, 80.0)),
+    );
+    let hex = w.add(
+        BodyDesc::new(Vec2::new(800.0, 300.0), Vec2::new(200.0, 173.0))
+            .home(None)
+            .outline(ve_settle::Poly::unit_hexagon()),
+    );
+    let mut seen = 0;
+    for _ in 0..600 {
+        if !w.step() {
+            break;
+        }
+        let anchors = w.snap_anchors();
+        assert!(
+            anchors.iter().all(|(id, _)| *id != hex),
+            "a hexagon does not snap"
+        );
+        for id in [a, b] {
+            let body = w.body(id).unwrap();
+            let r = body.rest_rect();
+            let mine: Vec<Vec2> = anchors
+                .iter()
+                .filter(|(i, _)| *i == id)
+                .map(|(_, v)| *v)
+                .collect();
+            assert_eq!(
+                mine,
+                vec![
+                    r.min,
+                    Vec2::new(r.max.x, r.min.y),
+                    Vec2::new(r.min.x, r.max.y),
+                    r.max
+                ]
+            );
+        }
+        for snap in w.snaps() {
+            seen += 1;
+            assert!(
+                anchors
+                    .iter()
+                    .any(|(id, v)| *id == snap.body && (*v - snap.from).length() < 1e-3),
+                "{snap:?} not at an anchor"
+            );
+        }
+    }
+    assert!(seen > 0, "the pair snapped");
+}

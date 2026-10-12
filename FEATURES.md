@@ -970,6 +970,15 @@ up and Packery's "others flow around the dragged one". No app uses it yet.
   gravity, which a slide never does (the body toward gravity's side does not slide, a slide past a wall is
   blocked). A honeycomb under gravity needs attraction as a force that can hold a body off the wall, as the
   rectangles' corner snap (1500) holds against gravity (600); open question for the user.
+- ✅ **SETL-26 Snap range circles where snapping measures** (user, 12 Oct 2026 16:22: "the snap_range debug
+  circles are inconsistent: some sit on their vertex, others noticeably away"). The overlay, not the solver:
+  it drew a circle at each corner of every body's current box, but corner snapping measures from the box
+  without vertex attraction's stretch (`Body::rest_rect`, now public; on purpose, SETL-12: where a body goes
+  must not depend on which edge it stretched), and leaves outlines out (a hexagon lines up by its faces,
+  SETL-20), so on hexagons the circles sat on box corners that are no vertex, and on stretched rectangles up to
+  the attraction range off. And the snap lines were drawn from where the corner was before the step moved it.
+  Now the overlay draws `World::snap_anchors` (the rest corners of the bodies that snap) and `World::snaps` are
+  moved to where the step left their corners. Test `every_snap_starts_at_a_snap_anchor_and_hexagons_have_none`.
 - ✅ **SETL-25 A drop at a wall or next to a widget stays there** (user, 12 Oct 2026 15:53: "still hard to snap
   two widgets together, they jump apart when dropped next to each other; a widget dropped at a wall still jumps
   out"). A body's speed is what it travelled in the step, contacts and walls included, so whatever a correction
