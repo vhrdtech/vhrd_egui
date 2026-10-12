@@ -10,6 +10,7 @@ round 4 (`git log 5bf29ef..HEAD`).
    there. User 12:17: no test needed for the tabs; both tab tests were dropped.
 2. Auto size changes OFF by default. DONE (6c3f008): `Frames::auto_pick` false; checkbox "Layout picks sizes".
 3. Vertex attraction on hexagons too weak even at strength 60; one strength should mean the same pull; a test
+   DONE (next commit): rigid hexagons line up the nearer end; open question to the user: nesting against gravity.
    comparing snap time and gap for a rect pair and a hex pair. IN PROGRESS, see below.
 4. Group drag: dragging one of a cluster stuck together (touching / attracted only to each other) moves the
    rest; propose detection and how to break one off (modifier key), then build. NOT STARTED. Id claimed:

@@ -1203,3 +1203,18 @@ fn the_overlay_layers_switch() {
     watch.frame(&mut h);
     assert!(h.state().overlay.shapes && h.state().overlay.pulls);
 }
+
+/// Round 4, item 3 (user: "vertex attraction on hexagons is too weak, even at strength 60"): in the
+/// Hexagons scene, at rest, every pull of the overlay is done (locked), as in the Rectangles scene. Before,
+/// 64 of 86 never locked: hexagons of slightly different widths stacked in a column were centred on each
+/// other (both ends 2 points off, for ever), and their bounding boxes were pulled though a rigid hexagon
+/// cannot follow its box.
+#[test]
+fn the_pulls_of_the_hexagons_scene_are_done_at_rest() {
+    let (h, _watch) = sandbox_in(Scene::Hexagons);
+    let world = &h.state().world;
+    let pulls = world.pulls();
+    assert!(pulls.len() >= 10, "faces lie against each other: {pulls:?}");
+    let open: Vec<_> = pulls.iter().filter(|p| !p.locked).collect();
+    assert!(open.is_empty(), "pulls not done at rest: {open:?}");
+}

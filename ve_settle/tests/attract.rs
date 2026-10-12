@@ -303,3 +303,40 @@ fn one_strength_lines_up_a_pair_of_rectangles_and_of_hexagons_alike() {
         );
     }
 }
+
+/// A rigid hexagon under one a little wider (faces 4 points apart in length) slides until one end of the
+/// face meets the vertex across, as a rectangle's corner snaps, instead of resting centred with both
+/// ends 2 points off (round 4, item 3).
+#[test]
+fn a_rigid_hexagon_lines_up_one_end_with_a_wider_neighbour() {
+    let p = Params {
+        home_stiffness: 0.0,
+        push_out: true,
+        max_speed: Params::default().glide_speed,
+        ..Params::default()
+    };
+    let mut w = world(900.0, 800.0, p);
+    let mut add = |x: f32, y: f32, size: Vec2| {
+        w.add(
+            BodyDesc::new(v(x + size.x * 0.5, y + size.y * 0.5), size)
+                .home(None)
+                .min_size(size)
+                .max_size(size)
+                .outline(ve_settle::Poly::unit_hexagon()),
+        )
+    };
+    let gap = p.gap;
+    let a = add(100.0, gap, v(310.0, 156.0));
+    // 5 points right of centred: its left end 7 from the one above, its right end 3
+    let b = add(109.0, gap + 156.0 + gap, v(302.0, 152.0));
+    settle(&mut w);
+    let (sa, sb) = (w.body(a).unwrap().shape(), w.body(b).unwrap().shape());
+    // flat-topped: the upper's bottom face is points 4 and 5, the lower's top face 0 and 1
+    let (pa, pb) = (sa.points(), sb.points());
+    let ends = [(pa[4].x - pb[0].x).abs(), (pa[3].x - pb[1].x).abs()];
+    assert!(
+        ends[0].min(ends[1]) < 0.3,
+        "no end lined up: {ends:?} {pa:?} {pb:?}"
+    );
+    assert!(w.pulls().iter().all(|p| p.locked), "{:?}", w.pulls());
+}

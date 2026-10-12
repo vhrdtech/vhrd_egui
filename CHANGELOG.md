@@ -91,6 +91,10 @@ versions follow [Semantic Versioning](https://semver.org/). Feature IDs refer to
   being parted, no longer stays 20 to 50 points deep in that neighbour: its glide per step is counted by where it
   ends up, not by the way it went over the solver's passes, what a wall takes back counts against it, and on a
   flat face it is a whole glide. 9 points for a few steps are left when the pushing body carries speed (SETL-17).
+- ve_settle: a rigid hexagon whose face is a little shorter or longer than the one it lies against lines up the
+  nearer end vertex to vertex instead of resting centred with both ends off; a rigid outline's bounding box is no
+  longer pulled (it could not follow): in the sandbox's Hexagons scene every pull locks at rest (22 of 86 before)
+  (SETL-20).
 - ve_settle: `World::max_overlap` measured a bulged rectangle against an outline by its pillow and reported
   overlaps that were not there; it measures the two as they meet (SETL-17).
 

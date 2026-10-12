@@ -954,6 +954,22 @@ up and Packery's "others flow around the dragged one". No app uses it yet.
   hexagon changes size after opening), so it stays off; a body pressed between two walls cannot slide and
   stays off by up to the range (the first test world, 300 wide, showed it); faces of a rectangle and an
   outline are not paired (they pressed rectangles into stepping down).
+  Round 4 (user: "too weak on hexagons, even at strength 60"; one strength should mean the same pull): alone, a
+  rigid hexagon pair lines up about as fast as a rigid rectangle pair at strength 12 and faster at 60
+  (`one_strength_lines_up_a_pair_of_rectangles_and_of_hexagons_alike`, `tests/attract.rs`), so the pull was not
+  weak. In the Hexagons scene 64 of 86 pulls never locked at rest: hexagons of slightly different widths
+  stacked in a column were centred on each other (both ends 2 points off for ever; no strength helps, a rigid
+  body cannot take the difference in length), and the corners of their bounding boxes were pulled, which a
+  rigid hexagon cannot follow. Now a rigid body lines up the *nearer end* of the face (vertex meets vertex, as
+  a rectangle's corner snaps; a stretchable one still splits the difference), its pulls show only what the
+  slide does, and a rigid outline's box gets no pulls: all 20 pulls of the scene lock at rest (tests
+  `a_rigid_hexagon_lines_up_one_end_with_a_wider_neighbour`, kittest
+  `the_pulls_of_the_hexagons_scene_are_done_at_rest`). Found, not changed: in the gravity-packed scene only
+  10 of 21 hexagons lie face to face with anything. Hexagons of different sizes at the wall meet tip to tip
+  (their slanted faces 22.7 apart, past gap + range 22), and to nest one would have to leave the wall against
+  gravity, which a slide never does (the body toward gravity's side does not slide, a slide past a wall is
+  blocked). A honeycomb under gravity needs attraction as a force that can hold a body off the wall, as the
+  rectangles' corner snap (1500) holds against gravity (600); open question for the user.
 - ✅ **SETL-21 Pushed stacks ran faster than a glide** (found in round 4, when the sandbox became rectangles
   only): a frame put back on top of a full stack, or a row's yielder (SETL-11) dropping out of a row a size
   switch overfilled, moved the frames under it 33 to 37 points a frame and faster each frame (the limit that reads

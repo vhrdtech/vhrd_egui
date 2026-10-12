@@ -322,6 +322,11 @@ impl Body {
         (self.rect.size()[axis] - self.min_size[axis]).max(0.0)
     }
 
+    /// Whether its size on `axis` is fixed (its minimum is its maximum).
+    fn rigid(&self, axis: Axis) -> bool {
+        self.max_size[axis] - self.min_size[axis] < 0.01
+    }
+
     fn shift(&mut self, d: Vec2) {
         self.rect = self.rect.translate(d);
     }
@@ -1370,12 +1375,27 @@ impl World {
                         continue;
                     }
                     partners.push(j);
+                    // What both ends are off alike; on a body that cannot
+                    // take a difference in length, the end nearer to its
+                    // place: that vertex meets the one across, as a
+                    // rectangle's corner snaps (round 4), instead of both
+                    // ends staying off by half the difference for ever.
                     let mut along = Vec2::ZERO;
+                    let mut nearest_end: Option<Vec2> = None;
                     let mut far = 0.0f32;
                     for &(_, _, n, from, to) in &pairs {
                         let error = to - from;
-                        along += (error - n * error.dot(n)) * (1.0 / pairs.len() as f32);
+                        let slide = error - n * error.dot(n);
+                        along += slide * (1.0 / pairs.len() as f32);
+                        if nearest_end.is_none_or(|e| slide.length() < e.length()) {
+                            nearest_end = Some(slide);
+                        }
                         far = far.max(error.length());
+                    }
+                    let a = &self.bodies[i];
+                    let rigid = Axis::BOTH.into_iter().all(|axis| a.rigid(axis));
+                    if rigid {
+                        along = nearest_end.unwrap_or(along);
                     }
                     // One face slides the body: the nearest. Toward gravity's
                     // side it is the other one's to slide: this one lies on
@@ -1424,14 +1444,27 @@ impl World {
                             }
                         }
                     }
-                    for (_, _, _, from, to) in pairs {
+                    for (_, _, n, from, to) in pairs {
                         // shown with the slide where it is done: by this body,
                         // or by the one nested under it
-                        let to = if (mine && !blocked) || sinks {
+                        let mut to = if (mine && !blocked) || sinks {
                             to
                         } else {
                             to - along
                         };
+                        // a rigid body's vertex is pulled no farther along
+                        // the face than the slide takes it: the rest is a
+                        // difference in length it cannot take
+                        if rigid {
+                            let error = to - from;
+                            let off = error - n * error.dot(n);
+                            let goes = if (mine && !blocked) || sinks {
+                                along
+                            } else {
+                                Vec2::ZERO
+                            };
+                            to -= off - goes;
+                        }
                         self.pulls.push(Pull {
                             body: self.bodies[i].id,
                             from,
@@ -1443,7 +1476,12 @@ impl World {
                 }
                 for axis in Axis::BOTH {
                     for high in [false, true] {
-                        if held[axis as usize][high as usize] {
+                        // A rigid outline's box edges go nowhere: its faces
+                        // line up by sliding (above), and a pull of its box
+                        // would only be drawn, never done.
+                        if held[axis as usize][high as usize]
+                            || (self.bodies[i].outline.is_some() && self.bodies[i].rigid(axis))
+                        {
                             continue;
                         }
                         // An edge that is pulled stays so a little beyond
