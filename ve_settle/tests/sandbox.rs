@@ -1349,24 +1349,32 @@ fn a_frame_dropped_near_the_bottom_stays_where_it_is_dropped() {
     assert!(most < 70.0, "a pushed one ran on {most}: {ran:?}");
 }
 
-/// The sandbox as a recording started it, replaying the recording's world steps, and the frames still to
-/// give it: the harness runs a few frames of its own while it is built (the recording has them too).
+/// The sandbox as a recording started it (from its snapshot, or the scene's start for an old recording),
+/// replaying the recording's world steps, and the frames still to give it: the harness runs a few frames of
+/// its own while it is built (the recording has them too).
 fn replaying(rec: &app::Recording) -> (App, &[app::RecFrame]) {
     let scene = Scene::ALL
         .into_iter()
         .find(|s| s.name() == rec.scene)
         .unwrap_or(Scene::Rectangles);
     let first = rec.frames.first().map_or([1250.0, 800.0], |f| f.size);
-    let dts: std::collections::VecDeque<f32> = rec.frames.iter().map(|f| f.dt).collect();
+    let replayed = rec.clone();
     let h = Harness::builder()
         .with_size(vec2(first[0], first[1]))
         .with_pixels_per_point(rec.pixels_per_point)
         .with_step_dt(1.0 / FPS)
         .build_eframe(move |cc| {
             let mut sandbox = Sandbox::with_scene(cc, scene);
-            sandbox.replay_dt = Some(dts);
+            sandbox.replay(&replayed);
             sandbox
         });
+    let mut h = h;
+    if rec.snapshot.is_some() {
+        // it waited: every recorded frame is still to come
+        h.state_mut().start_replay();
+        return (h, &rec.frames);
+    }
+    // an old recording, from the sandbox's start: the build's frames were its first ones
     let left = h.state().replay_dt.as_ref().map_or(0, |q| q.len());
     let ran = rec.frames.len() - left;
     (h, &rec.frames[ran..])
@@ -1406,17 +1414,69 @@ fn layout(h: &App) -> Vec<(u64, [f32; 4])> {
         .collect()
 }
 
-/// SETL-24: a session recorded in the sandbox (a drag and drop, a click on a tab, a wait) replays to the same
-/// world, body for body: what the user saw can be replayed in a test.
+/// Press the Rec button (or Stop) and run the frame that carries it out.
+fn press_rec(h: &mut App) {
+    let at = h
+        .query_by_label("Rec")
+        .or_else(|| h.query_by_label_contains("REC "))
+        .expect("the Rec button")
+        .rect()
+        .center();
+    h.hover_at(at);
+    h.step();
+    h.drag_at(at);
+    h.step();
+    h.drop_at(at);
+    h.step();
+    h.step();
+}
+
+/// SETL-24: a session recorded in the sandbox replays to the same world, body for body: what the user saw
+/// can be replayed in a test. Rec is pressed after the world was changed (a widget dragged, one pinned),
+/// so the replay has to start from the snapshot taken then, not from the scene's start.
 #[test]
 fn a_recorded_session_replays_to_the_same_world() {
     let mut h = Harness::builder()
         .with_size(vec2(1250.0, 800.0))
         .with_step_dt(1.0 / FPS)
-        .build_eframe(|cc| Sandbox::with_scene(cc, Scene::Rectangles).record(1.0));
+        .build_eframe(|cc| Sandbox::with_scene(cc, Scene::Rectangles));
     for _ in 0..120 {
         h.step();
     }
+    // before Rec: one widget moved by hand, one pinned
+    let first = find(&h, |d| {
+        !d.opts.hex && d.opts.footer && d.title() == "tiny LISMFX"
+    });
+    let r = h.state().screen_rect(body_rect(&h, first));
+    let from = pos2(r.center().x, r.max.y - 8.0);
+    h.hover_at(from);
+    h.step();
+    h.drag_at(from);
+    h.step();
+    for n in 1..=10 {
+        h.hover_at(from + vec2(30.0 * n as f32, 20.0 * n as f32));
+        h.step();
+    }
+    h.drop_at(from + vec2(300.0, 200.0));
+    for _ in 0..200 {
+        h.step();
+    }
+    let pinned = h
+        .state()
+        .frames
+        .dock
+        .iter()
+        .nth(4)
+        .expect("a fifth widget")
+        .id;
+    let body = h.state().frames.body(pinned).expect("a body");
+    h.state_mut().world.set_pinned(body, true);
+    assert!(
+        h.state().recording.is_none() && h.query_by_label("Rec").is_some(),
+        "idle"
+    );
+    press_rec(&mut h);
+    assert!(h.state().recording.is_some(), "recording");
     let slot = find(&h, |d| {
         !d.opts.hex && d.opts.footer && d.title() == "medium LISMFX"
     });
@@ -1438,7 +1498,12 @@ fn a_recorded_session_replays_to_the_same_world() {
     assert!(moved.length() > 50.0, "the drag moved it: {moved:?}");
     let recorded = layout(&h);
     let rec = h.state().recording.clone().expect("recording");
-    assert!(rec.frames.len() > 300, "{} frames", rec.frames.len());
+    assert!(rec.frames.len() > 200, "{} frames", rec.frames.len());
+    let snapshot = rec.snapshot.as_ref().expect("a snapshot");
+    assert!(
+        snapshot.widgets.iter().any(|w| w.pinned),
+        "the pin is in it"
+    );
     // through a file, as the sandbox writes it
     let json = serde_json::to_string(&rec).expect("json");
     let rec: app::Recording = serde_json::from_str(&json).expect("read back");
@@ -1450,7 +1515,7 @@ fn a_recorded_session_replays_to_the_same_world() {
     assert_eq!(layout(&h), recorded);
 }
 
-/// Replays the recording `VE_SETTLE_REPLAY` names (the sandbox's "Save recording" or F9 writes one under
+/// Replays the recording `VE_SETTLE_REPLAY` names (the sandbox's Rec and Stop, or F9, write one under
 /// /tmp) with the promises of [`Watch`] on every frame, and prints what each drop did: copy the file to
 /// `tests/recordings/` and turn what went wrong into an assertion here.
 #[test]
@@ -1592,24 +1657,40 @@ fn recording_a_frame_dragged_into_a_big_one_does_not_throw_it() {
     replay_watched(&rec);
 }
 
-/// SETL-24: while recording the arena shows a REC mark with the time; a save shows the path with a copy
-/// button and keeps it in the Simulation section.
+/// SETL-24 (user, 12 Oct 2026 19:58: a tape recorder): idle, a grey Rec button and nothing recorded; Rec
+/// turns it red with the time ("REC 0:01"), and only from then on is anything recorded; Stop saves, shows
+/// the path with a copy button (also in the Simulation section) and goes back to idle. F9 does the same.
 #[test]
-fn the_recording_shows_rec_and_a_save_shows_its_path() {
+fn the_recorder_records_from_rec_to_stop_and_shows_the_saved_path() {
     let mut h = Harness::builder()
         .with_size(vec2(1250.0, 1000.0))
         .with_step_dt(1.0 / FPS)
-        .build_eframe(|cc| Sandbox::with_scene(cc, Scene::Rectangles).record(1.0));
+        .build_eframe(|cc| Sandbox::with_scene(cc, Scene::Rectangles));
     for _ in 0..90 {
         h.step();
     }
+    assert!(h.state().recording.is_none(), "nothing recorded before Rec");
+    assert!(h.query_by_label("Rec").is_some(), "the idle button");
+    assert!(h.query_by_label_contains("REC ").is_none(), "no REC mark");
+    press_rec(&mut h);
+    for _ in 0..70 {
+        h.step();
+    }
     assert!(
-        h.query_by_label_contains("REC 0:0").is_some(),
-        "the REC mark"
+        h.query_by_label_contains("REC 0:01").is_some(),
+        "red, with the time"
     );
-    h.get_by_label("Save recording").click();
-    h.step();
-    h.step();
+    let frames = h
+        .state()
+        .recording
+        .as_ref()
+        .expect("recording")
+        .frames
+        .len();
+    assert!((70..80).contains(&frames), "{frames} frames, from Rec on");
+    press_rec(&mut h);
+    assert!(h.state().recording.is_none(), "stopped");
+    assert!(h.query_by_label("Rec").is_some(), "idle again");
     let path = h.state().last_saved.clone().expect("saved").0;
     assert!(std::path::Path::new(&path).exists(), "{path}");
     assert!(h.query_by_label("Copy path").is_some(), "the toast");
@@ -1617,6 +1698,16 @@ fn the_recording_shows_rec_and_a_save_shows_its_path() {
         h.query_all_by_label(&path).count() >= 1,
         "the path is shown"
     );
+    let _ = std::fs::remove_file(&path);
+
+    // F9 starts and stops it too
+    h.key_press(egui::Key::F9);
+    h.step();
+    assert!(h.state().recording.is_some(), "F9 starts");
+    h.key_press(egui::Key::F9);
+    h.step();
+    assert!(h.state().recording.is_none(), "F9 stops");
+    let path = h.state().last_saved.clone().expect("saved").0;
     let _ = std::fs::remove_file(&path);
 }
 

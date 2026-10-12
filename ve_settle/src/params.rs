@@ -4,6 +4,7 @@ use crate::geom::Side;
 
 /// Which sides of the world hold bodies in.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct Walls {
     /// The top side is closed.
     pub top: bool,
@@ -47,6 +48,8 @@ impl Walls {
 
 /// The solver's parameters. Lengths are in points, times in seconds.
 #[derive(Clone, Copy, Debug, PartialEq)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+#[cfg_attr(feature = "serde", serde(default))]
 pub struct Params {
     /// The side gravity pulls toward, `None` for no gravity.
     pub gravity_side: Option<Side>,

@@ -248,10 +248,20 @@ pub struct Sandbox {
     filled_for: f32,
     seq: u32,
     rng: u32,
-    /// Everything the sandbox was given since it started, frame by frame
-    /// (SETL-24): "Save recording" (or F9) writes it under /tmp, and
-    /// `tests/sandbox.rs` replays such a file. `None`: not recording.
+    /// What the sandbox was given since Rec was pressed, frame by frame,
+    /// and the world as it was then (SETL-24): Stop (or F9 again) writes it
+    /// under /tmp, and `tests/sandbox.rs` replays such a file. `None`: not
+    /// recording.
     pub recording: Option<Recording>,
+    /// Rec or Stop was pressed: carried out at the start of the next frame.
+    toggle_rec: bool,
+    /// A world to set up with the next frame, as a recording started it.
+    restore: Option<Snapshot>,
+    /// Where to scroll the arena to with the next frame (a restored world).
+    restore_scroll: Option<egui::Vec2>,
+    /// A replay from a snapshot waits for [`Sandbox::start_replay`]: the
+    /// frames a test harness runs while it is built are not the recording's.
+    replay_held: bool,
     /// Replaying a recording: the world's step of each frame, in order.
     pub replay_dt: Option<std::collections::VecDeque<f32>>,
     /// This frame's input, until its world step is known.
@@ -307,20 +317,86 @@ impl Sandbox {
             seq: 0,
             rng: 0x2545_f491,
             recording: None,
+            toggle_rec: false,
+            restore: None,
+            restore_scroll: None,
+            replay_held: false,
             replay_dt: None,
             taking: None,
             last_saved: None,
         }
     }
 
-    /// Start recording (the real app does; tests replay).
-    pub fn record(mut self, pixels_per_point: f32) -> Self {
+    /// Press Rec or Stop (as the button and F9 do): carried out at the start
+    /// of the next frame.
+    pub fn toggle_recording(&mut self) {
+        self.toggle_rec = true;
+    }
+
+    /// Start recording: the world as it is now goes into the recording, and
+    /// the sandbox sets itself up from that same snapshot, so a replay starts
+    /// from exactly where this one does (speeds and what is under way, a
+    /// widget lifted or gliding, start from rest in both).
+    fn start_recording(&mut self, ctx: &egui::Context) {
+        let snapshot = self.snapshot();
+        self.restore = Some(snapshot.clone());
         self.recording = Some(Recording {
             scene: self.scene.name().to_owned(),
-            pixels_per_point,
+            pixels_per_point: ctx.pixels_per_point(),
+            snapshot: Some(snapshot),
             frames: Vec::new(),
         });
-        self
+    }
+
+    /// The world as it is: parameters, scroll, and every widget in it with
+    /// its frame state, body, and pin. Floating widgets are left out.
+    pub fn snapshot(&self) -> Snapshot {
+        let widgets = self
+            .frames
+            .dock
+            .iter()
+            .filter(|slot| !slot.frame.placement.floating)
+            .filter_map(|slot| {
+                let body = self.world.body(self.frames.body(slot.id)?)?;
+                let r = body.rect;
+                // what is saved of the frame's state, as a replay reads it back
+                let frame = serde_json::to_value(slot.frame)
+                    .and_then(serde_json::from_value)
+                    .unwrap_or_default();
+                Some(SnapWidget {
+                    widget: slot.widget.clone(),
+                    frame,
+                    rect: [r.min.x, r.min.y, r.max.x, r.max.y],
+                    pinned: body.pinned,
+                })
+            })
+            .collect();
+        Snapshot {
+            params: *self.world.params(),
+            sideways: self.sideways,
+            scroll: [self.scroll_x, self.scroll],
+            seq: self.seq,
+            rng: self.rng,
+            widgets,
+        }
+    }
+
+    #[allow(dead_code)] // tests/sandbox.rs
+    /// Replay `rec`: its world steps, and its world from the start (a
+    /// recording without a snapshot starts at the scene's start).
+    pub fn replay(&mut self, rec: &Recording) {
+        self.replay_dt = Some(rec.frames.iter().map(|f| f.dt).collect());
+        if let Some(snapshot) = &rec.snapshot {
+            self.restore = Some(snapshot.clone());
+            self.seeded = true;
+            self.replay_held = true;
+        }
+    }
+
+    #[allow(dead_code)] // tests/sandbox.rs
+    /// Start a replay from a snapshot: the next frame is the recording's first.
+    pub fn start_replay(&mut self) {
+        self.replay_held = false;
     }
 
     /// Write the recording to a new file under /tmp; its path, or why not.
@@ -508,6 +584,44 @@ impl Sandbox {
         self.due += self.full_count(a).saturating_sub(self.count());
     }
 
+    /// Set the world up as `snapshot` has it, before it is shown (Rec, or a
+    /// replay's start): every widget measured and put at its body's place and
+    /// size, pinned as it was, the parameters as they were (at once, no
+    /// ramp), scrolled as it was.
+    fn restore_frames(
+        &mut self,
+        ui: &mut Ui,
+        mut draw: impl FnMut(&mut Ui, &mut Slot<Demo>) -> Option<FrameAction>,
+        snapshot: Snapshot,
+    ) {
+        self.drop_frames();
+        self.world = World::new(from_rect(self.arena), snapshot.params);
+        (self.sideways, self.seq, self.rng) = (snapshot.sideways, snapshot.seq, snapshot.rng);
+        (self.seeded, self.due, self.selected) = (true, 0, None);
+        self.filled_for = self.arena.width() * self.arena.height();
+        self.restore_scroll = Some(vec2(snapshot.scroll[0], snapshot.scroll[1]));
+        for w in snapshot.widgets {
+            let r = Rect {
+                min: Vec2::new(w.rect[0], w.rect[1]),
+                max: Vec2::new(w.rect[2], w.rect[3]),
+            };
+            let seat = seat(&w.widget);
+            let slot = self.frames.add(&mut self.world, w.widget, seat, r.center());
+            if let Some(s) = self.frames.dock.get_mut(slot) {
+                s.frame = w.frame;
+                s.frame.placement = Default::default();
+            }
+            self.frames.measure(ui, slot, &mut draw);
+            self.frames.place(&mut self.world, slot, r.center());
+            if let Some(body) = self.frames.body(slot) {
+                self.world.set_limits(body, r.size(), r.size());
+                self.world.put(body, r.center(), r.size());
+                self.world.set_pinned(body, w.pinned);
+            }
+        }
+        self.frames.hold_picks();
+    }
+
     /// The framed widgets that are due, before they are shown once: each
     /// is added, its frame measured out of sight in all its sizes, then
     /// they are laid out in rows that fit at their normal size; what a
@@ -668,15 +782,6 @@ impl Sandbox {
             {
                 self.add_frame(None);
             }
-            let recording = self.recording.is_some();
-            if ui
-                .add_enabled(recording, Button::new("Save recording"))
-                .on_hover_text("The sandbox records all the time, from its start (the REC mark in the arena's corner says for how long): every frame's pointer, wheel, keys, modifier keys, window size and time step, not the picture. Saving writes all of it, from the start up to now, to a new file under /tmp (also with F9); the arena shows the path with a copy button. A test replays it frame by frame (`VE_SETTLE_REPLAY=<file> cargo test -p ve_settle --test sandbox replay -- --nocapture`), so something odd you just saw can become a failing test: save right after it happened. Restart the sandbox to start a fresh recording.")
-                .on_disabled_hover_text("Not available: this sandbox is not recording (a test or a replay).")
-                .clicked()
-            {
-                self.message = self.saved_message(ui.ctx());
-            }
             let chosen = self.selected.is_some();
             let none = "Not available: no widget is selected. Click one first.";
             if ui
@@ -691,7 +796,7 @@ impl Sandbox {
         if let Some((path, _)) = self.last_saved.clone() {
             ui.horizontal(|ui| {
                 ui.weak("Last recording:")
-                    .on_hover_text("The recording saved last (Save recording / F9).");
+                    .on_hover_text("The recording saved last (Rec, then Stop; or F9 twice). A test replays it: VE_SETTLE_REPLAY=<file> cargo test -p ve_settle --test sandbox replay -- --nocapture");
                 ve_basics::copyable_label(ui, path.clone());
                 if ui
                     .small_button("Copy")
@@ -1183,14 +1288,14 @@ impl Sandbox {
         // (a discarded one) has the frame's input once more and does not step the world again (SETL-24).
         let again = ui.ctx().current_pass_index() > 0;
         let dt = match &mut self.replay_dt {
-            _ if again => 0.0,
+            _ if again || self.replay_held => 0.0,
             Some(queue) => queue.pop_front().unwrap_or(0.0),
             None => ui.input(|i| i.stable_dt).min(1.0 / 30.0),
         };
         if let Some(frame) = &mut self.taking {
             frame.dt = dt;
         }
-        if !self.paused && !again {
+        if !self.paused && !again && !self.replay_held {
             let began = std::time::Instant::now();
             self.world.advance(dt);
             self.solver_ms = began.elapsed().as_secs_f32() * 1000.0;
@@ -1296,6 +1401,13 @@ impl Sandbox {
         };
         let mut picked = Vec::new();
         let mut clicked = None;
+        if self.arena.width() >= SEED_SIZE.x
+            && self.arena.height() >= SEED_SIZE.y
+            && !self.replay_held
+            && let Some(snapshot) = self.restore.take()
+        {
+            self.restore_frames(ui, &mut draw, snapshot);
+        }
         if self.due > 0 {
             self.seed_frames(ui, &mut draw);
         }
@@ -1306,22 +1418,25 @@ impl Sandbox {
         // scroll.
         let walls = self.world.params().walls;
         let width = self.content_width();
-        ScrollArea::new([!walls.right, !walls.bottom])
+        let mut scroll_area = ScrollArea::new([!walls.right, !walls.bottom])
             .id_salt("settle_frames_scroll")
-            .auto_shrink(false)
-            .show(&mut area, |ui| {
-                ui.set_min_size(vec2(width, height));
-                // the world is in screen points with the view scrolled to the top left
-                let origin = ui.max_rect().min;
-                (self.scroll_x, self.scroll) = (arena.min.x - origin.x, arena.min.y - origin.y);
-                let view = View {
-                    offset: vec2(-self.scroll_x, -self.scroll),
-                    clip: arena.intersect(ui.clip_rect()),
-                };
-                let shown = self.frames.show(ui, &mut self.world, view, &mut draw);
-                picked.extend(shown.picked);
-                clicked = shown.clicked;
-            });
+            .auto_shrink(false);
+        if let Some(offset) = self.restore_scroll.take() {
+            scroll_area = scroll_area.scroll_offset(offset);
+        }
+        scroll_area.show(&mut area, |ui| {
+            ui.set_min_size(vec2(width, height));
+            // the world is in screen points with the view scrolled to the top left
+            let origin = ui.max_rect().min;
+            (self.scroll_x, self.scroll) = (arena.min.x - origin.x, arena.min.y - origin.y);
+            let view = View {
+                offset: vec2(-self.scroll_x, -self.scroll),
+                clip: arena.intersect(ui.clip_rect()),
+            };
+            let shown = self.frames.show(ui, &mut self.world, view, &mut draw);
+            picked.extend(shown.picked);
+            clicked = shown.clicked;
+        });
         if let Some(body) = clicked.and_then(|slot| self.frames.body(slot)) {
             self.selected = Some(body);
         }
@@ -2161,7 +2276,72 @@ fn pin_button(ui: &mut Ui, pinned: bool) -> egui::Response {
         .on_hover_text(tip)
 }
 
+/// The Rec button: a grey dot and "Rec" while idle, a red dot and the
+/// time recorded ("REC 0:12") while recording, where a click stops.
+fn rec_button(ui: &mut Ui, tokens: &Tokens, since: Option<u64>, enabled: bool) -> egui::Response {
+    let c = &tokens.colors;
+    let text = match since {
+        Some(s) => format!("REC {}:{:02}", s / 60, s % 60),
+        None => "Rec".to_owned(),
+    };
+    let galley = ui.painter().layout_no_wrap(
+        text.clone(),
+        egui::FontId::proportional(13.0),
+        if since.is_some() {
+            c.text
+        } else {
+            c.text_muted
+        },
+    );
+    let size = vec2(galley.size().x + 34.0, 26.0);
+    let sense = if enabled {
+        Sense::click()
+    } else {
+        Sense::hover()
+    };
+    let (rect, r) = ui.allocate_exact_size(size, sense);
+    r.widget_info(|| egui::WidgetInfo::labeled(egui::WidgetType::Button, enabled, text.clone()));
+    if ui.is_rect_visible(rect) {
+        let p = ui.painter();
+        let fill = if r.hovered() {
+            c.surface_raised
+        } else {
+            c.surface
+        };
+        p.rect(
+            rect,
+            rect.height() / 2.0,
+            fill,
+            Stroke::new(1.0, c.line),
+            StrokeKind::Inside,
+        );
+        let dot = rect.left_center() + vec2(14.0, 0.0);
+        let color = if since.is_some() {
+            c.crit
+        } else {
+            c.text_muted
+        };
+        p.circle_filled(dot, 5.0, color);
+        p.galley(dot + vec2(10.0, -galley.size().y / 2.0), galley, c.text);
+    }
+    let tip = if since.is_some() {
+        "Record what you do, to turn a bug into a test. Click (or F9) to stop and save."
+    } else {
+        "Record what you do, to turn a bug into a test. (F9)"
+    };
+    r.on_hover_cursor(egui::CursorIcon::PointingHand)
+        .on_hover_text(tip)
+        .on_disabled_hover_text("Not available while a recording is replayed.")
+}
+
 impl Sandbox {
+    /// Stop recording: save it and say where.
+    fn stop_recording(&mut self, ctx: &egui::Context) -> String {
+        let said = self.saved_message(ctx);
+        self.recording = None;
+        said
+    }
+
     fn saved_message(&mut self, ctx: &egui::Context) -> String {
         match self.save_recording() {
             Ok(path) => {
@@ -2173,32 +2353,35 @@ impl Sandbox {
         }
     }
 
-    /// The REC mark in the arena's top right corner, and for a few seconds
-    /// after a save the path with a copy button (SETL-24).
+    /// The tape recorder in the arena's top right corner (SETL-24): a grey
+    /// round Rec button; while recording red with the time, and a click
+    /// stops and saves. For a few seconds after a save the path with a copy
+    /// button.
     fn recording_ui(&mut self, ui: &mut Ui, tokens: &Tokens) {
-        let Some(rec) = &self.recording else {
-            return;
-        };
         let now = ui.input(|i| i.time);
-        let since = rec.frames.first().map_or(0.0, |f| now - f.time).max(0.0) as u64;
+        let replaying = self.replay_dt.is_some();
+        let since = self
+            .recording
+            .as_ref()
+            .map(|rec| rec.frames.first().map_or(0.0, |f| now - f.time).max(0.0) as u64);
+        if since.is_some() {
+            // the time runs on
+            ui.ctx()
+                .request_repaint_after(std::time::Duration::from_millis(500));
+        }
         let corner = self.arena.right_top() + vec2(-12.0, 10.0);
+        let mut pressed = false;
         egui::Area::new(egui::Id::new("ve_settle_rec"))
             .fixed_pos(corner)
             .pivot(egui::Align2::RIGHT_TOP)
             .order(egui::Order::Foreground)
             .show(ui.ctx(), |ui| {
-                egui::Frame::popup(ui.style()).show(ui, |ui| {
-                    ui.horizontal(|ui| {
-                        let (dot, _) = ui.allocate_exact_size(vec2(10.0, 10.0), Sense::hover());
-                        ui.painter().circle_filled(dot.center(), 4.5, tokens.colors.crit);
-                        ui.label(format!("REC {}:{:02}", since / 60, since % 60));
-                    });
-                })
-                .response
-                .on_hover_text(format!(
-                    "Recording since the sandbox started, {since} s: every frame's input (pointer, keys, window size, time step), not the picture. Save recording (Simulation) or F9 writes all of it to a file under /tmp; a test replays it."
-                ));
+                let r = rec_button(ui, tokens, since, !replaying);
+                pressed = r.clicked();
             });
+        if pressed {
+            self.toggle_recording();
+        }
         let Some((path, at)) = self.last_saved.clone() else {
             return;
         };
@@ -2234,7 +2417,37 @@ pub struct Recording {
     /// The scene it started with (its tab's name).
     pub scene: String,
     pub pixels_per_point: f32,
+    /// The world when Rec was pressed. `None` in the first recordings, which
+    /// ran from the sandbox's start: they replay from the scene's start.
+    #[serde(default)]
+    pub snapshot: Option<Snapshot>,
     pub frames: Vec<RecFrame>,
+}
+
+/// The world when Rec was pressed: what a replay starts from.
+#[derive(Clone, Debug, serde::Serialize, serde::Deserialize)]
+pub struct Snapshot {
+    /// The parameters as they were set.
+    pub params: Params,
+    /// Whether the scene grew to the right.
+    pub sideways: bool,
+    /// How far the arena was scrolled, right and down, points.
+    pub scroll: [f32; 2],
+    /// The next demo widget's number and the generator's state: what "Add widget" adds next.
+    pub seq: u32,
+    pub rng: u32,
+    pub widgets: Vec<SnapWidget>,
+}
+
+/// A widget in the world when Rec was pressed.
+#[derive(Clone, Debug, serde::Serialize, serde::Deserialize)]
+pub struct SnapWidget {
+    pub widget: Demo,
+    /// Its frame's state (size switch, fold); it sits in the world.
+    pub frame: ve_frame::FrameState,
+    /// Its body: min x, min y, max x, max y, world points.
+    pub rect: [f32; 4],
+    pub pinned: bool,
 }
 
 /// One frame of input.
@@ -2400,11 +2613,21 @@ impl eframe::App for Sandbox {
     fn ui(&mut self, ui: &mut Ui, _frame: &mut eframe::Frame) {
         let ctx = ui.ctx().clone();
         let bg = ui.tokens().colors.bg;
-        // a pass egui runs again has the same input: recorded once
-        if self.recording.is_some() && ctx.current_pass_index() == 0 {
-            self.taking = Some(ctx.input(RecFrame::of));
-            if ctx.input(|i| i.key_pressed(egui::Key::F9)) {
-                self.message = self.saved_message(&ctx);
+        // a pass egui runs again has the same input: handled and recorded once
+        if ctx.current_pass_index() == 0 {
+            if self.replay_dt.is_none() && ctx.input(|i| i.key_pressed(egui::Key::F9)) {
+                self.toggle_rec = true;
+            }
+            if std::mem::take(&mut self.toggle_rec) {
+                if self.recording.is_some() {
+                    self.message = self.stop_recording(&ctx);
+                } else if self.replay_dt.is_none() {
+                    self.start_recording(&ctx);
+                    self.message = "Recording: Stop (or F9) saves it.".to_owned();
+                }
+            }
+            if self.recording.is_some() {
+                self.taking = Some(ctx.input(RecFrame::of));
             }
         }
         self.perf.frame(std::mem::take(&mut self.solver_ms));

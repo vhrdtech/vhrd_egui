@@ -7,6 +7,7 @@ versions follow [Semantic Versioning](https://semver.org/). Feature IDs refer to
 
 ### Added
 
+- ve_settle: optional feature `serde`: `Params`, `Walls` and `Side` serialize (SETL-24).
 - ve_settle: free cells and the honeycomb (SETL-28): `World::free_cells`, `World::pack_cell` (lay outlines out
   one by one, hexagons nest as a honeycomb), `World::release_to_cell` and `Params::nest_range` (80; a lone
   outline let go near a free cell glides into it), `Body::nesting`. The sandbox's Hexagons scene is packed cell
@@ -75,6 +76,9 @@ versions follow [Semantic Versioning](https://semver.org/). Feature IDs refer to
 
 ### Changed
 
+- ve_settle sandbox: recording is a tape recorder: nothing is recorded until Rec (the round button in the
+  arena's corner, or F9); Stop saves and shows the path. A recording carries a snapshot of the world at Rec and
+  the replay starts from it; recordings without one still replay from the scene's start (SETL-24).
 - ve_frame: `WidgetFrame::menu` adds a group of entries each time it is called instead of replacing the last
   (FRM-10).
 

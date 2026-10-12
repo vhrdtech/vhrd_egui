@@ -10,15 +10,18 @@ repository.workspace = true
 [features]
 # `ve_settle::frames`: ve_frame widgets on the bodies of a world (SETL-7). Pulls in egui and ve_frame.
 frame = ["dep:egui", "dep:ve_frame"]
+# Serialize and Deserialize for `Params`, `Walls` and `Side` (the sandbox's recordings keep the parameters).
+serde = ["dep:serde"]
 
-# The core has no dependencies at all; egui and ve_frame come with the `frame` feature only.
+# The core has no dependencies at all; egui and ve_frame come with the `frame` feature only, serde with `serde`.
 [dependencies]
 egui = { workspace = true, optional = true }
 ve_frame = { path = "../ve_frame", version = "0.22", optional = true }
+serde = { workspace = true, optional = true }
 
 [dev-dependencies]
 # the sandbox and its tests use the `frame` feature
-ve_settle = { path = ".", features = ["frame"] }
+ve_settle = { path = ".", features = ["frame", "serde"] }
 egui.workspace = true
 serde.workspace = true
 serde_json = "1"

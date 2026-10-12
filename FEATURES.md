@@ -1065,6 +1065,21 @@ up and Packery's "others flow around the dragged one". No app uses it yet.
   input from its second frame on, but the test harness runs 6 frames of its own while it is built, so every
   event came 5 frames late (it showed once the pin's tooltips came in); the replay now starts where the build
   left off. A pass egui runs again (a discarded one) neither steps the world nor records a second frame.
+  A tape recorder since 12 Oct 2026 19:58 (user: "how is recording supposed to work?", the always-on recording
+  confused): nothing is recorded until **Rec** (a grey round button in the arena's top right corner, or F9);
+  then it is red with the time ("REC 0:12"), and **Stop** (the same button, or F9) saves to
+  `/tmp/ve_settle-recording-<unix time>.json` and shows "Saved <path>" with Copy path (the last path stays in
+  the Simulation section). Tooltip: "Record what you do, to turn a bug into a test." A recording now carries a
+  `Snapshot` of the world when Rec was pressed (scene, parameters, window size, scroll, every widget in the
+  world with its frame state, body rectangle and pin, the next widget's number and the generator's state), and
+  the live sandbox sets itself up from that same snapshot at Rec, so a replay starts from exactly that state
+  (speeds and what was under way, a widget lifted or gliding, start from rest in both; floating widgets are
+  left out). A replay from a snapshot waits for the test to start it (`Sandbox::replay`, `start_replay`), so
+  the harness's own first frames do not swallow the recording's first ones. Recordings without a snapshot
+  (the first format) replay from the scene's start as before; `tests/recordings/drag-into-a-big-frame.json`
+  still does. `ve_settle` got an optional `serde` feature (Params, Walls, Side) for the snapshot. Kittests
+  `the_recorder_records_from_rec_to_stop_and_shows_the_saved_path` (idle, Rec, the time, Stop, the path, F9),
+  `a_recorded_session_replays_to_the_same_world` (Rec pressed after a widget was moved and one pinned).
 - ✅ **SETL-23 Friction by default; a drop near the edge stays** (user, 12 Oct 2026 15:33: "more friction by
   default, it feels like a glass table"; 15:35 bug: "dropping a widget close to the arena edge, or past/below
   it, makes it jump away from the edge"). Bodies get their speed from how far the contacts moved them, so frames

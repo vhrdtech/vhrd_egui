@@ -199,6 +199,7 @@ impl Rect {
 
 /// A side of the world; gravity pulls toward one.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub enum Side {
     /// Toward smaller y (gravity up: the dash default).
     Top,
