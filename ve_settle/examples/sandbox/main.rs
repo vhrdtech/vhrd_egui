@@ -26,7 +26,8 @@ fn main() -> eframe::Result {
             } else {
                 app::Sandbox::new(cc)
             };
-            Ok(Box::new(sandbox))
+            // everything it is given is kept, for "Save recording" (SETL-24)
+            Ok(Box::new(sandbox.record(cc.egui_ctx.pixels_per_point())))
         }),
     )
 }

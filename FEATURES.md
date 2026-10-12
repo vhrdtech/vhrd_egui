@@ -970,6 +970,15 @@ up and Packery's "others flow around the dragged one". No app uses it yet.
   gravity, which a slide never does (the body toward gravity's side does not slide, a slide past a wall is
   blocked). A honeycomb under gravity needs attraction as a force that can hold a body off the wall, as the
   rectangles' corner snap (1500) holds against gravity (600); open question for the user.
+- ✅ **SETL-24 Record and replay the sandbox** (user, 12 Oct 2026 15:53: "the headless case you fixed is not the
+  one the user hits"; capture the real drop and turn it into a failing test). The sandbox keeps everything it is
+  given from its start (`Recording`: scene, pixels per point; per frame egui's time, the world's step, the window
+  size, the modifier keys, pointer / wheel / key events); "Save recording" (or F9) writes it to
+  `/tmp/ve_settle-recording-<unix time>.json` and says where. `VE_SETTLE_REPLAY=<file> cargo test -p ve_settle
+  --test sandbox replay -- --nocapture` replays it frame by frame with the kittest promises (no overlap, no jump)
+  and prints each drop; a recording worth keeping goes to `ve_settle/tests/recordings/` with an assertion.
+  Kittest `a_recorded_session_replays_to_the_same_world`: a recorded drag and drop replays to the same world body
+  for body. Not recorded: typed text (the sandbox has no text fields), touch.
 - ✅ **SETL-23 Friction by default; a drop near the edge stays** (user, 12 Oct 2026 15:33: "more friction by
   default, it feels like a glass table"; 15:35 bug: "dropping a widget close to the arena edge, or past/below
   it, makes it jump away from the edge"). Bodies get their speed from how far the contacts moved them, so frames

@@ -248,6 +248,14 @@ pub struct Sandbox {
     filled_for: f32,
     seq: u32,
     rng: u32,
+    /// Everything the sandbox was given since it started, frame by frame
+    /// (SETL-24): "Save recording" (or F9) writes it under /tmp, and
+    /// `tests/sandbox.rs` replays such a file. `None`: not recording.
+    pub recording: Option<Recording>,
+    /// Replaying a recording: the world's step of each frame, in order.
+    pub replay_dt: Option<std::collections::VecDeque<f32>>,
+    /// This frame's input, until its world step is known.
+    taking: Option<RecFrame>,
 }
 
 impl Sandbox {
@@ -295,7 +303,32 @@ impl Sandbox {
             filled_for: 0.0,
             seq: 0,
             rng: 0x2545_f491,
+            recording: None,
+            replay_dt: None,
+            taking: None,
         }
+    }
+
+    /// Start recording (the real app does; tests replay).
+    pub fn record(mut self, pixels_per_point: f32) -> Self {
+        self.recording = Some(Recording {
+            scene: self.scene.name().to_owned(),
+            pixels_per_point,
+            frames: Vec::new(),
+        });
+        self
+    }
+
+    /// Write the recording to a new file under /tmp; its path, or why not.
+    pub fn save_recording(&self) -> Result<std::path::PathBuf, String> {
+        let rec = self.recording.as_ref().ok_or("not recording")?;
+        let secs = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map_or(0, |d| d.as_secs());
+        let path = std::env::temp_dir().join(format!("ve_settle-recording-{secs}.json"));
+        let json = serde_json::to_string(rec).map_err(|e| e.to_string())?;
+        std::fs::write(&path, json).map_err(|e| format!("{}: {e}", path.display()))?;
+        Ok(path)
     }
 
     /// Where a world point is on the screen.
@@ -604,6 +637,15 @@ impl Sandbox {
                 .clicked()
             {
                 self.add_frame(None);
+            }
+            let recording = self.recording.is_some();
+            if ui
+                .add_enabled(recording, Button::new("Save recording"))
+                .on_hover_text("Write everything the sandbox was given since it started (pointer, keys, window size, the time of each frame) to a new file under /tmp, also with F9. A test replays it frame by frame (`VE_SETTLE_REPLAY=<file> cargo test -p ve_settle --test sandbox replay`), so something odd you just saw can become a failing test: save right after it happened.")
+                .on_disabled_hover_text("Not available: this sandbox is not recording (a test or a replay).")
+                .clicked()
+            {
+                self.message = self.saved_message();
             }
             let chosen = self.selected.is_some();
             let none = "Not available: no widget is selected. Click one first.";
@@ -1086,8 +1128,15 @@ impl Sandbox {
         if self.seeded {
             self.top_up();
         }
+        // the world's step this frame: as the frame took, or as the recording says
+        let dt = match &mut self.replay_dt {
+            Some(queue) => queue.pop_front().unwrap_or(0.0),
+            None => ui.input(|i| i.stable_dt).min(1.0 / 30.0),
+        };
+        if let Some(frame) = &mut self.taking {
+            frame.dt = dt;
+        }
         if !self.paused {
-            let dt = ui.input(|i| i.stable_dt).min(1.0 / 30.0);
             let began = std::time::Instant::now();
             self.world.advance(dt);
             self.solver_ms = began.elapsed().as_secs_f32() * 1000.0;
@@ -1940,10 +1989,196 @@ impl Perf {
     }
 }
 
+impl Sandbox {
+    fn saved_message(&self) -> String {
+        match self.save_recording() {
+            Ok(path) => {
+                eprintln!("ve_settle sandbox: recording saved to {}", path.display());
+                format!("Recording saved to {}", path.display())
+            }
+            Err(e) => format!("Recording not saved: {e}"),
+        }
+    }
+}
+
+/// What the sandbox was given since it started, to replay it (SETL-24).
+#[derive(Clone, Debug, serde::Serialize, serde::Deserialize)]
+pub struct Recording {
+    /// The scene it started with (its tab's name).
+    pub scene: String,
+    pub pixels_per_point: f32,
+    pub frames: Vec<RecFrame>,
+}
+
+/// One frame of input.
+#[derive(Clone, Debug, Default, serde::Serialize, serde::Deserialize)]
+pub struct RecFrame {
+    /// egui's clock, seconds.
+    pub time: f64,
+    /// The world's step this frame, seconds.
+    pub dt: f32,
+    /// The window's size, points.
+    pub size: [f32; 2],
+    /// Modifier keys held: 1 Alt, 2 Ctrl, 4 Shift, 8 Mac Cmd, 16 Command.
+    pub mods: u8,
+    pub events: Vec<RecEvent>,
+}
+
+/// An input event the sandbox reacts to.
+#[derive(Clone, Debug, serde::Serialize, serde::Deserialize)]
+pub enum RecEvent {
+    Move([f32; 2]),
+    Button {
+        at: [f32; 2],
+        /// 0 primary, 1 secondary, 2 middle, 3 and 4 extra
+        button: u8,
+        pressed: bool,
+    },
+    Gone,
+    /// `unit`: 0 points, 1 lines, 2 pages
+    Wheel {
+        unit: u8,
+        delta: [f32; 2],
+    },
+    Key {
+        name: String,
+        pressed: bool,
+    },
+}
+
+fn mods_bits(m: egui::Modifiers) -> u8 {
+    m.alt as u8
+        | (m.ctrl as u8) << 1
+        | (m.shift as u8) << 2
+        | (m.mac_cmd as u8) << 3
+        | (m.command as u8) << 4
+}
+
+#[allow(dead_code)] // the replay in tests/sandbox.rs
+fn mods_of(bits: u8) -> egui::Modifiers {
+    egui::Modifiers {
+        alt: bits & 1 != 0,
+        ctrl: bits & 2 != 0,
+        shift: bits & 4 != 0,
+        mac_cmd: bits & 8 != 0,
+        command: bits & 16 != 0,
+    }
+}
+
+impl RecFrame {
+    /// This frame's input as egui has it.
+    fn of(i: &egui::InputState) -> Self {
+        let size = i.viewport_rect().size();
+        Self {
+            time: i.time,
+            dt: 0.0,
+            size: [size.x, size.y],
+            mods: mods_bits(i.modifiers),
+            events: i.raw.events.iter().filter_map(RecEvent::of).collect(),
+        }
+    }
+
+    #[allow(dead_code)] // the replay in tests/sandbox.rs
+    pub fn modifiers(&self) -> egui::Modifiers {
+        mods_of(self.mods)
+    }
+}
+
+impl RecEvent {
+    fn of(e: &egui::Event) -> Option<Self> {
+        use egui::{Event, MouseWheelUnit, PointerButton};
+        Some(match e {
+            Event::PointerMoved(p) => Self::Move([p.x, p.y]),
+            Event::PointerButton {
+                pos,
+                button,
+                pressed,
+                ..
+            } => Self::Button {
+                at: [pos.x, pos.y],
+                button: match button {
+                    PointerButton::Primary => 0,
+                    PointerButton::Secondary => 1,
+                    PointerButton::Middle => 2,
+                    PointerButton::Extra1 => 3,
+                    PointerButton::Extra2 => 4,
+                },
+                pressed: *pressed,
+            },
+            Event::PointerGone => Self::Gone,
+            Event::MouseWheel { unit, delta, .. } => Self::Wheel {
+                unit: match unit {
+                    MouseWheelUnit::Point => 0,
+                    MouseWheelUnit::Line => 1,
+                    MouseWheelUnit::Page => 2,
+                },
+                delta: [delta.x, delta.y],
+            },
+            Event::Key { key, pressed, .. } => Self::Key {
+                name: key.name().to_owned(),
+                pressed: *pressed,
+            },
+            _ => return None,
+        })
+    }
+
+    /// The event to give egui again, with the modifiers `mods` held.
+    #[allow(dead_code)] // the replay in tests/sandbox.rs
+    pub fn to_egui(&self, mods: egui::Modifiers) -> Option<egui::Event> {
+        use egui::{Event, MouseWheelUnit, PointerButton, TouchPhase};
+        Some(match self {
+            Self::Move([x, y]) => Event::PointerMoved(pos2(*x, *y)),
+            Self::Button {
+                at: [x, y],
+                button,
+                pressed,
+            } => Event::PointerButton {
+                pos: pos2(*x, *y),
+                button: match button {
+                    1 => PointerButton::Secondary,
+                    2 => PointerButton::Middle,
+                    3 => PointerButton::Extra1,
+                    4 => PointerButton::Extra2,
+                    _ => PointerButton::Primary,
+                },
+                pressed: *pressed,
+                modifiers: mods,
+            },
+            Self::Gone => Event::PointerGone,
+            Self::Wheel {
+                unit,
+                delta: [x, y],
+            } => Event::MouseWheel {
+                unit: match unit {
+                    1 => MouseWheelUnit::Line,
+                    2 => MouseWheelUnit::Page,
+                    _ => MouseWheelUnit::Point,
+                },
+                delta: vec2(*x, *y),
+                phase: TouchPhase::Move,
+                modifiers: mods,
+            },
+            Self::Key { name, pressed } => Event::Key {
+                key: egui::Key::from_name(name)?,
+                physical_key: None,
+                pressed: *pressed,
+                repeat: false,
+                modifiers: mods,
+            },
+        })
+    }
+}
+
 impl eframe::App for Sandbox {
     fn ui(&mut self, ui: &mut Ui, _frame: &mut eframe::Frame) {
         let ctx = ui.ctx().clone();
         let bg = ui.tokens().colors.bg;
+        if self.recording.is_some() {
+            self.taking = Some(ctx.input(RecFrame::of));
+            if ctx.input(|i| i.key_pressed(egui::Key::F9)) {
+                self.message = self.saved_message();
+            }
+        }
         self.perf.frame(std::mem::take(&mut self.solver_ms));
         Panel::left("settle_controls")
             .resizable(false)
@@ -1960,6 +2195,9 @@ impl eframe::App for Sandbox {
         // (content that lives by itself needs its clock, though).
         if !self.paused && !self.world.is_at_rest() {
             ctx.request_repaint();
+        }
+        if let (Some(rec), Some(frame)) = (&mut self.recording, self.taking.take()) {
+            rec.frames.push(frame);
         }
     }
 }

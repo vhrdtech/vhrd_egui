@@ -1346,3 +1346,135 @@ fn a_frame_dropped_near_the_bottom_stays_where_it_is_dropped() {
     // pushed out of its way they glide on 48 points (89 with drag 0)
     assert!(most < 60.0, "a pushed one ran on {most}: {ran:?}");
 }
+
+/// The sandbox as a recording started it, before its first frame, replaying the recording's world steps.
+fn replaying(rec: &app::Recording) -> App {
+    let scene = Scene::ALL
+        .into_iter()
+        .find(|s| s.name() == rec.scene)
+        .unwrap_or(Scene::Rectangles);
+    let first = rec.frames.first().map_or([1250.0, 800.0], |f| f.size);
+    let dts: std::collections::VecDeque<f32> = rec.frames.iter().map(|f| f.dt).collect();
+    Harness::builder()
+        .with_size(vec2(first[0], first[1]))
+        .with_pixels_per_point(rec.pixels_per_point)
+        .with_step_dt(1.0 / FPS)
+        .build_eframe(move |cc| {
+            let mut sandbox = Sandbox::with_scene(cc, scene);
+            sandbox.replay_dt = Some(dts);
+            sandbox
+        })
+}
+
+/// Give the app the recorded frame `frame` (the first one is the frame the harness runs when it is built).
+fn replay_frame(h: &mut App, frame: &app::RecFrame) {
+    let size = h.ctx.input(|i| i.viewport_rect().size());
+    if size != vec2(frame.size[0], frame.size[1]) {
+        h.set_size(vec2(frame.size[0], frame.size[1]));
+    }
+    let mods = frame.modifiers();
+    let held = h.ctx.input(|i| i.modifiers);
+    let input = h.input_mut();
+    if held != mods {
+        input.events.push(egui::Event::ModifiersChanged(mods));
+    }
+    input.time = Some(frame.time);
+    input
+        .events
+        .extend(frame.events.iter().filter_map(|e| e.to_egui(mods)));
+    h.step();
+}
+
+/// Where each body is, to compare two runs.
+fn layout(h: &App) -> Vec<(u64, [f32; 4])> {
+    let world = &h.state().world;
+    world
+        .bodies()
+        .iter()
+        .map(|b| {
+            (
+                b.id.0,
+                [b.rect.min.x, b.rect.min.y, b.rect.max.x, b.rect.max.y],
+            )
+        })
+        .collect()
+}
+
+/// SETL-24: a session recorded in the sandbox (a drag and drop, a click on a tab, a wait) replays to the same
+/// world, body for body: what the user saw can be replayed in a test.
+#[test]
+fn a_recorded_session_replays_to_the_same_world() {
+    let mut h = Harness::builder()
+        .with_size(vec2(1250.0, 800.0))
+        .with_step_dt(1.0 / FPS)
+        .build_eframe(|cc| Sandbox::with_scene(cc, Scene::Rectangles).record(1.0));
+    for _ in 0..120 {
+        h.step();
+    }
+    let slot = find(&h, |d| {
+        !d.opts.hex && d.opts.footer && d.title() == "medium LISMFX"
+    });
+    let r = h.state().screen_rect(body_rect(&h, slot));
+    let from = pos2(r.center().x, r.max.y - 8.0);
+    h.hover_at(from);
+    h.step();
+    h.drag_at(from);
+    h.step();
+    for n in 1..=20 {
+        h.hover_at(from + vec2(-14.0 * n as f32, 9.0 * n as f32));
+        h.step();
+    }
+    h.drop_at(from + vec2(-280.0, 180.0));
+    for _ in 0..200 {
+        h.step();
+    }
+    let moved = h.state().screen_rect(body_rect(&h, slot)).center() - r.center();
+    assert!(moved.length() > 50.0, "the drag moved it: {moved:?}");
+    let recorded = layout(&h);
+    let rec = h.state().recording.clone().expect("recording");
+    assert!(rec.frames.len() > 300, "{} frames", rec.frames.len());
+    // through a file, as the sandbox writes it
+    let json = serde_json::to_string(&rec).expect("json");
+    let rec: app::Recording = serde_json::from_str(&json).expect("read back");
+
+    let mut h = replaying(&rec);
+    for frame in &rec.frames[1..] {
+        replay_frame(&mut h, frame);
+    }
+    assert_eq!(layout(&h), recorded);
+}
+
+/// Replays the recording `VE_SETTLE_REPLAY` names (the sandbox's "Save recording" or F9 writes one under
+/// /tmp) with the promises of [`Watch`] on every frame, and prints what each drop did: copy the file to
+/// `tests/recordings/` and turn what went wrong into an assertion here.
+#[test]
+fn replay() {
+    let Ok(path) = std::env::var("VE_SETTLE_REPLAY") else {
+        return;
+    };
+    let json = std::fs::read_to_string(&path).expect("the recording");
+    let rec: app::Recording = serde_json::from_str(&json).expect("a recording");
+    let mut h = replaying(&rec);
+    let mut watch = Watch {
+        seen: HashMap::new(),
+        worst_dip: 0.0,
+    };
+    for (n, frame) in rec.frames.iter().enumerate().skip(1) {
+        let dragged: Vec<BodyId> = h
+            .state()
+            .world
+            .bodies()
+            .iter()
+            .filter(|b| b.dragged)
+            .map(|b| b.id)
+            .collect();
+        replay_frame(&mut h, frame);
+        watch.look(&h);
+        let world = &h.state().world;
+        for id in dragged {
+            if let Some(b) = world.body(id).filter(|b| !b.dragged) {
+                eprintln!("frame {n}: #{} dropped at {:?}", id.0, b.rect);
+            }
+        }
+    }
+}

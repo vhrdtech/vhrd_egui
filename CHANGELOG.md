@@ -58,6 +58,9 @@ versions follow [Semantic Versioning](https://semver.org/). Feature IDs refer to
 - ve_settle: `Params::drag` (default 0.05): a drag on speed above 120 points/s, so a frame pushed aside runs on
   about 62 points instead of about 113 like on glass; settling under gravity is unchanged;
   sandbox slider "drag" (0 is the old feel) (SETL-23).
+- ve_settle sandbox: "Save recording" / F9 writes the session's input (pointer, keys, window size, frame times)
+  to a file under /tmp; `VE_SETTLE_REPLAY=<file> cargo test -p ve_settle --test sandbox replay` replays it
+  (SETL-24).
 - ve_frame: `FrameState::set_layout_size` / `layout_size`: a layout gives a hexagon in a grid its whole size, as
   a floating one has its window's (FRM-2, SETL-20).
 
