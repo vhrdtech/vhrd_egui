@@ -970,7 +970,7 @@ up and Packery's "others flow around the dragged one". No app uses it yet.
   gravity, which a slide never does (the body toward gravity's side does not slide, a slide past a wall is
   blocked). A honeycomb under gravity needs attraction as a force that can hold a body off the wall, as the
   rectangles' corner snap (1500) holds against gravity (600); open question for the user.
-- 🚧 **SETL-25 A drop at a wall or next to a widget stays there** (user, 12 Oct 2026 15:53: "still hard to snap
+- ✅ **SETL-25 A drop at a wall or next to a widget stays there** (user, 12 Oct 2026 15:53: "still hard to snap
   two widgets together, they jump apart when dropped next to each other; a widget dropped at a wall still jumps
   out"). A body's speed is what it travelled in the step, contacts and walls included, so whatever a correction
   moved it became speed. *Walls, fixed:* a frame dragged past the arena's left edge (over the controls) or right
@@ -984,8 +984,13 @@ up and Packery's "others flow around the dragged one". No app uses it yet.
   points in each other); a limit for the dropped body and what it touches (no change measured). *Neighbours,
   open:* not reproduced headless: let go closer than the gap or a little farther, two bodies part at most 2
   points more than the drag had pushed them and rest flush (`two_bodies_dropped_next_to_each_other_stay_together`,
-  `tests/core.rs`); drops into the packed scene are pushed around by the frames under them, which is not a
-  jump. Needs the user's recording (SETL-24).
+  `tests/core.rs`). *Neighbours, fixed from the user's recording* (16:17, `tests/recordings/drag-into-a-big-frame.json`):
+  a small frame dragged up into a big one resting under it. The held body pushes what it overlaps out of its way
+  a glide a step (`drag_pass`); that push was kept as the big frame's speed, so on the next step it coasted a
+  glide and was pushed another: 38 points in one frame, about 70 off in all. Now what a held body pushes
+  (`shoved`) is no speed, and counts against the glide a step that lifted bodies push together (`spend_net`,
+  SETL-21). Kittest `recording_a_frame_dragged_into_a_big_one_does_not_throw_it` replays the recording (fails
+  before: the 38-point jump at frame 891).
 - ✅ **SETL-24 Record and replay the sandbox** (user, 12 Oct 2026 15:53: "the headless case you fixed is not the
   one the user hits"; capture the real drop and turn it into a failing test). The sandbox keeps everything it is
   given from its start (`Recording`: scene, pixels per point; per frame egui's time, the world's step, the window

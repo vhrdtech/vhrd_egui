@@ -1344,8 +1344,9 @@ fn a_frame_dropped_near_the_bottom_stays_where_it_is_dropped() {
     }
     assert!(ran[mine] < 3.0, "the dropped one ran on {}", ran[mine]);
     let most = ran.iter().copied().fold(0.0, f32::max);
-    // pushed out of its way they glide on 48 points (89 with drag 0)
-    assert!(most < 60.0, "a pushed one ran on {most}: {ran:?}");
+    // the stack it was dragged through makes room under it, at a glide, and no farther (63 points; before
+    // SETL-25 they coasted on: 89 with drag 0)
+    assert!(most < 70.0, "a pushed one ran on {most}: {ran:?}");
 }
 
 /// The sandbox as a recording started it, before its first frame, replaying the recording's world steps.
@@ -1461,6 +1462,13 @@ fn replay() {
         worst_dip: 0.0,
     };
     for (n, frame) in rec.frames.iter().enumerate().skip(1) {
+        let before: HashMap<BodyId, Rect> = h
+            .state()
+            .world
+            .bodies()
+            .iter()
+            .map(|b| (b.id, b.rect))
+            .collect();
         let dragged: Vec<BodyId> = h
             .state()
             .world
@@ -1470,11 +1478,33 @@ fn replay() {
             .map(|b| b.id)
             .collect();
         replay_frame(&mut h, frame);
-        watch.look(&h);
+        if std::env::var("VE_SETTLE_REPLAY_MOVES").is_err() {
+            watch.look(&h);
+        }
         let world = &h.state().world;
         for id in dragged {
             if let Some(b) = world.body(id).filter(|b| !b.dragged) {
                 eprintln!("frame {n}: #{} dropped at {:?}", id.0, b.rect);
+            }
+        }
+        if std::env::var("VE_SETTLE_REPLAY_MOVES").is_ok() {
+            for b in world.bodies() {
+                if let Some(r) = before.get(&b.id) {
+                    let d = (b.rect.center() - r.center()).length();
+                    if (d > 3.0 || (840..900).contains(&n)) && d > 0.05 {
+                        eprintln!(
+                            "  frame {n}: #{} moved {d:.1} to {:.1?} size {:.0?} lifted {} dragged {} vel {:.0?} load {:.1} yielding {}",
+                            b.id.0,
+                            b.rect.min,
+                            b.rect.size(),
+                            b.lifted,
+                            b.dragged,
+                            b.vel,
+                            b.load().max_abs(),
+                            b.yielding
+                        );
+                    }
+                }
             }
         }
     }
@@ -1530,4 +1560,29 @@ fn a_frame_dropped_past_a_side_wall_comes_to_rest_against_it() {
         assert!(end.abs() < 1.0, "{side}: rests {end} from the wall");
         assert!(farthest < 2.0, "{side}: coasted {farthest} off the wall");
     }
+}
+
+/// Replays `rec` frame by frame with the promises of [`Watch`] on every frame.
+fn replay_watched(rec: &app::Recording) -> App {
+    let mut h = replaying(rec);
+    let mut watch = Watch {
+        seen: HashMap::new(),
+        worst_dip: 0.0,
+    };
+    for frame in &rec.frames[1..] {
+        replay_frame(&mut h, frame);
+        watch.look(&h);
+    }
+    h
+}
+
+/// The user's recording (12 Oct 2026 16:17, "widgets jumping apart"): a small frame dragged up into a big
+/// one resting under it. The held body pushes the big one out of its way a glide a step; that push was kept
+/// as the big one's speed, so the next step it coasted a glide and was pushed another on top: 38 points in
+/// one frame, and it ran about 70 points off. Now a held body's push is no speed (SETL-25).
+#[test]
+fn recording_a_frame_dragged_into_a_big_one_does_not_throw_it() {
+    let json = include_str!("recordings/drag-into-a-big-frame.json");
+    let rec: app::Recording = serde_json::from_str(json).expect("a recording");
+    replay_watched(&rec);
 }

@@ -272,6 +272,8 @@ pub struct Body {
     /// Steps since it was let go and landed (0 until it has landed):
     /// [`LANDED_STEPS`] and more for a body never dropped.
     landed: u32,
+    /// How far a held body pushed it this step (SETL-25).
+    shoved: Vec2,
     /// How far the walls (their gap lines, `walls_pass`) moved it this step
     /// (SETL-25).
     walled: Vec2,
@@ -642,6 +644,7 @@ impl World {
             nudged: false,
             coast: Vec2::ZERO,
             walled: Vec2::ZERO,
+            shoved: Vec2::ZERO,
             landed: LANDED_STEPS,
             prev: rect,
         });
@@ -1028,6 +1031,7 @@ impl World {
             b.slid = 0.0;
             b.net = Vec2::ZERO;
             b.walled = Vec2::ZERO;
+            b.shoved = Vec2::ZERO;
             // (counted from a drop: one just added is not settling in)
             b.landed = if b.lifted && b.landed < LANDED_STEPS {
                 0
@@ -1141,6 +1145,16 @@ impl World {
                     let excess = (w.abs() / dt - stopping).max(0.0);
                     let along = vel[axis] * s;
                     vel[axis] = s * (along - excess).max(along.min(0.0));
+                }
+                // Pushed out of a held body's way: as far as that went, it
+                // is no speed (a glide out from under it, never two).
+                for axis in Axis::BOTH {
+                    let w = b.shoved[axis];
+                    if w != 0.0 {
+                        let s = w.signum();
+                        let along = vel[axis] * s;
+                        vel[axis] = s * (along - w.abs() / dt).max(along.min(0.0));
+                    }
                 }
                 b.vel = vel;
             }
@@ -1946,11 +1960,20 @@ impl World {
                     normal: hit.normal,
                     depth: hit.depth,
                 });
+                // What the held body pushes is part of the glide a step that
+                // lifted bodies push all together (SETL-21).
                 let push = hit.normal * hit.depth.min(glide);
+                // It is a place to go, not speed: kept as speed, the body
+                // coasted a glide and was pushed another on top, 38 points
+                // a frame (SETL-25).
                 if a.dragged {
-                    b.shift(push);
+                    let d = spend_net(b, push, glide);
+                    b.shift(d);
+                    b.shoved += d;
                 } else {
-                    a.shift(-push);
+                    let d = spend_net(a, -push, glide);
+                    a.shift(d);
+                    a.shoved += d;
                 }
             }
         }

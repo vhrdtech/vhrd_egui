@@ -109,6 +109,9 @@ versions follow [Semantic Versioning](https://semver.org/). Feature IDs refer to
 - ve_settle: a frame dropped past a side wall (or within its gap) comes to rest against the wall instead of
   coasting 35 points off it: a wall gives a body that is not pressed, or was just let go, no speed beyond
   stopping it (SETL-25).
+- ve_settle: a frame dragged into a resting one no longer throws it: what the held body pushes is no speed and
+  counts against the glide a step lifted bodies push together (the user's recording: a big frame jumped 38 points
+  in a frame) (SETL-25).
 - ve_settle: `World::max_overlap` measured a bulged rectangle against an outline by its pillow and reported
   overlaps that were not there; it measures the two as they meet (SETL-17).
 
