@@ -135,7 +135,8 @@ pub struct WidgetFrame<'a> {
     info: Option<UiFn<'a>>,
     sizes: Option<SizeHints>,
     moves: Option<&'a Moves>,
-    menu: Option<UiFn<'a>>,
+    menu: Vec<UiFn<'a>>,
+    header_items: Vec<(f32, UiFn<'a>)>,
     footer: Option<UiFn<'a>>,
     left: Option<UiFn<'a>>,
     right: Option<UiFn<'a>>,
@@ -167,7 +168,8 @@ impl<'a> WidgetFrame<'a> {
             info: None,
             sizes: None,
             moves: None,
-            menu: None,
+            menu: Vec::new(),
+            header_items: Vec::new(),
             footer: None,
             left: None,
             right: None,
@@ -225,9 +227,19 @@ impl<'a> WidgetFrame<'a> {
         self
     }
 
-    /// The widget's own entries at the end of the ☰ menu.
+    /// Entries of the widget's own (or the app's) at the end of the ☰ menu. Called again, it adds more:
+    /// a widget's entries and the host app's go into the same menu, each group after a separator.
     pub fn menu(mut self, add_entries: impl FnOnce(&mut Ui) + 'a) -> Self {
-        self.menu = Some(Box::new(add_entries));
+        self.menu.push(Box::new(add_entries));
+        self
+    }
+
+    /// Something of the app's in the header, right of the title and left of the ⓘ: a toggle, a badge, an
+    /// icon button. `width` is the room it takes, points, so a narrow header keeps room for it. Called again,
+    /// it adds more, left to right. The frame knows nothing of what it is: the app draws it and reacts to it
+    /// (a layout pins the frame, a dashboard stars it).
+    pub fn header_item(mut self, width: f32, add: impl FnOnce(&mut Ui) + 'a) -> Self {
+        self.header_items.push((width, Box::new(add)));
         self
     }
 
@@ -919,7 +931,7 @@ impl<'a> WidgetFrame<'a> {
     }
 
     fn has_menu(&self) -> bool {
-        self.moves.is_some() || self.menu.is_some()
+        self.moves.is_some() || !self.menu.is_empty()
     }
 
     /// The least width the header needs: its controls and the start of the title.
@@ -942,6 +954,9 @@ impl<'a> WidgetFrame<'a> {
         }
         if self.has_menu() {
             width += MENU_W + GAP;
+        }
+        for (item, _) in &self.header_items {
+            width += item + GAP;
         }
         if self.foldable {
             width += FOLD + GAP;
@@ -991,6 +1006,7 @@ impl<'a> WidgetFrame<'a> {
         let title_shown = self.title_shown;
         let (about, info, sizes, moves, extra) =
             (self.about, self.info, self.sizes, self.moves, self.menu);
+        let items = self.header_items;
         h.with_layout(Layout::right_to_left(Align::Center), |h| {
             if has_menu {
                 let placement = state.placement;
@@ -1016,8 +1032,8 @@ impl<'a> WidgetFrame<'a> {
                             if let Some(moves) = moves {
                                 picked = menu::ui(ui, moves, placement);
                             }
-                            if let Some(add) = extra {
-                                if moves.is_some() {
+                            for (n, add) in extra.into_iter().enumerate() {
+                                if moves.is_some() || n > 0 {
                                     ui.separator();
                                 }
                                 add(ui);
@@ -1068,6 +1084,13 @@ impl<'a> WidgetFrame<'a> {
                         ui.separator();
                         add(ui);
                     }
+                });
+            }
+            // right to left: the last one added first, so they read in the order they were added
+            for (width, add) in items.into_iter().rev() {
+                h.scope(|h| {
+                    h.set_max_width(width);
+                    add(h);
                 });
             }
             h.with_layout(Layout::left_to_right(Align::Center), |h| {

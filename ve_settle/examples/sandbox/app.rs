@@ -1214,8 +1214,49 @@ impl Sandbox {
         let height = self.content_height();
         let moves = self.frames.dock.moves(None).close(Ok(()));
         let (look, land) = (self.look, self.land);
+        // The pin (SETL-27): the sandbox's own item in each frame's header and entry in its menu, through the
+        // frame's generic hooks; ve_frame knows nothing of pinning. The world is busy while the frames are
+        // drawn, so clicks are collected and applied after.
+        let pinned: std::collections::HashSet<SlotId> = self
+            .frames
+            .dock
+            .iter()
+            .filter(|s| {
+                let body = self.frames.body(s.id).and_then(|b| self.world.body(b));
+                body.is_some_and(|b| b.pinned)
+            })
+            .map(|s| s.id)
+            .collect();
+        let mut toggles: Vec<SlotId> = Vec::new();
+        let mut pin_icon = |ui: &mut Ui, id: SlotId| {
+            if pin_button(ui, pinned.contains(&id)).clicked() {
+                toggles.push(id);
+            }
+        };
+        let mut menu_toggles: Vec<SlotId> = Vec::new();
+        let mut pin_entry = |ui: &mut Ui, id: SlotId| {
+            let (label, tip) = if pinned.contains(&id) {
+                (
+                    "Unpin",
+                    "Let it move again: an ordinary widget, pushed, pulled and dragged like the others.",
+                )
+            } else {
+                (
+                    "Pin in place",
+                    "Freeze it where it is: the others rest against it like a wall, it is not dragged, and it stays behind when its group is dragged.",
+                )
+            };
+            if ui.button(label).on_hover_text(tip).clicked() {
+                menu_toggles.push(id);
+                ui.close();
+            }
+        };
         let mut draw = |ui: &mut Ui, slot: &mut Slot<Demo>| {
-            playground::draw_at(ui, slot, (&moves, look, land, true)).0
+            let host = playground::Host {
+                header: Some((PIN_W, &mut pin_icon)),
+                menu: Some(&mut pin_entry),
+            };
+            playground::draw_hosted(ui, slot, (&moves, look, land, true), host).0
         };
         let mut picked = Vec::new();
         let mut clicked = None;
@@ -1264,6 +1305,13 @@ impl Sandbox {
                 });
                 picked.extend(dock.show_windows(ui, viewport, &mut draw));
             });
+        drop(draw);
+        for id in toggles.into_iter().chain(menu_toggles) {
+            if let Some(body) = self.frames.body(id) {
+                let now = self.world.body(body).is_some_and(|b| b.pinned);
+                self.world.set_pinned(body, !now);
+            }
+        }
         for (id, action) in picked {
             self.apply(id, action);
         }
@@ -1998,6 +2046,43 @@ impl Perf {
             solver_max: solver[solver.len() - 1],
         })
     }
+}
+
+/// The room the pin takes in a frame's header, points.
+const PIN_W: f32 = 14.0;
+
+/// The pin in a frame's header: a drawing pin, filled while the widget is pinned.
+fn pin_button(ui: &mut Ui, pinned: bool) -> egui::Response {
+    let (rect, r) = ui.allocate_exact_size(vec2(PIN_W, PIN_W), Sense::click());
+    let label = if pinned { "unpin" } else { "pin" };
+    r.widget_info(|| egui::WidgetInfo::labeled(egui::WidgetType::Button, true, label));
+    if ui.is_rect_visible(rect) {
+        let tokens = ui.tokens();
+        let color = if pinned {
+            tokens.colors.accent
+        } else if r.hovered() {
+            tokens.colors.text
+        } else {
+            tokens.colors.text_muted
+        };
+        let p = ui.painter();
+        let (c, s) = (rect.center(), PIN_W / 14.0);
+        let head = c + vec2(0.0, -2.5 * s);
+        let stroke = Stroke::new(1.2, color);
+        if pinned {
+            p.circle_filled(head, 3.2 * s, color);
+        } else {
+            p.circle_stroke(head, 3.0 * s, stroke);
+        }
+        p.line_segment([head + vec2(0.0, 3.0 * s), c + vec2(0.0, 5.5 * s)], stroke);
+    }
+    let tip = if pinned {
+        "Pinned: it stays exactly where it is, the others rest against it like a wall, dragging it does nothing, and it stays behind when its group is dragged. Click to unpin."
+    } else {
+        "Pin it in place: frozen where it is, the others rest against it like a wall. Also in the ☰ menu."
+    };
+    r.on_hover_cursor(egui::CursorIcon::PointingHand)
+        .on_hover_text(tip)
 }
 
 impl Sandbox {

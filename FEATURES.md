@@ -508,6 +508,14 @@ switch (P2605#8oct-1205). ve_settle (SETL-5, SETL-7) later reads the same shapes
   `ve_app/tests/ui.rs`. Not checked on a real second monitor: the tests run with egui's embedded viewports.
 - 📋 **FRM-8 Port tpm_mesh_dash to the frame**: its `Panel`s become `WidgetFrame`s; then `Panel` and `PanelSize`
   go to *Dropped and superseded*.
+- ✅ **FRM-10 The app's own UI in the header and menu** (user, 12 Oct 2026 16:20: "keep it generic"): the frame
+  knows nothing of pins, stars or layouts; `WidgetFrame::header_item(width, ui)` puts the app's item right of
+  the title (its room counted in the header's least width; several, left to right), and `WidgetFrame::menu` now
+  adds a group each time it is called (a widget's entries and the host's share the ☰ menu). `ve_frame/README.md`
+  documents the hooks; the playground's ☆ (on in the app, off in the tests so their snapshots stay) shows one,
+  kittest `an_apps_header_item_works`; the playground's `draw_hosted` / `Host` let a hosting app (the ve_settle
+  sandbox) add its own. The layout hooks added for ve_settle (`set_auto_pick`, `body_rect`, `open_size`,
+  `is_hex`, `set_layout_size`, `fold_in_grid`) are about laying frames out, not about settle, and stay.
 - 💡 **FRM-9 Open ends of the frame**: a hexagon can't `fill` a tile; egui 0.36 has no reduced-motion flag of
   its own, so the glow, the hop and folding follow `animation_time`; in a wrapping grid the size switch can
   still move sideways when its cell changes row (only scrolling keeps it); the pointer fallback at a screen edge
@@ -970,6 +978,16 @@ up and Packery's "others flow around the dragged one". No app uses it yet.
   gravity, which a slide never does (the body toward gravity's side does not slide, a slide past a wall is
   blocked). A honeycomb under gravity needs attraction as a force that can hold a body off the wall, as the
   rectangles' corner snap (1500) holds against gravity (600); open question for the user.
+- ✅ **SETL-27 Pin a widget in place** (user, 12 Oct 2026 16:19). `World::set_pinned` / `Body::pinned`: a
+  pinned body never moves, gives, stretches or slides; in every contact pass the other one takes the whole push
+  (as at a hard wall), a held body may lie over it and it stays, it is never the yielder, snaps nothing itself
+  (others snap to it). `World::grab` does nothing on it, `World::cluster` leaves it out: dragging a group leaves
+  a pinned member behind (pin, drag the rest away, unpin: a second way to break a group, besides Alt).
+  Dragging a pinned frame: refused, with the cursor "not allowed" and a tooltip at the pointer saying how to
+  unpin (chosen over moving it and keeping it pinned: a pin that follows the pointer is no pin). In the sandbox
+  the pin is its own item in each frame's header (a drawing pin, filled while pinned) and "Pin in place" /
+  "Unpin" in the ☰ menu, both through ve_frame's generic hooks (FRM-10). A recording keeps it (the clicks are
+  in it). Tests `tests/pin.rs`, kittest `a_pinned_frame_stays_put_and_unpins_from_its_menu`. Not done: a key.
 - ✅ **SETL-26 Snap range circles where snapping measures** (user, 12 Oct 2026 16:22: "the snap_range debug
   circles are inconsistent: some sit on their vertex, others noticeably away"). The overlay, not the solver:
   it drew a circle at each corner of every body's current box, but corner snapping measures from the box

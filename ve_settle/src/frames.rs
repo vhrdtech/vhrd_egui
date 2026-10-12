@@ -855,6 +855,19 @@ impl<W> Frames<W> {
                 self.grab_offset = rect.center() - pressed;
             }
         }
+        // A pinned frame stays put (SETL-27): the drag does nothing, and says why.
+        if grip.dragged() && world.body(body_id).is_some_and(|b| b.pinned) {
+            grip.ctx.set_cursor_icon(egui::CursorIcon::NotAllowed);
+            egui::Tooltip::always_open(
+                ui.ctx().clone(),
+                ui.layer_id(),
+                Id::new(("ve_settle::pinned", id.0)),
+                egui::PopupAnchor::Pointer,
+            )
+            .show(|ui| {
+                ui.label("Pinned: it stays where it is. Unpin it (the pin in its header, or its ☰ menu) to move it.");
+            });
+        }
         let held = world.body(body_id).is_some_and(|b| b.dragged);
         if let (true, true, Some(pointer)) = (held, grip.dragged(), pointer) {
             let to = view.to_world(pointer + self.grab_offset);

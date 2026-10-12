@@ -15,6 +15,9 @@
 //! - Another machine ([`Remote`], [`Machine`], [`Parcel`]): offered when the app implements [`Remote`];
 //!   otherwise the entry is there, disabled, and says why.
 //!
+//! - The app's own UI ([`WidgetFrame::header_item`], [`WidgetFrame::menu`], footer and sides): the frame
+//!   gives it room and knows nothing of what it is (README "The app's own UI in the frame").
+//!
 //! The frame keeps no state and moves nothing itself: `show` returns the menu pick and the widget's owner (a
 //! [`Dock`], or the app's own structure) carries it out.
 //!

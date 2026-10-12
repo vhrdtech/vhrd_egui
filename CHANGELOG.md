@@ -63,10 +63,16 @@ versions follow [Semantic Versioning](https://semver.org/). Feature IDs refer to
   (SETL-24).
 - ve_settle: `World::snap_anchors` (the corners corner snapping measures from) and `Body::rest_rect` public; the
   sandbox draws the snap range around those, not around every box corner (SETL-26).
+- ve_frame: `WidgetFrame::header_item`: the app's own item in the header; `README.md` (FRM-10).
+- ve_settle: pin a body in place: `World::set_pinned`, `Body::pinned`; pinned bodies are walls to the others,
+  not grabbed, not in a group; the sandbox's pin in each frame's header and ☰ menu (SETL-27).
 - ve_frame: `FrameState::set_layout_size` / `layout_size`: a layout gives a hexagon in a grid its whole size, as
   a floating one has its window's (FRM-2, SETL-20).
 
 ### Changed
+
+- ve_frame: `WidgetFrame::menu` adds a group of entries each time it is called instead of replacing the last
+  (FRM-10).
 
 - build: the workspace's dev profile builds our crates at `opt-level = 1` and every dependency at 3: debug builds
   with many widgets (egui, wgpu) run near release speed and stay debuggable; `just test` (warm) went from about

@@ -1614,3 +1614,55 @@ fn the_recording_shows_rec_and_a_save_shows_its_path() {
     );
     let _ = std::fs::remove_file(&path);
 }
+
+/// SETL-27: the pin in a frame's header (the sandbox's item, through ve_frame's generic hook) freezes the
+/// widget: dragging it does nothing, the others stay out of it; the ☰ menu's Unpin lets it go again.
+#[test]
+fn a_pinned_frame_stays_put_and_unpins_from_its_menu() {
+    let (mut h, mut watch) = sandbox();
+    let slot = find(&h, |d| {
+        !d.opts.hex && d.opts.footer && d.opts.menu && d.title() == "medium LISMFX"
+    });
+    let body = h.state().frames.body(slot).expect("a body");
+    let pins = h.query_all_by_label("pin").count();
+    assert!(pins > 5, "every frame has a pin: {pins}");
+    // the pin of this frame: the one inside its header
+    let r = h.state().screen_rect(body_rect(&h, slot));
+    let pin = h
+        .query_all_by_label("pin")
+        .find(|n| r.contains(n.rect().center()))
+        .expect("its pin")
+        .rect()
+        .center();
+    click_at(&mut h, &mut watch, pin);
+    watch.rest(&mut h);
+    assert!(h.state().world.body(body).unwrap().pinned);
+    let at = body_rect(&h, slot);
+
+    // dragged by its footer it stays where it is
+    let from = pos2(r.center().x, r.max.y - 8.0);
+    h.hover_at(from);
+    watch.frame(&mut h);
+    h.drag_at(from);
+    watch.frame(&mut h);
+    for n in 1..=20 {
+        h.hover_at(from + vec2(12.0 * n as f32, 10.0 * n as f32));
+        watch.frame(&mut h);
+    }
+    h.drop_at(from + vec2(240.0, 200.0));
+    watch.rest(&mut h);
+    assert_eq!(body_rect(&h, slot), at, "pinned: not moved");
+
+    // unpinned from its menu
+    let menu = h
+        .query_all_by_label("☰")
+        .find(|n| r.contains(n.rect().center()))
+        .expect("its menu")
+        .rect()
+        .center();
+    click_at(&mut h, &mut watch, menu);
+    watch.frames(&mut h, 2);
+    h.get_by_label("Unpin").click();
+    watch.frames(&mut h, 2);
+    assert!(!h.state().world.body(body).unwrap().pinned);
+}

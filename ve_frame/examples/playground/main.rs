@@ -48,6 +48,7 @@ fn main() -> eframe::Result {
             };
             let mut playground = Playground::matrix();
             playground.backdrop = backdrop;
+            playground.stars = true;
             Ok(Box::new(App(playground)))
         }),
     )
@@ -158,6 +159,13 @@ pub struct Demo {
     /// The toggle in a hexagon's side bar: +1 counts double.
     #[serde(default)]
     pub double: bool,
+    /// Starred with the ☆ in its header: the playground's own item there, through the frame's generic
+    /// hook ([`WidgetFrame::header_item`]); the frame knows nothing of stars.
+    #[serde(default)]
+    pub starred: bool,
+    /// Whether the ☆ is shown (the playground's "app item in the header" switch).
+    #[serde(skip)]
+    pub star_shown: bool,
 }
 
 impl Demo {
@@ -168,6 +176,8 @@ impl Demo {
             clicks: 0,
             wings: false,
             double: false,
+            starred: false,
+            star_shown: false,
         }
     }
 
@@ -432,13 +442,35 @@ impl Demo {
     }
 }
 
+/// What an app hosting the demo widgets adds to their frames through the frame's generic hooks (the
+/// ve_settle sandbox: its pin): an item in the header (`header`: the room it takes and what draws it) and
+/// entries in the ☰ menu. Each is called with the widget's slot.
+#[derive(Default)]
+pub struct Host<'h> {
+    pub header: Option<(f32, &'h mut dyn FnMut(&mut Ui, SlotId))>,
+    pub menu: Option<&'h mut dyn FnMut(&mut Ui, SlotId)>,
+}
+
+/// The room the ☆ takes in a header, points.
+const STAR_W: f32 = 14.0;
+
 /// Draw one demo widget in its frame, with the options it was made with; `fold` lets it fold in a grid too
 /// (off in the playground's own rows; a host that closes up around a folded frame turns it on). Returns the
 /// menu pick and where the frame was drawn.
 pub fn draw_at(
     ui: &mut Ui,
     slot: &mut Slot<Demo>,
+    opts: (&Moves, FloatLook, LandMode, bool),
+) -> (Option<FrameAction>, egui::Rect) {
+    draw_hosted(ui, slot, opts, Host::default())
+}
+
+/// [`draw_at`] with what the hosting app adds to the frame.
+pub fn draw_hosted(
+    ui: &mut Ui,
+    slot: &mut Slot<Demo>,
     (moves, look, land, fold): (&Moves, FloatLook, LandMode, bool),
+    host: Host<'_>,
 ) -> (Option<FrameAction>, egui::Rect) {
     let Slot { id, widget, frame } = slot;
     let opts = widget.opts;
@@ -446,6 +478,9 @@ pub fn draw_at(
     let theme = Theme::from_tokens(&ve_theme::Tokens::of_ui(ui));
     let mut reset = false;
     let mut bump = 0_i32;
+    let mut star = false;
+    let starred = widget.starred;
+    let slot_id = *id;
 
     let mut f = WidgetFrame::new(widget.title())
         .id_salt(id.0)
@@ -474,6 +509,31 @@ pub fn draw_at(
                 ui.close();
             }
         });
+    }
+    // the playground's own header item, through the generic hook
+    if widget.star_shown {
+        f = f.header_item(STAR_W, |ui| {
+        let (icon, tip) = if starred {
+            ("★", "Starred: the playground's own item in the header (WidgetFrame::header_item). Click to unstar.")
+        } else {
+            ("☆", "Star it: the playground's own item in the header (WidgetFrame::header_item), drawn by the app, not by the frame.")
+        };
+        let r = ui
+            .add(egui::Button::new(icon).frame(false).small())
+            .on_hover_text(tip);
+        r.widget_info(|| {
+            egui::WidgetInfo::labeled(egui::WidgetType::Button, true, if starred { "unstar" } else { "star" })
+        });
+        if r.clicked() {
+            star = true;
+        }
+    });
+    }
+    if let Some((width, add)) = host.header {
+        f = f.header_item(width, move |ui| add(ui, slot_id));
+    }
+    if let Some(add) = host.menu {
+        f = f.menu(move |ui| add(ui, slot_id));
     }
     if opts.footer {
         f = f.footer(move |ui| {
@@ -546,6 +606,9 @@ pub fn draw_at(
         });
     if reset {
         widget.clicks = 0;
+    }
+    if star {
+        widget.starred = !widget.starred;
     }
     if r.side_clicked(HexFace::LowerLeft, 0) {
         widget.clicks += if widget.double { 2 } else { 1 };
@@ -620,6 +683,9 @@ pub struct Playground {
     pub room: egui::Rect,
     /// Where each floating frame was drawn last frame, in every window (for the tests).
     pub floated: Vec<(SlotId, egui::Rect)>,
+    /// The playground's own item in every header, a ☆, through the frame's generic hook
+    /// (`WidgetFrame::header_item`, FRM-10). Off in the tests' playgrounds, so their snapshots stay.
+    pub stars: bool,
 }
 
 impl Playground {
@@ -647,6 +713,7 @@ impl Playground {
             drawn: Vec::new(),
             room: egui::Rect::NOTHING,
             floated: Vec::new(),
+            stars: false,
         }
     }
 
@@ -684,6 +751,9 @@ impl Playground {
     /// The whole playground into `ui`: the backdrop's settings beside it when they are open, the backdrop
     /// behind, the controls and the grid on top.
     pub fn ui(&mut self, ui: &mut Ui) {
+        for slot in self.dock.iter_mut() {
+            slot.widget.star_shown = self.stars;
+        }
         if self.backdrop_settings {
             egui::Panel::right("ve_frame_playground_backdrop")
                 .resizable(true)

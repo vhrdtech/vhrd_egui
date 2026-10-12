@@ -190,6 +190,9 @@ pub struct Body {
     pub lifted: bool,
     /// Held by [`World::grab`].
     pub dragged: bool,
+    /// Pinned in place ([`World::set_pinned`], SETL-27): it never moves,
+    /// gives or stretches; the others rest against it as against a wall.
+    pub pinned: bool,
     /// Gravity's pull in the last step, points/s² (debug overlay).
     pub gravity_pull: Vec2,
     /// The home spring's pull in the last step, points/s² (debug overlay).
@@ -340,7 +343,7 @@ impl Body {
     /// squeezed: its shape is the user's, and the room between its size and
     /// its minimum is vertex attraction's (SETL-20).
     fn give(&self, axis: Axis) -> f32 {
-        if self.outline.is_some() {
+        if self.outline.is_some() || self.pinned {
             return 0.0;
         }
         (self.rect.size()[axis] - self.min_size[axis]).max(0.0)
@@ -643,6 +646,7 @@ impl World {
             pressed_lo: Vec2::ZERO,
             pressed_hi: Vec2::ZERO,
             yielding: false,
+            pinned: false,
             drag_target: desc.center,
             slid: 0.0,
             aloft: 0,
@@ -814,6 +818,10 @@ impl World {
     /// the others, which glide out of its way.
     pub fn grab(&mut self, id: BodyId) {
         self.change(id, |b| {
+            // a pinned body stays where it is: unpin it to move it
+            if b.pinned {
+                return false;
+            }
             let changed = !b.dragged;
             b.dragged = true;
             b.lifted = true;
@@ -859,7 +867,7 @@ impl World {
             return Vec::new();
         };
         let alone = vec![id];
-        let solid = |b: &Body| !b.lifted && !b.dragged;
+        let solid = |b: &Body| !b.lifted && !b.dragged && !b.pinned;
         if !solid(&self.bodies[start]) {
             return alone;
         }
@@ -894,6 +902,24 @@ impl World {
             }
         }
         members.into_iter().map(|i| self.bodies[i].id).collect()
+    }
+
+    /// Pin a body in place, or let it go again (SETL-27). Pinned it stays
+    /// exactly where it is: the others rest against it as against a wall
+    /// and flow around it, it is not grabbed ([`World::grab`] does nothing)
+    /// and belongs to no group ([`World::cluster`]). Unpinned it is an
+    /// ordinary body again.
+    pub fn set_pinned(&mut self, id: BodyId, pinned: bool) {
+        self.change(id, |b| {
+            let changed = b.pinned != pinned;
+            b.pinned = pinned;
+            if pinned {
+                b.dragged = false;
+                b.lifted = false;
+                b.vel = Vec2::ZERO;
+            }
+            changed
+        });
     }
 
     fn change(&mut self, id: BodyId, f: impl FnOnce(&mut Body) -> bool) {
@@ -1214,7 +1240,7 @@ impl World {
     /// The body that gives way this step ([`Body::yielding`]).
     fn pick_yielder(&mut self) {
         let bulge = |b: &Body| {
-            if b.dragged {
+            if b.dragged || b.pinned {
                 0.0
             } else {
                 b.bulge.x.max(b.bulge.y)
@@ -1329,7 +1355,7 @@ impl World {
         for i in 0..self.bodies.len() {
             let a = &self.bodies[i];
             // The corners of an outline's rectangle are not its vertices.
-            if a.dragged || hold[i] <= 0.0 || a.outline.is_some() {
+            if a.dragged || a.pinned || hold[i] <= 0.0 || a.outline.is_some() {
                 continue;
             }
             let mut winner: Option<(Snap, Vec2, (bool, bool))> = None;
@@ -1488,7 +1514,7 @@ impl World {
             let homed = self.bodies[i].home.is_some() && p.home_stiffness > 0.0;
             let mut lined = [[false; 2]; 2];
             let mut held = [[false; 2]; 2];
-            if on && free[i] {
+            if on && free[i] && !self.bodies[i].pinned {
                 // Whether nothing on gravity's side holds the body up.
                 let mut hangs = false;
                 if let Some(side) = toward {
@@ -1818,6 +1844,10 @@ impl World {
                 most_moved = most_moved.max(slid.max_abs());
             }
             for axis in Axis::BOTH {
+                // a pinned body keeps its size as it is
+                if b.pinned {
+                    continue;
+                }
                 // Pressed along this axis there is no room to grow into.
                 let load = if p.free_axis() == Some(axis) {
                     0.0
@@ -1981,7 +2011,8 @@ impl World {
         for i in 0..self.bodies.len() {
             for j in i + 1..self.bodies.len() {
                 let (a, b) = pair_mut(&mut self.bodies, i, j);
-                if a.dragged == b.dragged {
+                // (a held body may lie over a pinned one, which stays)
+                if a.dragged == b.dragged || a.pinned || b.pinned {
                     continue;
                 }
                 let Some(hit) = touch(a, b, gap, prefer) else {
@@ -2024,7 +2055,7 @@ impl World {
         let glide = p.glide_speed * dt;
         let mut worst = 0.0f32;
         for b in &mut self.bodies {
-            if b.dragged {
+            if b.dragged || b.pinned {
                 continue;
             }
             for side in Side::ALL {
@@ -2109,7 +2140,7 @@ impl World {
         for i in 0..self.bodies.len() {
             for j in i + 1..self.bodies.len() {
                 let (a, b) = pair_mut(&mut self.bodies, i, j);
-                if a.dragged || b.dragged {
+                if a.dragged || b.dragged || (a.pinned && b.pinned) {
                     continue;
                 }
                 let Some(hit) = touch(a, b, gap, prefer) else {
@@ -2283,6 +2314,12 @@ impl World {
                         }
                     }
                 }
+                // A pinned body is a wall: the other one takes it all.
+                if a.pinned {
+                    (da, db) = (Vec2::ZERO, db - da);
+                } else if b.pinned {
+                    (da, db) = (da - db, Vec2::ZERO);
+                }
                 a.shift(da);
                 b.shift(db);
             }
@@ -2291,7 +2328,7 @@ impl World {
             let d = depth.min(self.band_budget);
             self.band_budget -= d;
             for o in &mut self.bodies {
-                if !o.dragged && !o.yielding && leading_edge(&o.rect, away) >= front {
+                if !o.dragged && !o.yielding && !o.pinned && leading_edge(&o.rect, away) >= front {
                     o.shift(away * d);
                     // Moved along by the field: a glide, no speed kept.
                     o.slid += d;
@@ -2326,6 +2363,9 @@ impl World {
                 };
                 let b_is_out = (b.rect.center()[axis] - a.rect.center()[axis]) * out >= 0.0;
                 let (inner, outer) = if b_is_out { (&*a, b) } else { (&*b, a) };
+                if outer.pinned {
+                    continue;
+                }
                 // as far as their rectangles lie in each other that way
                 let lap = if out > 0.0 {
                     inner.rect.max[axis] - outer.rect.min[axis]
@@ -2359,7 +2399,7 @@ impl World {
             for i in 0..self.bodies.len() {
                 for j in i + 1..self.bodies.len() {
                     let (a, b) = pair_mut(&mut self.bodies, i, j);
-                    if a.dragged || b.dragged {
+                    if a.dragged || b.dragged || (a.pinned && b.pinned) {
                         continue;
                     }
                     let (depth, out) = core_depth(a, b);
@@ -2376,13 +2416,19 @@ impl World {
                         (true, 0) => out.clamp_length(glide),
                         (true, _) => continue,
                     };
-                    a.shift(-out * 0.5);
-                    b.shift(out * 0.5);
+                    if a.pinned {
+                        b.shift(out);
+                    } else if b.pinned {
+                        a.shift(-out);
+                    } else {
+                        a.shift(-out * 0.5);
+                        b.shift(out * 0.5);
+                    }
                     moved = true;
                 }
             }
             for b in &mut self.bodies {
-                if b.dragged {
+                if b.dragged || b.pinned {
                     continue;
                 }
                 for axis in Axis::BOTH {
@@ -2645,6 +2691,16 @@ fn integrate(b: &mut Body, p: &Params, dt: f32, cool: f32) -> f32 {
     if b.dragged {
         b.rect = b.rect.translate(b.drag_target - center);
         b.vel = Vec2::ZERO;
+        b.gravity_pull = Vec2::ZERO;
+        b.home_pull = Vec2::ZERO;
+        b.snap_pull = Vec2::ZERO;
+        b.grid_pull = Vec2::ZERO;
+        b.slide_pull = Vec2::ZERO;
+        return 0.0;
+    }
+    if b.pinned {
+        b.vel = Vec2::ZERO;
+        b.coast = Vec2::ZERO;
         b.gravity_pull = Vec2::ZERO;
         b.home_pull = Vec2::ZERO;
         b.snap_pull = Vec2::ZERO;

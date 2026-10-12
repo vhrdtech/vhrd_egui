@@ -1828,3 +1828,17 @@ fn a_frame_folds_in_a_grid_when_the_layout_asks_for_it() {
         assert_eq!(h.state().drawn_rect().expect("drawn").size(), open);
     }
 }
+
+/// The app's own item in the header (`WidgetFrame::header_item`): the playground's ☆ stars the widget; the
+/// frame only gives it its room in the header (FRM-10).
+#[test]
+fn an_apps_header_item_works() {
+    let mut pg = one(Scale::Medium);
+    pg.stars = true;
+    let mut h = harness(pg, vec2(900.0, 500.0));
+    assert!(!slot(&h).widget.starred);
+    click(&mut h, "star");
+    assert!(slot(&h).widget.starred);
+    click(&mut h, "unstar");
+    assert!(!slot(&h).widget.starred);
+}
