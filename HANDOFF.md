@@ -1,67 +1,69 @@
-# Handoff: session settle-frames-2, round 4 (12 Oct 2026)
+# Handoff: session settle-frames-2, round 4 continued (12 Oct 2026, afternoon)
 
 Branch `s/11oct2026-settle-frames-2`, worktree `/tmp/wt/settle-frames-2/vhrd_egui` on omarchy-m1. Nothing pushed
-or landed. Read `AGENTS.md` first; FEATURES.md areas SETL, FRM hold the detail. Rounds 1-3 are done and committed
-(see `git log c9cfc47..HEAD`, CHANGELOG `[Unreleased]`); round 3 was reported ready, then the user sent round 4.
+or landed. Read `AGENTS.md` first; FEATURES.md areas SETL, FRM hold the detail. Rounds 1-3 are done; this is
+round 4 (`git log 5bf29ef..HEAD`).
 
-## The user's round-4 list (tpm work say, 12 Oct 2026 12:10, tried the sandbox on the M1)
+## The user's round-4 list and follow-ups (tpm work say, 12 Oct 2026)
 
-1. **BUG: the tab buttons above the arena (Rectangles, Hexagons, Mixed) can't be clicked.** Fix it and add a
-   kittest that clicks each one.
-2. **Auto size changes OFF by default**: "feels like jelly, everything wobbles and never settles". Put them behind
-   a toggle button for now (a key press later maybe). (`Frames::auto_pick`, default true in `Frames::new`; the
-   sandbox's checkbox "Layout picks sizes" in `frame_controls`; tests that rely on it are in
-   `tests/frames.rs`, e.g. `the_layout_picks_the_size_of_a_frame_on_auto_from_the_room_in_its_row`, and the
-   seeding in `seed_frames` widens frames only `if self.frames.auto_pick`.)
-3. **Vertex attraction on hexagons is too weak**, even with attract_strength 60, while rectangles feel fine. Make
-   one strength mean the same pull for both: find why (normalisation per vertex count, edge length, angle?), and a
-   test that compares snap time and gap for a rect pair and a hex pair.
-4. **NEW: move a group of stuck-together widgets as a whole**: when a cluster is isolated (touching or attracted
-   only to each other), dragging one moves the rest. Propose how a group is detected and how to break one off
-   (e.g. a modifier key), then build it. Claim a new id with `tpm work claim SETL`.
+1. Tab buttons not clickable. DONE (6c3f008): the user started without `-- frames`, the tabs were disabled
+   there. User 12:17: no test needed for the tabs; both tab tests were dropped.
+2. Auto size changes OFF by default. DONE (6c3f008): `Frames::auto_pick` false; checkbox "Layout picks sizes".
+3. Vertex attraction on hexagons too weak even at strength 60; one strength should mean the same pull; a test
+   comparing snap time and gap for a rect pair and a hex pair. IN PROGRESS, see below.
+4. Group drag: dragging one of a cluster stuck together (touching / attracted only to each other) moves the
+   rest; propose detection and how to break one off (modifier key), then build. NOT STARTED. Id claimed:
+   **SETL-22** (`tpm work claim SETL` gave 21 and 22; 21 is used for the bug below).
+- User 12:20 follow-up: drop the Mixed tab; one sandbox of real frames (Rectangles, Hexagons) started by plain
+  `cargo run -p ve_settle --example sandbox`; raw-body scenes go, their guards headless; overlays stay toggles;
+  README and FEATURES. DONE (783036c). In the ready note say: outline editing (SETL-4/13) has no UI any more
+  (World API + `tests/polygon.rs`), the SETL-14 tight-honeycomb drop and the open-bottom full field are
+  headless in `tests/scenes.rs`.
 
-Then: commit on the branch, `just test` + `just lint`, `tpm work ready --note "..."` saying how to try each point.
+## Found and fixed on the way (committed, in CHANGELOG and FEATURES)
 
-## Progress in the fresh conversation (12 Oct 2026, afternoon)
+- Hexagons tip to tip bounced for ever (contact depth across a slanted face): `geom::contact` (true distance,
+  outlines only; `sat` unchanged for rectangles' pillows, which a window-resize kittest needs). SETL-4 entry.
+- SETL-21: pushed stacks ran faster than a glide (a lifted body at a hard wall pushing two and a half glides a
+  step; the yielder keeping a glide of speed and pushed again). Fixed: lifted pairs spend the per-step net
+  budget (`spend_net`, as outlines), the yielder's speed is capped at half a glide. `HARD_PASSES` 16.
+  Tried and dropped: "a push gives no outward speed" (left 1-point rect overlaps on window resize).
 
-- Items 1 and 2 done (commit 6c3f008): tabs work in every scene, `Frames::auto_pick` off by default; the user
-  later said: no test for the tabs (both tab tests dropped).
-- The user's follow-up (12:20): drop Mixed, one sandbox of real frames (Rectangles, Hexagons), plain-box
-  scenes gone, their guards headless: done (next commit). `tests/frames.rs` is now `tests/sandbox.rs`,
-  `tests/scenes.rs` holds the old scenes as worlds.
-- Found and fixed on the way: hexagons tip to tip bounced (`geom::contact`, SETL-4), pushed stacks faster than a
-  glide (SETL-21).
-- Left: item 3 (hex attraction strength, SETL-20) and item 4 (group drag, id SETL-22 claimed).
+## Item 3: state
 
-## State of each (at the handoff)
+- New test `one_strength_lines_up_a_pair_of_rectangles_and_of_hexagons_alike` (`tests/attract.rs`, helper
+  `line_up`; uncommitted at the time of writing, commit it with this note): alone, a rigid hex pair lines up
+  about as fast as a rigid rect pair at strength 12 (hex 21/28/33 steps vs rect 14/18/23 for 4/8/14 points off)
+  and much faster at 60 (5-6 steps). So the pull itself is not weak; in the Hexagons scene something stops it.
+- Likely causes to check next, in `World::attract_pass` (`ve_settle/src/world.rs`, the slide part ~line 1380 and
+  1544-1617): the slide is skipped when `sinks` (the body toward gravity's side never slides), `blocked`
+  (`slide_blocked`: a slide that would go deeper into any non-partner body, or past a wall, waits until `wake`),
+  `homed`; and only the *nearest* face pair slides a body. In a packed hexagon scene nearly every slide runs
+  into some neighbour, so it is blocked; rectangles instead get the corner snap (`snap_pass`, skips outlines) and
+  edge stretch. Hexagons in the frames scene are rigid (`Frames::stretch_hexagons` off), so the length rule does
+  nothing. Plan: a headless test with a small honeycomb of rigid hexagons (3-5, like the Hexagons scene, gravity
+  up, homes off, push_out) offset by a few points, count how many face pairs end within 0.5; find which rule
+  blocks; options: let a blocked slide push the blocker along (the contact solver settles it), or let the
+  slide go when the depth it adds is within the gap, or let the *pair* move together. Then the kittest in the
+  Hexagons scene: count pulls locked at rest (`world.pulls()`), compare to the Rectangles scene.
 
-1. Started. `each_tab_takes_a_real_click` (last test in `ve_settle/tests/frames.rs`, commit `eaa86be`) presses,
-   releases and moves the pointer in frames of their own, as a real click; it **passes headless**, so the bug is
-   not reproduced. Leads not yet checked:
-   - The sandbox without `-- frames` starts in the *full* scene, where the tabs are disabled on purpose
-     (`tabs()` in `app.rs`, `add_enabled_ui(on, ..)`, with a tooltip). The user may have started it that way or
-     switched scene; consider making the tabs work in every scene (picking one switches to the frames scene)
-     instead of being disabled.
-   - Something only a real window has: the `ve_backdrop` / glass layer, floating frame windows, the away markers
-     (`egui::Area` in `ve_frame/src/frame.rs` `away_marker`), or `request_discard` passes in ve_frame (a discarded
-     pass can eat a click in egui). Try `cargo run --release -p ve_settle --example sandbox -- frames` on the M1
-     (a display is there) if possible, or ask the user (`tpm work say parent`) how they started it.
-2. Not started.
-3. Not started. Where to look: `World::attract_pass` (`ve_settle/src/world.rs`). Rectangles line up through the
-   corner pulls on each edge (`line`), full grip; hexagons since round 3 go through `face_pairs` (antiparallel
-   faces): a slide along the face (`slide`, paced by `attract_strength * dt`, capped at a glide per step) and a
-   length rule (`faced`), only for a face pair, only for bodies not held by a home and not toward gravity's side,
-   and only when both bodies are outlines. In the frames scene hexagons are rigid unless
-   `Frames::stretch_hexagons` is on, so the only pull is the slide. Snap (`snap_pass`) skips outlines entirely:
-   rectangles get the snap spring *and* attraction, hexagons only the paced slide. That is the likely gap. A test
-   like `nested_hexagons_end_vertex_to_vertex` (`tests/polygon.rs`) next to one in `tests/attract.rs`.
-4. Not started; needs a new SETL id (`tpm work claim SETL`; SETL-16..20 are this branch's).
+## Then
+
+- Item 4 (SETL-22 group drag): propose in the ready note how a group is detected (bodies touching within the
+  gap or with locked pulls, flood fill, isolated = no contact with anything outside the group) and how to break
+  one off (e.g. Alt/Shift held while dragging takes the one alone); build in `ve_settle::frames` (drag in
+  `show_one`, `world.grab`/`drag_to` for each member keeping offsets) or in `World` (`grab_group`).
+- Wrap up: FEATURES (SETL-20 note on item 3, SETL-22 entry), CHANGELOG, `git rm HANDOFF.md` in the last commit,
+  `just lint`, `just test`, `tpm work say parent` with a summary, `tpm work ready --note` with a what-to-try list
+  (each point: how to try it in `cargo run --release -p ve_settle --example sandbox`).
 
 ## Gotchas
 
-- Frames kittests: `Watch` (in `tests/frames.rs`) panics on any body moving more than a glide in a frame, so a
-  new scene (tab click, reset) must not be stepped through `watch` (clear `watch.seen` or step plainly).
-- `just test` warm is ~25 s since the dev profile change (opt-level 1 / deps 3).
-- `Frames::stretch_hexagons` on still fails 3 frames kittests (SETL-20 in FEATURES.md lists why).
-- Tests are sensitive to the control panel's width (a wider row changes the arena).
-- Remove this HANDOFF.md in the last commit.
+- Kittests: `Watch` (in `tests/sandbox.rs`) panics on any body moving more than 32 points (hexagons 40) in a
+  frame; a new scene (tab, Reset, Clear) must not be stepped through `watch` without `watch.seen.clear()`.
+- egui counts two clicks within 0.6 s after another click as a triple click: wait ~40 frames after a button
+  before a double click in a kittest.
+- Empty-arena clicks are read from input in `empty_space_clicks` (the scroll area takes them).
+- Debug probes: put temporary `eprintln!` behind an env var in `World::step` and remove them before committing;
+  `git diff` the src before each commit.
+- `just test` warm takes about 30 s.

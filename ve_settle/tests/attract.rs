@@ -233,3 +233,73 @@ fn three_in_a_row_end_with_one_bottom_line() {
         "{bottoms:?}"
     );
 }
+
+/// One under the other under the top wall, rigid, as frames are, the lower one `offset` points to the
+/// right of the upper one's left edge: a rectangle pair (`hex` false) or two flat-topped hexagons whose
+/// bottom and top faces meet. The steps until the lower one is within half a point of lined up (None:
+/// never) and how far off it rests.
+fn line_up(hex: bool, offset: f32, strength: f32) -> (Option<u32>, f32) {
+    let p = Params {
+        home_stiffness: 0.0,
+        attract_strength: strength,
+        push_out: true,
+        max_speed: Params::default().glide_speed,
+        ..Params::default()
+    };
+    let mut w = world(900.0, 800.0, p);
+    let size = v(300.0, 160.0);
+    let mut add = |x: f32, y: f32| {
+        let mut desc = BodyDesc::new(v(x + size.x * 0.5, y + size.y * 0.5), size)
+            .home(None)
+            .min_size(size)
+            .max_size(size);
+        if hex {
+            desc = desc.outline(ve_settle::Poly::unit_hexagon());
+        }
+        w.add(desc)
+    };
+    let gap = p.gap;
+    let a = add(100.0, gap);
+    let b = add(100.0 + offset, gap + size.y + gap);
+    let off = |w: &World| (rect(w, b).min.x - rect(w, a).min.x).abs();
+    let mut first = None;
+    for n in 0..6_000 {
+        if first.is_none() && off(&w) < 0.5 {
+            first = Some(n);
+        }
+        if !w.step() {
+            break;
+        }
+    }
+    (first, off(&w))
+}
+
+/// Round 4, item 3 (user: "vertex attraction on hexagons is too weak, even at strength 60"): alone, a pair
+/// of hexagons lines up as fast as a pair of rectangles at the default strength, and faster at 60
+/// (rectangles: the corner snap; hexagons: the slide along the face). Measured 12 Oct 2026: strength 12,
+/// 4 / 8 / 14 points off: rectangles 14 / 18 / 23 steps, hexagons 21 / 28 / 33; strength 60: hexagons
+/// 5 / 6 / 6. So the weakness the user sees is not the pull's size but something in a full scene.
+#[test]
+fn one_strength_lines_up_a_pair_of_rectangles_and_of_hexagons_alike() {
+    for offset in [4.0, 8.0, 14.0] {
+        let (rect_steps, rect_off) = line_up(false, offset, 12.0);
+        let (hex_steps, hex_off) = line_up(true, offset, 12.0);
+        let (rect_steps, hex_steps) = (
+            rect_steps.expect("rectangles"),
+            hex_steps.expect("hexagons"),
+        );
+        assert!(
+            rect_off < 0.5 && hex_off < 0.5,
+            "{offset}: {rect_off} {hex_off}"
+        );
+        assert!(
+            hex_steps <= rect_steps * 2,
+            "{offset}: rect {rect_steps}, hex {hex_steps} steps"
+        );
+        let (fast, _) = line_up(true, offset, 60.0);
+        assert!(
+            fast.expect("hexagons at 60") <= hex_steps,
+            "stronger is faster"
+        );
+    }
+}
