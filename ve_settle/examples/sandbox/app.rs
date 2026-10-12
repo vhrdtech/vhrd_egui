@@ -1305,7 +1305,7 @@ impl Sandbox {
                 });
                 picked.extend(dock.show_windows(ui, viewport, &mut draw));
             });
-        drop(draw);
+        let _ = draw;
         for id in toggles.into_iter().chain(menu_toggles) {
             if let Some(body) = self.frames.body(id) {
                 let now = self.world.body(body).is_some_and(|b| b.pinned);
