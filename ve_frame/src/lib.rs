@@ -1,7 +1,7 @@
 //! The frame every vhrd egui widget sits in.
 //!
 //! One frame for dashboard panels, shell widgets and, later, bodies of a physics layout, in place of the
-//! pieces that grew apart (`ve_dash::Panel` with its size switch, the status light, floating windows):
+//! pieces that grew apart (the old `ve_dash::Panel` with its size switch, the status light, floating windows):
 //!
 //! - [`WidgetFrame`] draws it: a header with an optional LED, the title, an optional ⓘ (what the widget is,
 //!   plus its own stats), a size switch and a ☰ menu; the body; an optional footer; optional sides — two for

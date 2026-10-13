@@ -5,6 +5,17 @@ versions follow [Semantic Versioning](https://semver.org/). Feature IDs refer to
 
 ## [Unreleased]
 
+### Removed
+
+- **Breaking:** `ve_dash::Panel`, `ve_dash::PanelSize` and `ve_dash::panel()`, and `impl From<ve_dash::PanelSize> for
+  SizeMode` (FRM-8): use `ve_frame::WidgetFrame` (`.info`, `.sizes`, `.led`). Upgrade: `panel(ui, &theme, "t", body)`
+  becomes `WidgetFrame::new("t").show(ui, &mut frame_state, |ui, _size| body)`; `PanelSize::Compact` is
+  `SizeMode::Min`. tpm_mesh_dash 0.63.0 has already moved over.
+
+### Changed
+
+- The `dash_demo` example and the `dash_panel` snapshot of ve_dash draw in a `WidgetFrame` (FRM-8).
+
 ## [0.26.0] - 2026-10-13
 
 ### Added

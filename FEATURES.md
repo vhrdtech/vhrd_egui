@@ -169,7 +169,6 @@ chart must carry a direct text label (they all do); status colors always ship wi
 - ✅ **DASH-5 Status light**: glowing dot + label (`Status`: good / warn / crit / off). `ve_dash/src/status.rs`.
   The LED of a widget frame is this dot (FRM-1).
 - ✅ **DASH-6 Stat tile**: small label over big monospace value with unit. `ve_dash/src/stat.rs`.
-- ✅ **DASH-7 Titled panel**: rounded border with the title set into the top border line. `ve_dash/src/panel.rs`.
 - 💡 **DASH-8 More blocks as demand appears**: braille-density graph, arc gauge, mini table, log tail view;
   theming hook into `ve_widget` once WID-3 hosts widgets.
 - ✅ **DASH-10 Decay smoother**: asymmetric exponential attack/release (`Decay`), VU-meter needle feel for
@@ -210,12 +209,6 @@ Small helpers every app uses, crate `ve_basics`. UI rules that go with them: AGE
   `ve_dash/tests/snapshots/sparkline_axis.png`, shown in `dash_demo`. The axis text is the muted colour pulled 40 % toward
   the text colour (lighter than the data, still readable); `Sparkline::clock(fn(i64) -> String)` adds the sample's
   absolute time to the hover beside its age (`1.2 · -12m · 21:40`).
-- ✅ **DASH-17 Panel header**: `Panel` — the titled panel with its controls on the border line: the title at the
-  left, at the right an ⓘ (`.info(|ui| ..)` fills its tooltip) and the auto / compact / wide size switch
-  (`.size_switch(key)`, read with `PanelSize::of(ctx, key)`; the layout decides what it means: auto leaves it to the
-  layout, compact one narrow column, wide the whole row), so neither takes a row of its own. `panel()` is a `Panel`
-  without controls. `ve_dash/src/panel.rs`, kittest in `ve_dash/tests/ui.rs`. New code uses `ve_frame::WidgetFrame`
-  (FRM-1, FRM-2); `Panel` stays, unchanged, until tpm_mesh_dash is ported (FRM-8).
 - ✅ **DASH-18 Sparkline colour by value**: `Sparkline::color_by(|v| colour)` — the line, its fill and the hover dot
   change colour smoothly along the line with the value (a colour table sampled over the range, a path stroke
   coloured by height), so any chart can show green→red or any ramp. `ve_dash/src/sparkline.rs`, snapshot
@@ -384,7 +377,7 @@ switch (P2605#8oct-1205). ve_settle (SETL-5, SETL-7) later reads the same shapes
   told), `SizeHints { min, nom, wide }` (body sizes; `width_for`, `outer_width` for layouts), `auto_size(prev,
   width, hints)`: the widest that fits, a step up needing `AUTO_HYSTERESIS` (24 pt) to spare. min is exactly
   `hints.min`, clipped; nom and wide get at least their hint and grow downward; on auto the body fills the room
-  given. `SizeMode: From<ve_dash::PanelSize>`. `ve_frame/src/size.rs` (unit tests), kittest
+  given. `ve_frame/src/size.rs` (unit tests), kittest
   `auto_follows_the_room_without_flipping`, `min_body_is_exactly_the_hinted_size`.
   For a layout that chooses sizes itself (ve_settle, SETL-7): `FrameState::set_auto_pick(Some(size))` says which
   of the three a frame on auto shows, in place of the choice by the room's width; the frame then fills the room
@@ -523,8 +516,10 @@ switch (P2605#8oct-1205). ve_settle (SETL-5, SETL-7) later reads the same shapes
   `widget_pops_out_of_the_tiles_and_back`, `widget_goes_to_another_os_window_and_is_restored_there`,
   `widget_goes_to_another_machine_and_is_received`, `unavailable_menu_entries_stay_visible_and_disabled` in
   `ve_app/tests/ui.rs`. Not checked on a real second monitor: the tests run with egui's embedded viewports.
-- 📋 **FRM-8 Port tpm_mesh_dash to the frame**: its `Panel`s become `WidgetFrame`s; then `Panel` and `PanelSize`
-  go to *Dropped and superseded*.
+- ✅ **FRM-8 drop-panel, port tpm_mesh_dash to the frame**: its `Panel`s became `WidgetFrame`s (tpm_mesh_dash 0.63.0,
+  APP-108); then `ve_dash::Panel`, `PanelSize`, `panel()` and `SizeMode: From<PanelSize>` were dropped (DASH-7,
+  DASH-17 below). `ve_dash`'s demo (`dash_demo`) and its `dash_panel` snapshot now use `WidgetFrame`, so ve_dash
+  dev-depends on ve_frame (a dev-dependency cycle, fine for cargo).
 - ✅ **FRM-10 The app's own UI in the header and menu** (user, 12 Oct 2026 16:20: "keep it generic"): the frame
   knows nothing of pins, stars or layouts; `WidgetFrame::header_item(width, ui)` puts the app's item right of
   the title (its room counted in the header's least width; several, left to right), and `WidgetFrame::menu` now
@@ -1327,4 +1322,6 @@ Code that lives in an app today and belongs here. Port the app in the same piece
 
 ## Dropped and superseded
 
-(none yet)
+- **DASH-7 Titled panel** (`ve_dash::panel()`): replaced by `ve_frame::WidgetFrame` (FRM-1, FRM-8).
+- **DASH-17 Panel header** (`ve_dash::Panel`, `PanelSize`, `SizeMode: From<PanelSize>`): replaced by
+  `WidgetFrame` with `.info`, `.about` and `.sizes` (FRM-1, FRM-2); tpm_mesh_dash moved over in 0.63.0 (FRM-8).

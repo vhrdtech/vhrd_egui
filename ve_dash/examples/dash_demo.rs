@@ -1,7 +1,7 @@
 //! Dashboard blocks demo with synthetic data.
 //!
 //! A btop-style node dashboard built from the ve_dash blocks: stat tiles,
-//! status lights, sparklines, meters and titled panels, fed by a small
+//! status lights, sparklines, meters and fed by a small
 //! simulation. The real mesh dashboard (live `tpm_mesh` data) lives in the
 //! tpm_mesh_dash repo; this demo stays here so the crate shows off and
 //! exercises every block without external dependencies.
@@ -14,8 +14,9 @@
 use eframe::egui;
 use egui::{Align2, FontId, RichText, Ui, vec2};
 use ve_dash::{
-    Decay, History, Meter, Sparkline, StatTile, Status, StatusLight, SteadyColumn, Theme, panel,
+    Decay, History, Meter, Sparkline, StatTile, Status, StatusLight, SteadyColumn, Theme,
 };
+use ve_frame::{FrameState, WidgetFrame};
 
 fn main() -> eframe::Result {
     let options = eframe::NativeOptions {
@@ -44,6 +45,7 @@ struct Node {
     sim_phase: f32,
     sim_rng: u32,
     sim_spike: f32,
+    frame: FrameState,
 }
 
 impl Node {
@@ -58,6 +60,7 @@ impl Node {
             sim_phase: seed as f32 * 1.7,
             sim_rng: seed.max(1),
             sim_spike: 0.0,
+            frame: FrameState::default(),
         }
     }
 
@@ -169,7 +172,8 @@ impl App {
         } else {
             node.name.to_owned()
         };
-        panel(ui, &theme, &title, |ui| {
+        let frame = &mut node.frame;
+        WidgetFrame::new(title).show(ui, frame, |ui, _| {
             let (status, label) = match (node.online, node.is_self) {
                 (_, true) => (Status::Good, "local"),
                 (true, false) => (Status::Good, "connected"),

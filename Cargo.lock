@@ -3682,6 +3682,7 @@ dependencies = [
  "eframe",
  "egui",
  "egui_kittest",
+ "ve_frame",
  "ve_theme",
  "web-time",
 ]

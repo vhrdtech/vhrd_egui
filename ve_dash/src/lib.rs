@@ -5,8 +5,7 @@
 //! VU-style value smoother, and widgets —
 //! [`Sparkline`] (filled line chart with hover readout, optional load colors), [`Meter`]
 //! (segmented block meter with a heat gradient), [`SegBar`] (exactly 5 or 10 segments), [`StatusLight`]
-//! (glowing dot + label), [`StatTile`] (headline number) and a titled
-//! [`panel`] frame. [`steady_width`] keeps live values from shoving their
+//! (glowing dot + label), [`StatTile`] (headline number); the frame around them is `ve_frame::WidgetFrame`. [`steady_width`] keeps live values from shoving their
 //! neighbours around, and [`SteadyColumn`] aligns the first cell of list rows without a hard-coded width.
 //!
 //! Colors come from `ve_theme`'s design tokens ([`Theme::from_tokens`]); apps turn the whole
@@ -21,7 +20,6 @@ mod decay;
 mod history;
 mod info;
 mod meter;
-mod panel;
 mod segbar;
 mod sparkline;
 mod stat;
@@ -35,7 +33,6 @@ pub use decay::Decay;
 pub use history::History;
 pub use info::info_icon;
 pub use meter::Meter;
-pub use panel::{Panel, PanelSize, panel};
 pub use segbar::{SegBar, Segments, lit_segments};
 pub use sparkline::{Sparkline, age_label};
 pub use stat::StatTile;

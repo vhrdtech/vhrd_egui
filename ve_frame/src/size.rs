@@ -53,17 +53,6 @@ impl SizeMode {
     }
 }
 
-/// `ve_dash`'s panel switch maps onto the frame's: compact is min.
-impl From<ve_dash::PanelSize> for SizeMode {
-    fn from(size: ve_dash::PanelSize) -> Self {
-        match size {
-            ve_dash::PanelSize::Auto => Self::Auto,
-            ve_dash::PanelSize::Compact => Self::Min,
-            ve_dash::PanelSize::Wide => Self::Wide,
-        }
-    }
-}
-
 /// The size a widget's body arranges itself for.
 ///
 /// - `Min`: the body is exactly [`SizeHints::min`], a fixed size the widget provides.
