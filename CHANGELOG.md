@@ -5,6 +5,8 @@ versions follow [Semantic Versioning](https://semver.org/). Feature IDs refer to
 
 ## [Unreleased]
 
+## [0.23.0] - 2026-10-13
+
 ### Added
 
 - ve_settle: optional feature `serde`: `Params`, `Walls` and `Side` serialize (SETL-24).
@@ -28,7 +30,6 @@ versions follow [Semantic Versioning](https://semver.org/). Feature IDs refer to
 - ve_frame: hooks for a layout that places frames itself: `FrameState::set_auto_pick` / `auto_pick` (which size
   a frame on auto shows), `body_rect`, `open_size`, `is_hex` (FRM-2), and `WidgetFrame::fold_in_grid(true)`, which
   lets a frame fold down to its header in a grid too (FRM-4).
-
 - ve_settle: closed walls are hard edges and bodies have cores. After the solver's passes no solid body is past a
   closed wall and no two bodies share a middle (`World::max_escape`, `max_core_overlap`, `CORE`); an open side
   holds nothing. **Behaviour change:** in a closed box too full for rigid bodies they overlap now instead of
@@ -47,7 +48,6 @@ versions follow [Semantic Versioning](https://semver.org/). Feature IDs refer to
   solver's time; each slider shows what it does in the world while the pointer is on it (gravity arrows,
   springs, ranges as circles, pressure as heat, the grid); "Grow to the right" turns the scene to scroll
   sideways (SETL-7, SETL-19).
-
 - ve_settle: vertex attraction for outlines face to face (SETL-20): two outlines whose faces lie against each
   other line the vertices at the ends up, by sliding the body along the face (into free room only, not a body
   held by its home nor the one toward gravity's side) and by making the two faces equally long (half each,
@@ -81,7 +81,6 @@ versions follow [Semantic Versioning](https://semver.org/). Feature IDs refer to
   the replay starts from it; recordings without one still replay from the scene's start (SETL-24).
 - ve_frame: `WidgetFrame::menu` adds a group of entries each time it is called instead of replacing the last
   (FRM-10).
-
 - build: the workspace's dev profile builds our crates at `opt-level = 1` and every dependency at 3: debug builds
   with many widgets (egui, wgpu) run near release speed and stay debuggable; `just test` (warm) went from about
   2 minutes to under 25 s. Apps on vhrd_egui may want the same in their own `Cargo.toml` (a dependency's profile
