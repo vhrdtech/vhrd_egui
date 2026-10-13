@@ -16,7 +16,7 @@ serde = ["dep:serde"]
 # The core has no dependencies at all; egui and ve_frame come with the `frame` feature only, serde with `serde`.
 [dependencies]
 egui = { workspace = true, optional = true }
-ve_frame = { path = "../ve_frame", version = "0.24", optional = true }
+ve_frame = { path = "../ve_frame", version = "0.25", optional = true }
 serde = { workspace = true, optional = true }
 
 [dev-dependencies]
@@ -25,13 +25,13 @@ ve_settle = { path = ".", features = ["frame", "serde"] }
 egui.workspace = true
 serde.workspace = true
 serde_json = "1"
-ve_backdrop = { path = "../ve_backdrop", version = "0.24" }
-ve_basics = { path = "../ve_basics", version = "0.24" }
-ve_dash = { path = "../ve_dash", version = "0.24" }
-ve_frame = { path = "../ve_frame", version = "0.24" }
+ve_backdrop = { path = "../ve_backdrop", version = "0.25" }
+ve_basics = { path = "../ve_basics", version = "0.25" }
+ve_dash = { path = "../ve_dash", version = "0.25" }
+ve_frame = { path = "../ve_frame", version = "0.25" }
 eframe = { workspace = true, features = ["wgpu"] }
 egui_kittest = { workspace = true, features = ["wgpu", "eframe"] }
-ve_theme = { path = "../ve_theme", version = "0.24" }
+ve_theme = { path = "../ve_theme", version = "0.25" }
 
 [[example]]
 name = "sandbox"

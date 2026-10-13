@@ -5,6 +5,8 @@ versions follow [Semantic Versioning](https://semver.org/). Feature IDs refer to
 
 ## [Unreleased]
 
+## [0.25.0] - 2026-10-13
+
 ### Added
 
 - ve_settle::frames, what a live dashboard needs (SETL-29): `Frames::hands` (`Hands::All`, `MouseOnly`, `Off`):
