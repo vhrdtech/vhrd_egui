@@ -22,8 +22,8 @@ use egui::{
 };
 use playground::{Demo, Opts, Scale};
 use ve_backdrop::{Backdrop, Lit};
-use ve_frame::{Applied, FloatLook, FrameAction, LandMode, Shape, Size, Slot, SlotId};
-use ve_settle::frames::{Frames, LandAt, Seat, View};
+use ve_frame::{Applied, FloatLook, FrameAction, LandMode, Shape, Slot, SlotId};
+use ve_settle::frames::{Frames, LandAt, LayOut, Seat, View};
 use ve_settle::{Axis, BodyId, Params, Poly, Rect, Side, Vec2, World};
 use ve_theme::{Tokens, UiExt as _};
 
@@ -640,8 +640,6 @@ impl Sandbox {
     ) {
         let count = std::mem::take(&mut self.due);
         let a = self.arena;
-        let gap = self.world.params().gap;
-        let mut placed: Vec<Rect> = self.world.bodies().iter().map(|b| b.rect).collect();
         let mut fresh = Vec::new();
         for _ in 0..count {
             let body = self.add_frame(Some(a.center_top() + vec2(0.0, 60.0)));
@@ -650,11 +648,6 @@ impl Sandbox {
                 fresh.push(slot);
             }
         }
-        let size_of = |frames: &Frames<Demo>, slot: SlotId, size: Size| {
-            let guess = frames.dock.get(slot).map(|s| seat(&s.widget).guess());
-            let guess = guess.map_or(vec2(240.0, 120.0), to_vec);
-            frames.outer(slot, size).unwrap_or(guess)
-        };
         // Hexagons are packed cell by cell, each where it lies face to face with what is there nearest
         // gravity's wall: they nest as a honeycomb (SETL-28). Gravity alone packs them tip to tip.
         let (hexes, fresh): (Vec<SlotId>, Vec<SlotId>) = fresh.into_iter().partition(|&slot| {
@@ -670,7 +663,6 @@ impl Sandbox {
                 .place(&mut self.world, slot, Vec2::new(a.center().x, a.center().y));
         }
         for slot in hexes {
-            let size = size_of(&self.frames, slot, Size::Nom);
             let Some(body) = self.frames.body(slot) else {
                 continue;
             };
@@ -679,81 +671,14 @@ impl Sandbox {
                 continue;
             };
             self.frames.place(&mut self.world, slot, at);
-            placed.push(Rect::from_center_size(at, Vec2::new(size.x, size.y)));
         }
-        if self.sideways {
-            // columns that fit the height, each body right of what lies left of it
-            let (mut y, mut column) = (a.min.y + gap, a.min.x + gap);
-            let mut widest = 0.0f32;
-            for slot in fresh {
-                let size = size_of(&self.frames, slot, Size::Nom);
-                if y > a.min.y + gap && y + size.y + gap > a.max.y {
-                    (y, column, widest) = (a.min.y + gap, column + widest + gap, 0.0);
-                }
-                let over = |r: &&Rect| r.max.y > y - gap && r.min.y < y + size.y + gap;
-                let left = placed.iter().filter(over).map(|r| r.max.x + gap);
-                let left = left.fold(column.min(a.min.x + gap), f32::max);
-                let at = Vec2::new(left + size.x / 2.0, y + size.y / 2.0);
-                self.frames.place(&mut self.world, slot, at);
-                placed.push(Rect::from_center_size(at, Vec2::new(size.x, size.y)));
-                y += size.y + gap;
-                widest = widest.max(size.x);
-            }
-            self.selected = None;
-            self.frames.hold_picks();
-            return;
-        }
-        let room = a.width() - 2.0 * gap;
-        let mut rows: Vec<Vec<SlotId>> = vec![Vec::new()];
-        let mut used = 0.0;
-        for slot in fresh {
-            let w = size_of(&self.frames, slot, Size::Nom).x;
-            if used > 0.0 && used + w > room {
-                rows.push(Vec::new());
-                used = 0.0;
-            }
-            used += w + gap;
-            if let Some(row) = rows.last_mut() {
-                row.push(slot);
-            }
-        }
-        for row in rows {
-            let nom = |s: &SlotId| size_of(&self.frames, *s, Size::Nom).x + gap;
-            let taken: f32 = row.iter().map(nom).sum();
-            let mut spare = room + gap - taken;
-            let mut x = a.min.x + gap;
-            for slot in row {
-                let (n, wide) = (
-                    size_of(&self.frames, slot, Size::Nom),
-                    size_of(&self.frames, slot, Size::Wide),
-                );
-                let sized = self.frames.dock.get(slot);
-                let sized = sized.is_some_and(|s| s.widget.opts.sizes);
-                let need = wide.x - n.x;
-                let widen = self.frames.auto_pick
-                    && sized
-                    && need > 0.0
-                    && spare >= need + ve_frame::AUTO_HYSTERESIS;
-                let size = if widen {
-                    spare -= need;
-                    self.frames.set_pick(slot, Size::Wide);
-                    wide
-                } else {
-                    n
-                };
-                // right under what lies above it
-                let over = |r: &&Rect| r.max.x > x - gap && r.min.x < x + size.x + gap;
-                let top = placed.iter().filter(over).map(|r| r.max.y + gap);
-                let top = top.fold(a.min.y + gap, f32::max);
-                let at = Vec2::new(x + size.x / 2.0, top + size.y / 2.0);
-                self.frames.place(&mut self.world, slot, at);
-                placed.push(Rect::from_center_size(at, Vec2::new(size.x, size.y)));
-                x += size.x + gap;
-            }
-        }
+        // the rest in rows (columns sideways) that fit, laid out by the library (SETL-29)
+        let opts = LayOut {
+            columns: self.sideways,
+            widen: self.frames.auto_pick,
+        };
+        self.frames.lay_out(&mut self.world, &fresh, opts);
         self.selected = None;
-        // decided for the scene as a whole: the layout widens nothing until something changes
-        self.frames.hold_picks();
     }
 
     fn controls(&mut self, ui: &mut Ui) {

@@ -16,6 +16,12 @@
 //!
 //! The world stays the host's: it sets the bounds, steps it and may keep other bodies in it.
 //!
+//! For a dashboard (SETL-29): [`Frames::lay_out`] and [`Frames::snap`] open a scene at its sizes and at rest,
+//! [`Frames::set_hints`] follows a column width that changes with the window, [`Frames::hands`] keeps a
+//! finger's drag for scrolling the page, and [`Shown::moving`] says when to paint again. A panel's height
+//! is rigid: one that has to give (a scrolling body in a column that sticks out) is capped by the host,
+//! which draws it shorter; its body follows.
+//!
 //! ```
 //! # use ve_settle::frames::{Frames, Seat, View};
 //! # use ve_settle::{Params, Rect, Vec2, World};
@@ -38,7 +44,11 @@
 //!         .show(ui, &mut slot.frame, |ui, size| { ui.label(size.label()); })
 //!         .action
 //! };
-//! let mut picked = frames.show(ui, &mut world, view, &mut draw).picked;
+//! let shown = frames.show(ui, &mut world, view, &mut draw);
+//! if shown.moving {
+//!     ui.ctx().request_repaint(); // at rest, nothing changes until something does from outside
+//! }
+//! let mut picked = shown.picked;
 //! picked.extend(frames.show_windows(ui, &mut draw));
 //! for (id, action) in picked {
 //!     frames.apply(id, action);
@@ -69,6 +79,8 @@ const FIT_SLACK: f32 = 1.0;
 /// How far ahead of a changing body its hexagon's outline is drawn in, points: about what a body grows in
 /// a frame.
 const OUTLINE_LEAD: f32 = 8.0;
+/// The most world time [`Frames::snap`] steps through: past the time a world in a cycle is cooled to rest.
+const SNAP_SECS: f32 = 30.0;
 /// Room around a body its frame may paint into when it fits: the landing glow and a floating look's edge.
 const GLOW_ROOM: f32 = 10.0;
 
@@ -104,6 +116,40 @@ pub enum LandAt {
     Home,
     /// Where its floating window was: put back like a drop.
     Window,
+}
+
+/// Which pointers may pick a frame up and move it (SETL-29). A frame that is not taken up by a pointer leaves
+/// its drag to what lies under it: a scroll area scrolls.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum Hands {
+    /// Mouse, pen and touch move frames.
+    #[default]
+    All,
+    /// The mouse moves frames; on a touch screen a drag over a frame scrolls the page instead (the touch
+    /// that comes first after the mouse was used still moves a frame: egui hit-tests by the last frame).
+    MouseOnly,
+    /// Nothing moves frames: a kiosk. Clicks still reach the frames and [`Shown::clicked`].
+    Off,
+}
+
+/// How [`Frames::lay_out`] lays frames out (SETL-29).
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct LayOut {
+    /// Fill columns from the left that fit the world's height, each body right of what lies left of it
+    /// (gravity to the left), instead of rows from the top that fit its width.
+    pub columns: bool,
+    /// What a row has left over goes to its frames that have a wide form, one after the other from the
+    /// left, each only with [`AUTO_HYSTERESIS`] to spare (as the layout's own pick would widen them).
+    pub widen: bool,
+}
+
+impl Default for LayOut {
+    fn default() -> Self {
+        Self {
+            columns: false,
+            widen: true,
+        }
+    }
 }
 
 /// What [`Frames`] has to know about a widget besides the widget itself.
@@ -164,6 +210,12 @@ pub struct Shown {
     pub picked: Vec<(SlotId, FrameAction)>,
     /// The frame that was clicked or grabbed.
     pub clicked: Option<SlotId>,
+    /// Whether anything is still under way (SETL-29): the world is not at rest, a size pick or a size
+    /// change waits for its next look, a frame glows, folds or hops. The one thing a host reads to know
+    /// whether it needs another frame: `if shown.moving { ctx.request_repaint() }`. When it is false,
+    /// nothing changes until something does from outside (input, a widget's content, the window), and
+    /// the host may stop painting.
+    pub moving: bool,
 }
 
 /// A frame as it was drawn last: what a backdrop needs to gather light around it.
@@ -430,6 +482,8 @@ pub struct Frames<W> {
     /// turns for ever, until the world cools). Off, hexagons are rigid and line up by sliding along each
     /// other's faces only.
     pub stretch_hexagons: bool,
+    /// Which pointers may move frames (all by default).
+    pub hands: Hands,
     cells: HashMap<SlotId, Cell>,
     /// Counts the changes that give a frame held at a smaller size a new chance: a body added or removed,
     /// a size switch clicked, a drop, new bounds.
@@ -442,6 +496,11 @@ pub struct Frames<W> {
     view: Option<View>,
     /// The picks as they are were decided for the scene as a whole ([`Frames::hold_picks`]).
     hold: bool,
+    /// The last pointer used was a touch ([`Hands::MouseOnly`]).
+    touch: bool,
+    /// The epoch in which the size pick looked at every frame on auto in a world at rest and found nothing
+    /// to do: no pick is pending until something changes.
+    picks_done: Option<u64>,
 }
 
 impl<W> Default for Frames<W> {
@@ -461,6 +520,7 @@ impl<W> Frames<W> {
             rehome_on_drop: true,
             land_at: LandAt::default(),
             stretch_hexagons: false,
+            hands: Hands::All,
             cells: HashMap::new(),
             epoch: 0,
             pick_clock: 0.0,
@@ -469,6 +529,8 @@ impl<W> Frames<W> {
             group: Vec::new(),
             view: None,
             hold: false,
+            touch: false,
+            picks_done: None,
         }
     }
 
@@ -525,6 +587,44 @@ impl<W> Frames<W> {
     /// Which of min / nom / wide the layout shows for a widget while its size switch is on auto.
     pub fn pick(&self, id: SlotId) -> Option<Size> {
         self.cells.get(&id).map(|c| c.pick)
+    }
+
+    /// The seat a widget was added with, as it is now.
+    pub fn seat(&self, id: SlotId) -> Option<&Seat> {
+        self.cells.get(&id).map(|c| &c.seat)
+    }
+
+    /// Give a widget new sizes after it was added (SETL-29): a dashboard derives them from its column
+    /// width, which changes with the window. Nothing happens when they are the ones it has; otherwise what
+    /// was learned of the old sizes is forgotten, and with the next [`Frames::show`] the body takes the new
+    /// ones (which wakes the world). Pass the same hints to the frame's `.sizes(..)` in `draw`. Returns
+    /// whether they changed.
+    pub fn set_hints(&mut self, id: SlotId, hints: SizeHints) -> bool {
+        let Some(cell) = self.cells.get_mut(&id) else {
+            return false;
+        };
+        if cell.seat.hints == Some(hints) {
+            return false;
+        }
+        cell.seat.hints = Some(hints);
+        cell.outer = [None; 3];
+        cell.least = [0.0; 3];
+        cell.hex_least = [egui::Vec2::ZERO; 3];
+        cell.outlined = None;
+        self.epoch += 1;
+        true
+    }
+
+    /// Give a widget a new title (what its ghost shows). Returns whether it changed.
+    pub fn set_title(&mut self, id: SlotId, title: impl Into<String>) -> bool {
+        let title = title.into();
+        match self.cells.get_mut(&id) {
+            Some(cell) if cell.seat.title != title => {
+                cell.seat.title = title;
+                true
+            }
+            _ => false,
+        }
     }
 
     /// Draw a widget's frame out of sight in each of its sizes and keep what they take, so that its body
@@ -641,6 +741,125 @@ impl<W> Frames<W> {
         }
     }
 
+    /// Lay widgets out before they are shown (SETL-29), so a scene opens at its sizes and at rest instead
+    /// of growing into shape: [`Frames::measure`] them first. `order` is reading order. Rows that fit the
+    /// world's width at the widgets' normal size, from the top; what a row has left over goes to its frames
+    /// with a wide form ([`LayOut::widen`]); each body is put right under what lies above it (other
+    /// bodies of the world included). Then [`Frames::hold_picks`]. Returns the rows (the columns, with
+    /// [`LayOut::columns`]).
+    ///
+    /// Bodies are put where they belong at once ([`Frames::place`]); [`Frames::snap`] settles what is left.
+    /// For rectangles: hexagons nest by [`World::pack_cell`].
+    pub fn lay_out(
+        &mut self,
+        world: &mut World,
+        order: &[SlotId],
+        opts: LayOut,
+    ) -> Vec<Vec<SlotId>> {
+        let gap = world.params().gap;
+        let a = world.bounds();
+        let order: Vec<SlotId> = order
+            .iter()
+            .copied()
+            .filter(|id| self.body(*id).is_some())
+            .collect();
+        let mine: Vec<BodyId> = order.iter().filter_map(|id| self.body(*id)).collect();
+        let mut placed: Vec<Rect> = world
+            .bodies()
+            .iter()
+            .filter(|b| !mine.contains(&b.id))
+            .map(|b| b.rect)
+            .collect();
+        let size_of = |frames: &Self, id: SlotId, size: Size| {
+            let cell = frames.cells.get(&id);
+            let guess = cell.map_or(Vec2::new(240.0, 120.0), |c| guess(&c.seat));
+            let outer = frames.outer(id, size);
+            outer.map_or(guess, |o| Vec2::new(o.x, o.y))
+        };
+        if opts.columns {
+            // columns that fit the height, each body right of what lies left of it
+            let mut columns: Vec<Vec<SlotId>> = vec![Vec::new()];
+            let (mut y, mut column) = (a.min.y + gap, a.min.x + gap);
+            let mut widest = 0.0f32;
+            for id in order {
+                let size = size_of(self, id, Size::Nom);
+                if y > a.min.y + gap && y + size.y + gap > a.max.y {
+                    (y, column, widest) = (a.min.y + gap, column + widest + gap, 0.0);
+                    columns.push(Vec::new());
+                }
+                let over = |r: &&Rect| r.max.y > y - gap && r.min.y < y + size.y + gap;
+                let left = placed.iter().filter(over).map(|r| r.max.x + gap);
+                let left = left.fold(column.min(a.min.x + gap), f32::max);
+                let at = Vec2::new(left + size.x / 2.0, y + size.y / 2.0);
+                self.set_pick(id, Size::Nom);
+                self.place(world, id, at);
+                placed.push(Rect::from_center_size(at, size));
+                y += size.y + gap;
+                widest = widest.max(size.x);
+                if let Some(c) = columns.last_mut() {
+                    c.push(id);
+                }
+            }
+            self.hold_picks();
+            return columns;
+        }
+        let room = a.size().x - 2.0 * gap;
+        let mut rows: Vec<Vec<SlotId>> = vec![Vec::new()];
+        let mut used = 0.0;
+        for id in order {
+            let w = size_of(self, id, Size::Nom).x;
+            if used > 0.0 && used + w > room {
+                rows.push(Vec::new());
+                used = 0.0;
+            }
+            used += w + gap;
+            if let Some(row) = rows.last_mut() {
+                row.push(id);
+            }
+        }
+        for row in &rows {
+            let taken: f32 = row
+                .iter()
+                .map(|s| size_of(self, *s, Size::Nom).x + gap)
+                .sum();
+            let mut spare = room + gap - taken;
+            let mut x = a.min.x + gap;
+            for &id in row {
+                let (n, wide) = (size_of(self, id, Size::Nom), size_of(self, id, Size::Wide));
+                let sized = self.seat(id).is_some_and(|s| s.hints.is_some());
+                let need = wide.x - n.x;
+                let widen = opts.widen && sized && need > 0.0 && spare >= need + AUTO_HYSTERESIS;
+                let size = if widen {
+                    spare -= need;
+                    wide
+                } else {
+                    n
+                };
+                self.set_pick(id, if widen { Size::Wide } else { Size::Nom });
+                // right under what lies above it
+                let over = |r: &&Rect| r.max.x > x - gap && r.min.x < x + size.x + gap;
+                let top = placed.iter().filter(over).map(|r| r.max.y + gap);
+                let top = top.fold(a.min.y + gap, f32::max);
+                let at = Vec2::new(x + size.x / 2.0, top + size.y / 2.0);
+                self.place(world, id, at);
+                placed.push(Rect::from_center_size(at, size));
+                x += size.x + gap;
+            }
+        }
+        // decided for the scene as a whole: the layout widens nothing until something changes
+        self.hold_picks();
+        rows
+    }
+
+    /// Settle the world to rest in one call, without a glide (SETL-29): for reduced motion (call it after
+    /// each [`Frames::show`] in place of [`World::advance`]) and for snapshot tests, so a host shows only a
+    /// world at rest. A world goes to rest by itself at the latest when it cools (about 15 s of its time);
+    /// returns whether it got there within that.
+    pub fn snap(&mut self, world: &mut World) -> bool {
+        let steps = (SNAP_SECS / world.params().dt.max(1e-3)).ceil() as u32;
+        world.settle(steps).is_some()
+    }
+
     /// Whether a widget's body is a ghost: the widget floats and its place is kept.
     pub fn is_ghost(&self, id: SlotId) -> bool {
         self.cells.get(&id).is_some_and(|c| c.ghost)
@@ -754,6 +973,24 @@ impl<W> Frames<W> {
             self.epoch += 1;
         }
         let mut shown = Shown::default();
+        // the pointer used last: a touch, or a mouse that moved without one
+        let (touched, moused) = ui.input(|i| {
+            let touch = i.any_touches()
+                || i.events
+                    .iter()
+                    .any(|e| matches!(e, egui::Event::Touch { .. }));
+            let moved = i
+                .events
+                .iter()
+                .any(|e| matches!(e, egui::Event::PointerMoved(_)));
+            (touch, moved)
+        });
+        if touched {
+            self.touch = true;
+        } else if moused {
+            self.touch = false;
+        }
+
         // solid bodies first, lifted ones above them, the dragged one on top
         let mut order: Vec<(SlotId, BodyId)> = self
             .dock
@@ -771,7 +1008,32 @@ impl<W> Frames<W> {
         }
         let dt = ui.input(|i| i.stable_dt).min(0.1);
         self.pick_pass(world, dt);
+        shown.moving = self.moving(world);
         shown
+    }
+
+    /// Whether the pointer used last may move frames ([`Frames::hands`]).
+    fn grabs(&self) -> bool {
+        match self.hands {
+            Hands::All => true,
+            Hands::MouseOnly => !self.touch,
+            Hands::Off => false,
+        }
+    }
+
+    /// Whether anything is still under way: see [`Shown::moving`].
+    fn moving(&self, world: &World) -> bool {
+        let picks = self.auto_pick && (self.picks_done != Some(self.epoch) || !world.is_at_rest());
+        let cells = self
+            .cells
+            .values()
+            .any(|c| c.body.is_some() && (c.anchor.is_some() || c.pressed > 0));
+        let here = |s: &&Slot<W>| s.frame.placement.viewport == self.viewport;
+        let animating = self.dock.iter().filter(here).any(|s| {
+            let open = s.frame.openness();
+            s.frame.glow() > 0.0 || s.frame.pluck() > 0.0 || (open > 0.0 && open < 1.0)
+        });
+        !world.is_at_rest() || picks || cells || animating || !self.group.is_empty()
     }
 
     fn show_one(
@@ -783,6 +1045,7 @@ impl<W> Frames<W> {
         draw: &mut impl FnMut(&mut Ui, &mut Slot<W>) -> Option<FrameAction>,
         shown: &mut Shown,
     ) {
+        let grab = self.grabs();
         let (Some(body), Some(cell), Some(slot)) = (
             world.body(body_id),
             self.cells.get_mut(&id),
@@ -821,18 +1084,20 @@ impl<W> Frames<W> {
         } else {
             egui::Rect::NOTHING
         };
-        let grip = ui.interact(
-            seen,
-            Id::new(("ve_settle::frame", id.0)),
-            Sense::click_and_drag(),
-        );
+        // a frame no pointer may move senses clicks only, so a drag over it goes to what is under it
+        let sense = if grab {
+            Sense::click_and_drag()
+        } else {
+            Sense::click()
+        };
+        let grip = ui.interact(seen, Id::new(("ve_settle::frame", id.0)), sense);
         let pointer = grip.interact_pointer_pos();
         if grip.clicked() {
             shown.clicked = Some(id);
         }
         // where the pointer went down: a drag is known only once it has moved a little
         let pressed = ui.input(|i| i.pointer.press_origin()).or(pointer);
-        if let (true, Some(pressed)) = (grip.drag_started(), pressed) {
+        if let (true, true, Some(pressed)) = (grab, grip.drag_started(), pressed) {
             // a hexagon is held by its outline, not by the corners of its rectangle
             let at = view.to_world(pressed);
             if !hex || body.shape().contains(at) {
@@ -876,7 +1141,8 @@ impl<W> Frames<W> {
                 world.drag_to(m, to + offset);
             }
         }
-        if held && grip.drag_stopped() {
+        // (hands taken away mid-drag let go where it is)
+        if held && (grip.drag_stopped() || !grab) {
             // alone, an outline glides into a free cell near where it was dropped (SETL-28)
             if self.group.len() <= 1 {
                 world.release_to_cell(body_id, self.rehome_on_drop);
@@ -1053,6 +1319,7 @@ impl<W> Frames<W> {
         if !self.auto_pick || self.pick_clock < PICK_EVERY {
             return;
         }
+        let at_rest = world.is_at_rest();
         let mut rows: Vec<(SlotId, BodyId, Rect)> = Vec::new();
         for slot in self.dock.iter() {
             let Some(cell) = self.cells.get(&slot.id) else {
@@ -1115,6 +1382,11 @@ impl<W> Frames<W> {
             self.pick_clock = 0.0;
             world.wake();
             return;
+        }
+        // every frame looked at in a world at rest, nothing to pick and nothing pressed: done until
+        // something changes
+        if at_rest && self.cells.values().all(|c| c.pressed == 0) {
+            self.picks_done = Some(self.epoch);
         }
     }
 }

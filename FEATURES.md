@@ -996,6 +996,31 @@ up and Packery's "others flow around the dragged one". No app uses it yet.
   blocked). A honeycomb under gravity needs attraction as a force that can hold a body off the wall, as the
   rectangles' corner snap (1500) holds against gravity (600); open question for the user. Answered by SETL-28:
   the honeycomb is laid out cell by cell, and the solver holds it.
+- ✅ **SETL-29 Frames for a dashboard** (P2605#13oct-1130b, dash-egui plan 2/6, for tpm_mesh_dash APP-109):
+  what `ve_settle::frames` lacked before a live dashboard can sit on it, found by reading the dash's
+  `masonry.rs` and `app.rs` against frames.rs 0.23.0. (a) `Frames::hands`: `Hands::All` (default), `MouseOnly`
+  (a frame senses clicks only while the last pointer was a touch, so a finger's drag over it goes to the scroll
+  area under it; the first touch after the mouse was used still grabs, egui hit-tests by the last frame) and
+  `Off` (a kiosk: clicks only); hands taken away mid-drag let go. (b) `Frames::set_hints` / `set_title` /
+  `seat`: new hints forget what was learned of the old sizes, and the body takes the new ones with the next
+  show; the same hints change nothing and the world stays at rest. (c) `Frames::lay_out(world, order, LayOut)`:
+  the sandbox's seeding moved into the library (rows that fit at normal size in reading order, a row's leftover
+  to frames with a wide form with `AUTO_HYSTERESIS` to spare, each body right under what lies above it, or
+  columns with `LayOut::columns`; then `hold_picks`), and `Frames::snap` (settle to rest in one call, at most
+  30 s of world time). The sandbox still opens with 0 of 21 frames changing size. (d) `Shown::moving`: the
+  world is not at rest, a size pick or a size change (anchor) waits, a frame is pressed, glows, hops or folds,
+  or a drag goes on; documented as what a host reads to request a repaint. Measured: a panel whose content
+  changes by 20 points once a second for 30 s rests within 25 frames each time (60 fps); nothing above it or
+  beside it moves, nor the panels beside the one under it; that one runs up to 4 points past and comes back.
+  (e) *A height that gives* (masonry lets a panel with a scrolling body give up to a fraction of its height
+  when its column sticks out): not built. Tried in a world: a body allowed to give half its height in a column
+  that sticks out 300 points gives nothing with the bottom open (nothing presses it, as on the dash's page),
+  and with the bottom closed the solver moves the panel under it to another column instead of squeezing (0.9
+  points given). Masonry's squeeze is a rule over columns, not a force, and a world has no columns; so the
+  dash caps such a panel itself (it draws it shorter, the body follows as for any height change).
+  Tests `tests/dash.rs` (a scrolling page of live panels: touch with each `Hands`, new hints, laid out and at
+  rest from the first frame, the live panel for 30 s). Not done: auto_pick and stretch_hexagons stay off by
+  default; touch is not recorded by the sandbox's recorder (SETL-24).
 - ✅ **SETL-28 Hexagons pack as a honeycomb** (user, 12 Oct 2026 16:19: "the Hexagons scene as a packed
   honeycomb: faces flush, no gaps, against the gravity side; a hex dropped near the pack snaps into a free
   cell; if the solver can't, say why"). Why gravity alone could not: it packs hexagons tip to tip against its
@@ -1150,7 +1175,8 @@ up and Packery's "others flow around the dragged one". No app uses it yet.
   - *Heights do not stretch.* A frame draws itself as tall as its content, so its body is rigid in height and
     vertex attraction (SETL-12) cannot put the bottoms of a row on one line; widths of rectangles on auto or
     wide do stretch. It needs the frame to fill a height it is given without losing the height it wants
-    (`fill` hides that).
+    (`fill` hides that). A height that gives under pressure was tried for the dash and does not help there
+    (SETL-29 (e)).
   - *A frame is drawn at its size at once, the body follows at `grow_speed`.* In between the frame is clipped to
     its body (as the sandbox clips content): a size switch shows the new form cut off for a quarter second
     rather than growing with the body.
