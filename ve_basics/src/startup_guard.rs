@@ -7,7 +7,8 @@
 //! never reached its first frame.
 
 use std::path::{Path, PathBuf};
-use std::time::{SystemTime, UNIX_EPOCH};
+
+use web_time::{SystemTime, UNIX_EPOCH};
 
 /// Name of the marker file inside the storage directory.
 const MARKER: &str = "starting";

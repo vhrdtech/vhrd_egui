@@ -15,6 +15,7 @@ fonts = ["ve_theme/fonts"]
 [dependencies]
 egui.workspace = true
 ve_theme = { path = "../ve_theme", version = "0.21", default-features = false }
+web-time.workspace = true
 
 [dev-dependencies]
 eframe = { workspace = true, features = ["wgpu"] }

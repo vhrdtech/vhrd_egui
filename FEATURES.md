@@ -73,6 +73,21 @@ in tpm (P2605). Statuses were checked against the code.
 - 🚧 **PLT-6 Windows console output**: the template's `--version` calls `AttachConsole(ATTACH_PARENT_PROCESS)`
   (windows-sys) before printing, so the text reaches the terminal although release builds hide the console window.
   Written, not yet run on Windows.
+- ✅ **PLT-7 wasm-clean dash crates**: `ve_dash::Sparkline`'s hover readout and `ve_basics::StartupGuard::move_aside`
+  used `std::time::SystemTime::now()`, which panics on `wasm32-unknown-unknown`; both now take it from `web-time`
+  (native: a re-export of `std::time`, web: `Performance.now()`/`Date.now()`), same API. Audited `ve_dash`,
+  `ve_theme`, `ve_basics` for other runtime `std::time` / `std::fs` / `std::thread`: the remaining `std::fs` hits
+  (`ve_theme::tokens` palette-copy test, `ve_basics::startup_guard` tests) are `#[cfg(test)]`-only, and
+  `ve_theme/build.rs`'s `std::fs` runs on the host at build time, so none reach a shipped wasm binary.
+  `just check-wasm` (`cargo clippy --target wasm32-unknown-unknown -p ve_dash -p ve_theme -p ve_basics`), wired into
+  `just lint`, catches a regression that fails to compile; it can't catch a runtime-only panic like this one, so a
+  new `std::time`/`fs`/`thread` use in these crates still needs the same by-hand check.
+- 🐛 **PLT-8 app template doesn't compile for wasm**: `egui_app_skill/templates/src/main.rs.j2` calls
+  `eframe::storage_dir(APP_ID)` unconditionally for `ve_basics::StartupGuard::begin` (PLT-4); `storage_dir` is
+  `#[cfg(not(target_arch = "wasm32"))]` in eframe 0.36, so a generated app fails to compile for
+  `wasm32-unknown-unknown` as-is. Needs `cfg(not(target_arch = "wasm32"))` around the call (`None` on web, same as
+  an app with no persistence dir). Found auditing PLT-7, not fixed here (template/skill, outside `ve_dash` /
+  `ve_theme` / `ve_basics`); likely belongs with the web-build session's target-specific Cargo work.
 
 ## Widgets (`WID`)
 

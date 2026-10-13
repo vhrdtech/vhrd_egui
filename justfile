@@ -10,6 +10,11 @@ test:
 lint:
     cargo clippy --workspace --all-targets -- -D warnings
     cargo fmt --all --check
+    just check-wasm
+
+# The crates a wasm32 dashboard build pulls in (PLT-7): no std::time/fs/thread that panics on the web
+check-wasm:
+    cargo clippy --target wasm32-unknown-unknown -p ve_dash -p ve_theme -p ve_basics -- -D warnings
 
 # Refresh ve_theme's copy of the vhrd_brand palette export (sibling checkout); build.rs makes the constants
 brand:

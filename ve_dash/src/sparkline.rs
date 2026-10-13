@@ -259,8 +259,8 @@ impl Widget for Sparkline<'_> {
                 let ago = every.as_secs_f32() * (n - 1 - i) as f32;
                 label = format!("{label} · {}", age_label(ago));
                 if let Some(clock) = self.clock {
-                    let now = std::time::SystemTime::now()
-                        .duration_since(std::time::UNIX_EPOCH)
+                    let now = web_time::SystemTime::now()
+                        .duration_since(web_time::UNIX_EPOCH)
                         .map_or(0, |d| d.as_secs() as i64);
                     label = format!("{label} · {}", clock(now - ago.round() as i64));
                 }

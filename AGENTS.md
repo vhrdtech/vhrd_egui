@@ -81,6 +81,7 @@ cargo build --workspace
 cargo clippy --workspace --all-targets -- -D warnings
 cargo fmt --all
 cargo test --workspace
+just check-wasm  # ve_dash, ve_theme, ve_basics: no std::time/fs/thread that panics on wasm32-unknown-unknown (PLT-7)
 ```
 
 Before declaring a change done: build, clippy without warnings, fmt, tests. If you changed UI behavior and can't
