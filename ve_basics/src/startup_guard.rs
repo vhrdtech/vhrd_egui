@@ -6,6 +6,12 @@
 //! removed after the first frame. A marker that is already there at startup means the previous run
 //! never reached its first frame.
 
+// This is the one module of this web crate (PLT-9) allowed to touch `std::fs` and the clock: the fs
+// calls only run when a caller passes `Some(dir)` (an app must pass `None` on the web, PLT-8), errors
+// are swallowed, and `SystemTime::now` is `web_time`'s cross-platform one, which resolves to the same
+// path clippy's `disallowed-methods` flags.
+#![allow(clippy::disallowed_methods)]
+
 use std::path::{Path, PathBuf};
 
 use web_time::{SystemTime, UNIX_EPOCH};

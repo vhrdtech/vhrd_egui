@@ -552,6 +552,8 @@ mod tests {
     /// The copy of the export is the export: when vhrd_brand is checked out beside this repo, the two files
     /// are the same (`just brand` refreshes the copy).
     #[test]
+    // A native-only, cfg(test) check of a sibling checkout on disk; never reaches a shipped wasm binary.
+    #[allow(clippy::disallowed_methods)]
     fn palette_copy_matches_the_sibling_export() {
         let dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR"));
         let Ok(theirs) = std::fs::read_to_string(dir.join("../../vhrd_brand/web/palette.json"))

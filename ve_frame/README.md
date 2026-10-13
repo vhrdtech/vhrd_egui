@@ -35,6 +35,20 @@ let r = WidgetFrame::new("supply")
 In the playground the ☆ in every header is the playground's own item through `header_item`; the ve_settle
 sandbox puts its pin there and "Pin in place" in the menu the same way (SETL-27).
 
+## On the web
+
+`ve_frame` is one of the crates a wasm32 dashboard build pulls in (PLT-9): it has no `std::time`/`fs`/`thread`/
+`process` call that would panic in the browser, and `just check-wasm` gates that.
+
+Two things behave differently there at runtime, not just at compile time:
+
+- **`Dock::show_viewports`**: egui's multi-viewport backend doesn't exist on the web (nor in tests), so each
+  "other OS window" is shown as an embedded window inside the main one instead of a real browser window; closing
+  it still puts its widgets back into the main grid.
+- **`ViewportCommand::CursorPosition`**: the size-switch code warps the pointer back onto a window that couldn't
+  follow all the way to a screen edge; on the web (and on Wayland) the platform can't warp the pointer, so the
+  command is a silent no-op and the pointer just stays where it was.
+
 ## For a layout that places frames itself
 
 A host that lays frames out (ve_settle) reads and sets a few things on `FrameState`: `set_auto_pick` (which

@@ -86,11 +86,30 @@ cargo build --workspace
 cargo clippy --workspace --all-targets -- -D warnings
 cargo fmt --all
 cargo test --workspace
-just check-wasm  # ve_dash, ve_theme, ve_basics: no std::time/fs/thread that panics on wasm32-unknown-unknown (PLT-7)
+just check-wasm  # ve_dash, ve_theme, ve_basics, ve_frame, ve_settle: wasm-clean (PLT-7, PLT-9)
 ```
 
 Before declaring a change done: build, clippy without warnings, fmt, tests. If you changed UI behavior and can't
 run a GUI, say so and describe the manual check.
+
+### Web crates
+
+A web dashboard build (`tpm_mesh_dash` on wasm32-unknown-unknown) pulls in `ve_dash`, `ve_theme`, `ve_basics`,
+`ve_frame` and `ve_settle` (with its `frame` and `serde` features): their code must never call something that
+panics in the browser (no OS clock, threads, filesystem or process). `just check-wasm` clippies these five for
+`wasm32-unknown-unknown`, and each carries its own `clippy.toml` with a `disallowed-methods` list
+(`std::time::Instant::now`, `std::time::SystemTime::now`, `std::thread::spawn`/`sleep`,
+`std::process::Command::new`, the common `std::fs` functions) so a new unguarded call fails lint instead of
+needing a by-hand audit (PLT-9). `web_time::Instant`/`SystemTime` are the sanctioned replacements (native: a
+re-export of `std::time`, web: `Performance.now()`/`Date.now()`) — because they resolve to the same path as
+`std::time` on native, clippy still flags them, so the few legitimate call sites (and native-only test/example
+code that never ships to wasm, e.g. `ve_settle`'s sandbox example and tests) carry a local
+`#[allow(clippy::disallowed_methods)]` with a short reason; a new one needs the same conscious annotation, not a
+blanket allow.
+
+Not web crates, and why: `ve_widget` (eframe with default features, tokio, `typetag` and `inventory`, which need
+`ctor` support on wasm), `ve_app` (egui_tiles, eframe persistence), `ve_backdrop` (threads, processes, filesystem
+for the wallpaper and Hyprland backdrop; its `wgpu` feature).
 
 ## UI guide rules
 

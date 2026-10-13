@@ -88,6 +88,23 @@ in tpm (P2605). Statuses were checked against the code.
   `wasm32-unknown-unknown` as-is. Needs `cfg(not(target_arch = "wasm32"))` around the call (`None` on web, same as
   an app with no persistence dir). Found auditing PLT-7, not fixed here (template/skill, outside `ve_dash` /
   `ve_theme` / `ve_basics`); likely belongs with the web-build session's target-specific Cargo work.
+- ✅ **PLT-9 wasm-gate frames**: `just check-wasm` now also clippies `ve_frame` and `ve_settle` (with its
+  `frame`/`serde` features) for `wasm32-unknown-unknown`, alongside `ve_dash`/`ve_theme`/`ve_basics` (PLT-7); a
+  dash can now take `ve_frame`'s widget frame and `ve_settle`'s physics layout. Their `src` had no runtime
+  `std::time`/`fs`/`thread`/`process` call already (frame times come from egui input time, the world steps on a
+  `dt` with no clock or randomness), so this was a gate, not a port. Each of the five crates carries a
+  `clippy.toml` with a `disallowed-methods` list (`std::time::Instant::now`, `std::time::SystemTime::now`,
+  `std::thread::spawn`/`sleep`, `std::process::Command::new`, the common `std::fs` functions — no module
+  wildcard, so enumerated by hand); per-crate `clippy.toml` works in this workspace (`cargo clippy -p <crate>`
+  picks up `<crate>/clippy.toml`), so no single workspace-root file. `web_time::Instant`/`SystemTime` resolve to
+  the same path as `std::time` on native, so clippy flags them too; their few legitimate call sites
+  (`ve_dash::Sparkline`'s hover readout, `ve_basics::StartupGuard`) and native-only test/example code that never
+  ships to wasm (`ve_settle`'s sandbox example and tests, a debug SVG dump, a `ve_theme` sibling-checkout test)
+  carry a local `#[allow(clippy::disallowed_methods)]` with a reason, so a new unannotated call still fails.
+  Verified: a deliberate `std::time::Instant::now()` added to `ve_frame::lib` fails `just check-wasm`, removing
+  it passes again. `justfile`, `clippy.toml` in each of the five crates, `AGENTS.md` ("Web crates"),
+  `ve_frame/README.md` ("On the web": `Dock::show_viewports` falls back to embedded windows there,
+  `ViewportCommand::CursorPosition` is a silent no-op).
 
 ## Widgets (`WID`)
 

@@ -1,6 +1,10 @@
 //! Free cells and the honeycomb (SETL-28): hexagons laid out cell by cell nest face to face, the pack
 //! rests as it was laid out, and a hexagon dropped near the pack glides into a free cell.
 
+// A native-only test; `dump`'s SVG write (behind the `NEST_SVG` env var, for debugging by hand) never
+// runs on the web. `ve_settle`'s lib stays wasm-gated (PLT-9).
+#![allow(clippy::disallowed_methods)]
+
 use ve_settle::{BodyDesc, BodyId, Params, Poly, Rect, Side, Vec2, World};
 
 fn v(x: f32, y: f32) -> Vec2 {

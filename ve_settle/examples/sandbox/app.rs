@@ -6,6 +6,10 @@
 //! The headless tests in `tests/sandbox.rs` and `tests/frames.rs` include
 //! this file and drive it like a person, so everything they read is `pub`.
 
+// A native-only example (eframe/wgpu, ve_backdrop), not part of what ships to the web, so it's fine for
+// its tape recorder (SETL-24) to use the real clock and filesystem; `ve_settle`'s lib stays wasm-gated (PLT-9).
+#![allow(clippy::disallowed_methods)]
+
 // The frame playground's demo widgets: one widget, every option of the frame.
 #[path = "../../../ve_frame/examples/playground/main.rs"]
 #[allow(dead_code)]

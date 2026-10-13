@@ -3,6 +3,10 @@
 //! overlap and nothing jumps; after each change the world comes to rest. (The sandbox's first scenes of
 //! plain boxes and tiles live on as headless worlds in `tests/scenes.rs`.)
 
+// A native-only test (reads and writes recording files on disk), not part of what ships to the web;
+// `ve_settle`'s lib stays wasm-gated (PLT-9).
+#![allow(clippy::disallowed_methods)]
+
 #[path = "../examples/sandbox/app.rs"]
 #[allow(dead_code)]
 mod app;

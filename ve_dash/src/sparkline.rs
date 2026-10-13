@@ -259,6 +259,9 @@ impl Widget for Sparkline<'_> {
                 let ago = every.as_secs_f32() * (n - 1 - i) as f32;
                 label = format!("{label} · {}", age_label(ago));
                 if let Some(clock) = self.clock {
+                    // web_time::SystemTime re-exports std's on native, so clippy's disallowed-methods
+                    // (PLT-9) sees the same resolved path as a raw std::time::SystemTime::now call.
+                    #[allow(clippy::disallowed_methods)]
                     let now = web_time::SystemTime::now()
                         .duration_since(web_time::UNIX_EPOCH)
                         .map_or(0, |d| d.as_secs() as i64);

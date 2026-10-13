@@ -5,6 +5,18 @@ versions follow [Semantic Versioning](https://semver.org/). Feature IDs refer to
 
 ## [Unreleased]
 
+### Added
+
+- `just check-wasm` also clippies `ve_frame` and `ve_settle` (with its `frame`/`serde` features) for
+  `wasm32-unknown-unknown`, alongside `ve_dash`/`ve_theme`/`ve_basics`; each of the five carries a `clippy.toml`
+  with a `disallowed-methods` list, so a new `std::time`/`fs`/`thread`/`process` call that would panic on the web
+  fails lint instead of needing a by-hand audit (PLT-9).
+
+### Changed
+
+- ve_frame: README documents the web runtime fallbacks: `Dock::show_viewports` shows other OS windows embedded
+  rather than as real browser windows, `ViewportCommand::CursorPosition` is a silent no-op there (PLT-9).
+
 ## [0.23.0] - 2026-10-13
 
 ### Added
