@@ -5,6 +5,26 @@ versions follow [Semantic Versioning](https://semver.org/). Feature IDs refer to
 
 ## [Unreleased]
 
+### Added
+
+- ve_settle::frames, what a live dashboard needs (SETL-29): `Frames::hands` (`Hands::All`, `MouseOnly`, `Off`):
+  on a touch screen a finger's drag over a frame scrolls the page, `Off` is a kiosk; `Frames::set_hints` and
+  `set_title` change a widget's seat after it was added (the world wakes only when they changed), `Frames::seat`;
+  `Frames::lay_out(world, order, LayOut)` lays measured frames out in rows (or columns) before they are shown,
+  with a row's leftover to frames with a wide form, then holds the picks; `Frames::snap` settles to rest in one
+  call (reduced motion, snapshot tests); `Shown::moving`, the one thing a host reads to request a repaint.
+  **Breaking:** `Shown` has a new field (construct it with `..Default::default()`).
+
+### Changed
+
+- ve_settle sandbox: its scene is laid out by `Frames::lay_out` (SETL-29); it opens as before.
+
+### Fixed
+
+- `just lint` from a clean build: ve_theme's build script reads the brand palette with `std::fs`, which the web
+  crates' disallowed-methods list (PLT-9) refused; a build script runs on the build PC, so it is allowed there
+  (PLT-9).
+
 ## [0.24.0] - 2026-10-13
 
 ### Added

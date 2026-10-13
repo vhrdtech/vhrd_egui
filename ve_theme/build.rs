@@ -40,6 +40,9 @@ fn emit(out: &mut String, name: &str, group: &Value) {
     out.push_str("}\n");
 }
 
+// A build script runs on the build PC, never in the browser: the wasm gate's disallowed std::fs calls (clippy.toml,
+// PLT-9) are fine here.
+#[allow(clippy::disallowed_methods)]
 fn main() {
     println!("cargo:rerun-if-changed=brand/palette.json");
     let json = fs::read_to_string("brand/palette.json").expect("ve_theme/brand/palette.json");
