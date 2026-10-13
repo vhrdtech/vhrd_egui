@@ -5,16 +5,18 @@ versions follow [Semantic Versioning](https://semver.org/). Feature IDs refer to
 
 ## [Unreleased]
 
-### Fixed
-
-- ve_dash: `Sparkline`'s hover readout no longer panics on `wasm32-unknown-unknown` — its clock timestamp now
-  comes from `web-time::SystemTime` instead of `std::time::SystemTime` (PLT-7).
-- ve_basics: `StartupGuard::move_aside` switched the same way, for the same reason (PLT-7).
+## [0.22.0] - 2026-10-13
 
 ### Added
 
 - `just check-wasm` (`cargo clippy --target wasm32-unknown-unknown -p ve_dash -p ve_theme -p ve_basics`), wired
   into `just lint` (PLT-7).
+
+### Fixed
+
+- ve_dash: `Sparkline`'s hover readout no longer panics on `wasm32-unknown-unknown` — its clock timestamp now
+  comes from `web-time::SystemTime` instead of `std::time::SystemTime` (PLT-7).
+- ve_basics: `StartupGuard::move_aside` switched the same way, for the same reason (PLT-7).
 
 ## [0.21.0] - 2026-10-11
 
