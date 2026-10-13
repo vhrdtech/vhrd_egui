@@ -95,21 +95,21 @@ run a GUI, say so and describe the manual check.
 ### Web crates
 
 A web dashboard build (`tpm_mesh_dash` on wasm32-unknown-unknown) pulls in `ve_dash`, `ve_theme`, `ve_basics`,
-`ve_frame` and `ve_settle` (with its `frame` and `serde` features): their code must never call something that
-panics in the browser (no OS clock, threads, filesystem or process). `just check-wasm` clippies these five for
-`wasm32-unknown-unknown`, and each carries its own `clippy.toml` with a `disallowed-methods` list
-(`std::time::Instant::now`, `std::time::SystemTime::now`, `std::thread::spawn`/`sleep`,
-`std::process::Command::new`, the common `std::fs` functions) so a new unguarded call fails lint instead of
-needing a by-hand audit (PLT-9). `web_time::Instant`/`SystemTime` are the sanctioned replacements (native: a
-re-export of `std::time`, web: `Performance.now()`/`Date.now()`) — because they resolve to the same path as
-`std::time` on native, clippy still flags them, so the few legitimate call sites (and native-only test/example
-code that never ships to wasm, e.g. `ve_settle`'s sandbox example and tests) carry a local
-`#[allow(clippy::disallowed_methods)]` with a short reason; a new one needs the same conscious annotation, not a
-blanket allow.
+`ve_frame` and `ve_settle` (with its `frame` and `serde` features), and can take `ve_backdrop` (BACK-3): their code
+must never call something that panics in the browser (no OS clock, threads, filesystem or process).
+`just check-wasm` clippies these for `wasm32-unknown-unknown` (`ve_backdrop` twice: `--no-default-features`, the CPU
+painter of a WebGL2 bundle, and `--features wgpu`, the shader of a WebGPU bundle), and each carries its own
+`clippy.toml` with a `disallowed-methods` list (`std::time::Instant::now`, `std::time::SystemTime::now`,
+`std::thread::spawn`/`sleep`, `std::process::Command::new`, the common `std::fs` functions) so a new unguarded call
+fails lint instead of needing a by-hand audit (PLT-9). `web_time::Instant`/`SystemTime` are the sanctioned
+replacements (native: a re-export of `std::time`, web: `Performance.now()`/`Date.now()`) — because they resolve to
+the same path as `std::time` on native, clippy still flags them, so the few legitimate call sites (and native-only
+test/example code that never ships to wasm, e.g. `ve_settle`'s sandbox example and tests, `ve_backdrop`'s wallpaper
+lookup and Hyprland listener, which are cfg'd off on wasm32) carry a local `#[allow(clippy::disallowed_methods)]`
+with a short reason; a new one needs the same conscious annotation, not a blanket allow.
 
 Not web crates, and why: `ve_widget` (eframe with default features, tokio, `typetag` and `inventory`, which need
-`ctor` support on wasm), `ve_app` (egui_tiles, eframe persistence), `ve_backdrop` (threads, processes, filesystem
-for the wallpaper and Hyprland backdrop; its `wgpu` feature).
+`ctor` support on wasm), `ve_app` (egui_tiles, eframe persistence).
 
 ## UI guide rules
 

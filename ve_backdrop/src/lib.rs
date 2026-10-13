@@ -2,9 +2,9 @@
 //! pointer (a soft lens, a ripple from a click) and to the widgets on top of it (light gathers under their
 //! frames, more under the focused or floating one).
 //!
-//! The grid is drawn by a wgpu shader through an `egui_wgpu` paint callback ([`Backdrop::with_wgpu`]); on
-//! backends without wgpu (glow, wasm) the same picture is painted with plain egui shapes
-//! ([`Backdrop::new`]). Colours come from the `ve_theme` tokens of the current theme, every number is a
+//! The grid is drawn by a wgpu shader through an `egui_wgpu` paint callback ([`Backdrop::with_wgpu`], also on
+//! the web with WebGPU); on backends without wgpu (glow, a WebGL2 web build) the same picture is painted with
+//! plain egui shapes ([`Backdrop::new`]). Colours come from the `ve_theme` tokens of the current theme, every number is a
 //! field of [`Settings`] ([`Settings::ui`] is the form for a settings window), and
 //! [`Settings::reduced_motion`] freezes it.
 //!
@@ -63,6 +63,9 @@
 //! Widgets deep in the tree can announce their frame without a reference to the [`Backdrop`]:
 //! [`light`] collects, [`take_lit`] hands the frame's collection to the app.
 //!
+//! A host that repaints only on data and input (a web dashboard) uses [`Settings::still`]: nothing moves on
+//! its own, so the backdrop never asks for a repaint; [`Backdrop::paint`] says whether it did.
+//!
 //! In an app's own egui_kittest tests use [`Settings::reduced`] (or `Harness::run_steps`): the drift keeps
 //! asking for repaints, so `Harness::run` would never see the UI come to rest.
 //!
@@ -73,12 +76,16 @@ mod field;
 mod glass;
 #[cfg(feature = "wgpu")]
 mod gpu;
+// Unix sockets and a listener thread, native only (no `unix` on wasm32).
 #[cfg(all(feature = "glass", unix))]
+#[allow(clippy::disallowed_methods)]
 mod hyprland;
 pub mod playground;
 mod position;
 mod settings;
+// Files and commands on the worker thread, native only (cfg above): not part of the web crate (BACK-3).
 #[cfg(all(feature = "glass", not(target_arch = "wasm32")))]
+#[allow(clippy::disallowed_methods)]
 mod wallpaper;
 
 use egui::layers::ShapeIdx;
@@ -243,6 +250,7 @@ pub struct Backdrop {
     ripples: Vec<Ripple>,
     fades: Vec<Fade>,
     glass: glass::Glass,
+    repaint_after: Option<f32>,
 }
 
 impl Default for Backdrop {
@@ -266,6 +274,7 @@ impl Backdrop {
             ripples: Vec::new(),
             fades: Vec::new(),
             glass: glass::Glass::default(),
+            repaint_after: None,
         }
     }
 
@@ -321,17 +330,21 @@ impl Backdrop {
     /// Paint the backdrop over `rect` now, reacting to the frames in `lit`. Call it before the widgets
     /// that should be on top; `lit` then holds the rectangles from the previous frame (or use
     /// [`Backdrop::reserve`] and [`Backdrop::fill`] for this frame's).
-    pub fn paint(&mut self, painter: &Painter, rect: Rect, lit: &[Lit]) {
+    ///
+    /// Returns whether it asked egui for a repaint (something moves); [`Backdrop::repaint_after`] says when.
+    pub fn paint(&mut self, painter: &Painter, rect: Rect, lit: &[Lit]) -> bool {
         let shape = self.shape(painter.ctx(), rect, lit);
         painter.with_clip_rect(rect).add(shape);
+        self.repaint_after.is_some()
     }
 
     /// Paint the backdrop over the whole window, behind every panel (the background layer). Panels on top
-    /// need a transparent frame (`egui::Frame::NONE`) to let it show.
-    pub fn paint_background(&mut self, ctx: &Context, lit: &[Lit]) {
+    /// need a transparent frame (`egui::Frame::NONE`) to let it show. Returns whether it asked for a
+    /// repaint, as [`Backdrop::paint`].
+    pub fn paint_background(&mut self, ctx: &Context, lit: &[Lit]) -> bool {
         let rect = ctx.content_rect();
         let painter = ctx.layer_painter(LayerId::background());
-        self.paint(&painter, rect, lit);
+        self.paint(&painter, rect, lit)
     }
 
     /// Keep a place for the backdrop in `painter`'s shape list: call it before the widgets, then
@@ -340,16 +353,26 @@ impl Backdrop {
         Slot(painter.add(Shape::Noop))
     }
 
-    /// Paint the backdrop into a [`Slot`] reserved earlier this frame on the same painter.
-    pub fn fill(&mut self, painter: &Painter, slot: Slot, rect: Rect, lit: &[Lit]) {
+    /// Paint the backdrop into a [`Slot`] reserved earlier this frame on the same painter. Returns whether it
+    /// asked for a repaint, as [`Backdrop::paint`].
+    pub fn fill(&mut self, painter: &Painter, slot: Slot, rect: Rect, lit: &[Lit]) -> bool {
         let shape = self.shape(painter.ctx(), rect, lit);
         painter.set(slot.0, shape);
+        self.repaint_after.is_some()
+    }
+
+    /// The repaint the last frame asked egui for, in seconds from then: `None` when nothing moves, so a host
+    /// that repaints on data only stays idle. While the drift runs it is `1 / Settings::fps`, while a
+    /// ripple or a fade runs a 60th of a second; [`Settings::still`] asks for none.
+    pub fn repaint_after(&self) -> Option<f32> {
+        self.repaint_after
     }
 
     /// Advance the animation to now and return this frame's backdrop as a shape covering `rect` (the
     /// caller clips it). Call once per frame: [`Backdrop::paint`] and [`Backdrop::fill`] do.
     pub fn shape(&mut self, ctx: &Context, rect: Rect, lit: &[Lit]) -> Shape {
         if !rect.is_positive() || !rect.is_finite() {
+            self.repaint_after = None;
             return Shape::Noop;
         }
         let settings = self.settings.sanitized();
@@ -486,13 +509,17 @@ impl Backdrop {
         lit_rects.sort_by(|a, b| b.strength.total_cmp(&a.strength));
         lit_rects.truncate(MAX_LIT);
 
+        self.repaint_after = None;
         if moving {
             let drifting = settings.ambient > 0.0 && settings.speed > 0.0 && settings.opacity > 0.0;
             if !rings.is_empty() || fading {
-                ctx.request_repaint_after_secs(SMOOTH_DT);
+                self.repaint_after = Some(SMOOTH_DT);
             } else if drifting {
-                ctx.request_repaint_after_secs(1.0 / settings.fps);
+                self.repaint_after = Some(1.0 / settings.fps);
             }
+        }
+        if let Some(secs) = self.repaint_after {
+            ctx.request_repaint_after_secs(secs);
         }
 
         let colors = self
@@ -645,6 +672,69 @@ mod tests {
         let mut still = Backdrop::new().with_settings(Settings::reduced());
         let scene = frame_with(&mut still, &ctx, 2.0, &[], vec![press(true)]);
         assert!(scene.rings.is_empty() && scene.pointer.is_none());
+    }
+
+    /// Run one headless frame that paints the backdrop; returns what `paint` said and the repaint delay egui
+    /// got from the whole frame.
+    fn painted(
+        backdrop: &mut Backdrop,
+        ctx: &Context,
+        time: f64,
+        lit: &[Lit],
+        events: Vec<egui::Event>,
+    ) -> (bool, std::time::Duration) {
+        let input = egui::RawInput {
+            time: Some(time),
+            screen_rect: Some(rect()),
+            events,
+            ..Default::default()
+        };
+        let mut asked = false;
+        let mut output = ctx.run_ui(input, |ui| {
+            asked = backdrop.paint(ui.painter(), rect(), lit);
+        });
+        output.textures_delta.clear();
+        let delay = output.viewport_output[&egui::ViewportId::ROOT].repaint_delay;
+        (asked, delay)
+    }
+
+    #[test]
+    fn still_never_asks_for_a_repaint_with_the_pointer_at_rest() {
+        let ctx = Context::default();
+        let mut b = Backdrop::new().with_settings(Settings::still());
+        let lit = [Lit::new(rect().shrink(100.0)).id(Id::new("a"))];
+        let at = pos2(150.0, 120.0);
+        // The pointer comes in (egui itself paints once more after input), then rests over a lit frame
+        // for 5 s at 60 frames a second: nobody asks for a repaint.
+        let (asked, _) = painted(&mut b, &ctx, 0.0, &lit, vec![egui::Event::PointerMoved(at)]);
+        assert!(!asked);
+        let (asked, _) = painted(&mut b, &ctx, 1.0 / 60.0, &lit, Vec::new());
+        assert!(!asked);
+        let mut requests = 0;
+        for i in 2..=302 {
+            let (asked, delay) = painted(&mut b, &ctx, f64::from(i) / 60.0, &lit, Vec::new());
+            if asked || b.repaint_after().is_some() || delay != std::time::Duration::MAX {
+                requests += 1;
+            }
+        }
+        assert_eq!(requests, 0);
+        // The lens is still there, and a click makes no ripple.
+        let click = egui::Event::PointerButton {
+            pos: at,
+            button: egui::PointerButton::Primary,
+            pressed: true,
+            modifiers: egui::Modifiers::NONE,
+        };
+        let scene = frame_with(&mut b, &ctx, 6.0, &lit, vec![click]);
+        assert!(scene.rings.is_empty());
+        assert_eq!(scene.pointer, Some(at));
+        assert_eq!(scene.lit[0].strength, 1.0);
+
+        // The defaults keep asking: the drift at `fps`.
+        let mut drifting = Backdrop::new();
+        let (asked, _) = painted(&mut drifting, &ctx, 7.0, &[], Vec::new());
+        assert!(asked);
+        assert_eq!(drifting.repaint_after(), Some(1.0 / drifting.settings.fps));
     }
 
     #[test]

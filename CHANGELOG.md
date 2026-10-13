@@ -5,6 +5,21 @@ versions follow [Semantic Versioning](https://semver.org/). Feature IDs refer to
 
 ## [Unreleased]
 
+### Added
+
+- ve_backdrop on the web (BACK-3): `--features wgpu` builds for wasm32 with wgpu's WebGPU backend (the shader in a
+  WebGPU bundle), `--no-default-features` is the CPU painter of a WebGL2 bundle; `just check-wasm` lints both and
+  `ve_backdrop/clippy.toml` holds the web crates' disallowed-methods list.
+- `Settings::still()` (BACK-3): no drift, no ripples, no fades, so the backdrop never asks for a repaint by
+  itself: for a host that repaints on data and input only. `Backdrop::repaint_after()` says what the last frame
+  asked for.
+- `backdrop_bench` example (BACK-3): what the CPU painter costs per frame (build, tessellate, vertices).
+
+### Changed
+
+- `Backdrop::paint`, `fill` and `paint_background` return whether they asked for a repaint (BACK-3); callers
+  that ignore it in a statement compile as before.
+
 ## [0.25.0] - 2026-10-13
 
 ### Added

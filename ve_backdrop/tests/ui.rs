@@ -6,6 +6,9 @@
 //! differ by a few pixels between PCs, DASH-21).
 //! After an intended visual change: `UPDATE_SNAPSHOTS=1 cargo test -p ve_backdrop --test ui` and commit the PNGs.
 
+// Native-only tests (snapshot folders, a wait for the wallpaper thread); the lib stays wasm-gated (BACK-3).
+#![allow(clippy::disallowed_methods)]
+
 use egui::{Color32, Rect, Stroke, StrokeKind, Theme, pos2, vec2};
 use egui_kittest::kittest::Queryable;
 use egui_kittest::wgpu::{WgpuTestRenderer, create_render_state, default_wgpu_setup};

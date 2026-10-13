@@ -1277,6 +1277,37 @@ The app background as its own piece (tpm P2605#8oct-2316). Playground:
   monitor's physical pixel count is only an estimate (the position provider's or the viewport's monitor size
   times `pixels_per_point`), not read from the display hardware directly.
 
+- ✅ **BACK-3 Backdrop on the web** (P2605#13oct-1154, dash-egui plan): `ve_backdrop` is a web crate (PLT-9);
+  only its `glass` feature is native (wallpaper files, Hyprland sockets) and that was already cfg'd off on wasm32.
+  - *Shader on WebGPU*: with `--features wgpu` on wasm32 the crate gives wgpu its WebGPU backend (a wasm32 target
+    section in `ve_backdrop/Cargo.toml`: `fragile-send-sync-non-atomic-wasm`, `std`, `webgpu`, `wgsl`, as a
+    dash's webgpu bundle has it; no naga WebGL path), since the workspace takes egui-wgpu without default
+    features and egui-wgpu 0.36 does not compile on the web without a backend. A WebGL2 bundle uses
+    `--no-default-features` and the CPU painter.
+  - *Gate*: `just check-wasm` clippies `ve_backdrop` twice (`--no-default-features`, `--features wgpu`);
+    `ve_backdrop/clippy.toml` has the web crates' disallowed-methods list, the native-only `wallpaper` and
+    `hyprland` modules and the kittests carry an allow.
+  - *Still, for a host that repaints on data*: the drift (`Settings::fps`) is the only steady repaint, ripples
+    and fades ask a 60th of a second while they run. `Settings::still()` turns all three off (no drift, no
+    ripples, a frame's light jumps), light comes from frames and the pointer lens only; `paint`, `fill` and
+    `paint_background` return whether they asked egui for a repaint, `Backdrop::repaint_after` says when.
+    Test `still_never_asks_for_a_repaint_with_the_pointer_at_rest` (lib.rs): 0 repaint requests over 5 s at
+    60 frames a second with the pointer resting over a lit frame (neither from the backdrop nor in egui's
+    output, after egui's own one pass that follows any input).
+  - *CPU painter cost* (`cargo run --release -p ve_backdrop --example backdrop_bench`, one egui shape per mark,
+    12 lit frames and the pointer, mean of 200 frames, release, Ryzen AI 9 HX 370 (GPD), 13 Oct 2026):
+
+    | rect | marks | build | tessellate | vertices | indices |
+    |---|---|---|---|---|---|
+    | 1400 x 900, dots | 2624 | 0.68 ms | 0.06-0.08 ms | 10 504 | 15 774 |
+    | 1920 x 1200, dots | 4840 | 1.48 ms | 0.17 ms | 19 148 | 28 740 |
+    | 1400 x 900, squares | 2624 | 0.71 ms | 0.37-0.42 ms | 21 000 | 78 750 |
+    | 1920 x 1200, squares | 4840 | 1.54 ms | 0.56-0.66 ms | 38 288 | 143 580 |
+
+    (ranges: 1 and 2 pixels per point). Tessellation stays under 1 ms, so the marks are not batched into one
+    `Mesh`. The larger cost is *build*, sampling the field once per mark (`field.rs`), 1.5 ms at 1920 x 1200;
+    in wasm expect a few times that. Not measured in a browser yet.
+
 ## Extracted from apps (`EXT`)
 
 Code that lives in an app today and belongs here. Port the app in the same piece of work.

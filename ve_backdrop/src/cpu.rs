@@ -1,4 +1,5 @@
-//! The CPU painter: the same marks as plain egui shapes, for backends without wgpu (glow, wasm).
+//! The CPU painter: the same marks as plain egui shapes, for backends without wgpu (glow, a WebGL2
+//! web build).
 
 use egui::{Color32, CornerRadius, Rect, Shape, Vec2};
 

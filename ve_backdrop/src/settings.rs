@@ -148,6 +148,24 @@ impl Settings {
         }
     }
 
+    /// The defaults without anything that moves on its own: no drift, no click ripples, no fades (a frame's
+    /// light jumps). Light comes from the frames and the pointer lens only, so the backdrop never asks for
+    /// a repaint by itself: for a host that repaints on data and input only (a web dashboard, a phone).
+    /// Unlike [`Settings::reduced`] the lens still follows the pointer.
+    ///
+    /// ```
+    /// let s = ve_backdrop::Settings::still();
+    /// assert!(s.ambient == 0.0 && s.ripple_light == 0.0 && s.glow_fade == 0.0 && !s.reduced_motion);
+    /// ```
+    pub fn still() -> Self {
+        Self {
+            ambient: 0.0,
+            ripple_light: 0.0,
+            glow_fade: 0.0,
+            ..Self::default()
+        }
+    }
+
     /// Bring every value into the range the backdrop can draw (a settings file edited by hand, a slider typed
     /// past its end).
     pub fn sanitized(mut self) -> Self {

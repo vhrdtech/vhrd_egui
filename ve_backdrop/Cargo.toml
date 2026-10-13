@@ -9,8 +9,9 @@ repository.workspace = true
 
 [features]
 default = ["wgpu", "glass"]
-# The shader path: an egui_wgpu paint callback. Without it (glow, wasm without WebGPU) only the CPU painter exists.
-wgpu = ["dep:egui-wgpu", "dep:bytemuck"]
+# The shader path: an egui_wgpu paint callback. Without it (glow, a WebGL2 web build) only the CPU painter exists.
+# On wasm32 it also gives wgpu its WebGPU backend (BACK-3).
+wgpu = ["dep:egui-wgpu", "dep:bytemuck", "dep:wgpu"]
 # Emulated transparency: find, decode and blur the desktop wallpaper, ask Hyprland where the window is.
 glass = ["dep:image", "dep:serde_json"]
 # Serialize `Settings` (persisted app settings).
@@ -24,6 +25,16 @@ bytemuck = { version = "1.25", features = ["derive"], optional = true }
 serde = { workspace = true, optional = true }
 serde_json = { version = "1", optional = true }
 image = { version = "0.25", default-features = false, features = ["png", "jpeg", "webp"], optional = true }
+
+# The workspace takes egui-wgpu without default features, so on the web wgpu would have no backend and egui-wgpu
+# would not compile: WebGPU only (no naga, no WebGL inside wgpu), as a dash's webgpu bundle has it (BACK-3).
+[target.'cfg(target_arch = "wasm32")'.dependencies]
+wgpu = { version = "30", default-features = false, features = [
+    "fragile-send-sync-non-atomic-wasm",
+    "std",
+    "webgpu",
+    "wgsl",
+], optional = true }
 
 [dev-dependencies]
 eframe = { workspace = true, features = ["wgpu"] }
