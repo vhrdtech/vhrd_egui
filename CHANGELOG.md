@@ -5,6 +5,8 @@ versions follow [Semantic Versioning](https://semver.org/). Feature IDs refer to
 
 ## [Unreleased]
 
+## [0.24.0] - 2026-10-13
+
 ### Added
 
 - `just check-wasm` also clippies `ve_frame` and `ve_settle` (with its `frame`/`serde` features) for
