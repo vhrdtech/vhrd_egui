@@ -5,6 +5,8 @@ versions follow [Semantic Versioning](https://semver.org/). Feature IDs refer to
 
 ## [Unreleased]
 
+## [0.26.0] - 2026-10-13
+
 ### Added
 
 - ve_backdrop on the web (BACK-3): `--features wgpu` builds for wasm32 with wgpu's WebGPU backend (the shader in a
