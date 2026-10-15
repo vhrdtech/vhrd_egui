@@ -1352,10 +1352,17 @@ fn a_frame_dropped_near_the_bottom_stays_where_it_is_dropped() {
         }
     }
     assert!(ran[mine] < 3.0, "the dropped one ran on {}", ran[mine]);
+    // the stack it was dragged through makes room under it, at a glide, and no farther (63 to 66 points;
+    // before SETL-25 they coasted on: 89 with drag 0)
+    let mut pushed: Vec<f32> = ran.iter().copied().filter(|r| *r > 3.0).collect();
+    pushed.sort_by(f32::total_cmp);
+    let stack = pushed[pushed.len() / 2];
+    assert!(stack < 70.0, "the pushed ones ran on {stack}: {ran:?}");
+    // One may line up with a neighbour's corner on the way, which takes it up to the snap range farther
+    // (with the header of FRM-11 one frame lies 18 points off its neighbour's top, and goes 83 points).
     let most = ran.iter().copied().fold(0.0, f32::max);
-    // the stack it was dragged through makes room under it, at a glide, and no farther (63 points; before
-    // SETL-25 they coasted on: 89 with drag 0)
-    assert!(most < 70.0, "a pushed one ran on {most}: {ran:?}");
+    let snap = h.state().world.params().snap_range;
+    assert!(most < stack + snap, "a pushed one ran on {most}: {ran:?}");
 }
 
 /// The sandbox as a recording started it (from its snapshot, or the scene's start for an old recording),
@@ -1842,32 +1849,32 @@ fn the_hexagons_scene_is_a_honeycomb_at_rest() {
 #[test]
 fn a_hexagon_let_go_near_a_free_cell_glides_into_it() {
     let (mut h, mut watch) = sandbox_in(Scene::Hexagons);
-    // the lowest one in view (at the edge of what is shown, so the drag goes through little), to its
-    // nearest other free cell in view, and let go 40 points beside it
+    // the lowest one in view (at the edge of what is shown, so the drag goes through little) that has
+    // another free cell in view, to the nearest of those, and let go 40 points beside it (how the scene
+    // packs depends on the frames' sizes: the lowest one need not have a free cell near it)
     let bottom = h.state().world.bounds().min.y + h.state().arena.height() - 40.0;
-    let (slot, body) = {
+    let (slot, body, at, cell) = {
         let s = h.state();
         let footed = |b: &&Body| {
             let slot = s.frames.slot(b.id).and_then(|id| s.frames.dock.get(id));
             slot.is_some_and(|w| w.widget.opts.footer) && b.rect.max.y < bottom
         };
-        let last = s
-            .world
-            .bodies()
-            .iter()
-            .filter(footed)
-            .max_by(|a, b| a.rect.max.y.partial_cmp(&b.rect.max.y).unwrap());
-        let body = last.expect("a hexagon with a footer").id;
-        (s.frames.slot(body).expect("its widget"), body)
+        let mut lowest: Vec<&Body> = s.world.bodies().iter().filter(footed).collect();
+        lowest.sort_by(|a, b| b.rect.max.y.total_cmp(&a.rect.max.y));
+        lowest
+            .into_iter()
+            .find_map(|b| {
+                let at = b.rect.center();
+                let cell = s
+                    .world
+                    .free_cells(b.id)
+                    .into_iter()
+                    .filter(|c| (*c - at).length() > 60.0 && c.y < bottom - 150.0)
+                    .min_by(|x, y| (*x - at).length().total_cmp(&(*y - at).length()))?;
+                Some((s.frames.slot(b.id).expect("its widget"), b.id, at, cell))
+            })
+            .expect("a hexagon in view with a free cell in view")
     };
-    let at = body_rect(&h, slot).center();
-    let cells = h.state().world.free_cells(body);
-    let cell = cells
-        .iter()
-        .copied()
-        .filter(|c| (*c - at).length() > 60.0 && c.y < bottom - 150.0)
-        .min_by(|a, b| (*a - at).length().partial_cmp(&(*b - at).length()).unwrap())
-        .expect("a free cell");
     // beside it toward the middle, where neither gravity nor a wall brings it in
     let middle = h.state().world.bounds().center().x;
     let to = cell + ve_settle::Vec2::new(if cell.x < middle { 40.0 } else { -40.0 }, 0.0) - at;
