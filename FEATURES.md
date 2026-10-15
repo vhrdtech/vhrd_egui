@@ -1056,6 +1056,52 @@ up and Packery's "others flow around the dragged one". No app uses it yet.
   blocked). A honeycomb under gravity needs attraction as a force that can hold a body off the wall, as the
   rectangles' corner snap (1500) holds against gravity (600); open question for the user. Answered by SETL-28:
   the honeycomb is laid out cell by cell, and the solver holds it.
+- ✅ **SETL-37 A seat put back gave speed** (found by the width sweep, SETL-36's test, 15 Oct 2026): contacts
+  that put an outline back onto a slope it sits on (SETL-15) gave it the speed of that move, up to a seat's
+  (`SEAT_SPEED`, 60 points/s). A seat pressed deeper by a neighbour (one rising under gravity into it) was let
+  go at once when that neighbour was lifted: the hexagon went off at 46 points/s, away from gravity, and what
+  lay beyond with it. Being put back is now a place, not speed: it counts with `Body::shoved` (SETL-25) on
+  gravity's axis (`World::pairs_pass`). Test `tests/nest.rs`
+  `lifting_a_hexagon_out_of_the_pack_pushes_nothing_away_whatever_the_widths` (nine extra widths, two arena
+  widths, the sandbox's order of sizes, the tiny ones free to narrow as frames on auto are).
+- ✅ **SETL-36 A slide along a face ran across another neighbour's** (found by the width sweep, 15 Oct 2026):
+  a slide along a face that lines a vertex up (SETL-20) is blocked where it would take the body deeper into
+  anything, except the neighbours it lies face to face with ("a hair in or out as the vertices meet"). A
+  hexagon hanging under a flat face slid along it into a neighbour it touched on a slanted face, and pushed
+  that one off (2.3 points, at a seat's speed) and the pack beyond. A neighbour it lies face to face with may
+  now be met deeper only by `PARTNER_HAIR` (a quarter) of the slide: along its face, not across it
+  (`World::attract_pass`). Kittest `a_hexagon_let_go_near_a_free_cell_glides_into_it`.
+- ✅ **SETL-35 A ghost trembling by a hair kept the world awake** (found when the frame's header got narrower,
+  FRM-14, 15 Oct 2026): the ghost of a widget that floats (SETL-7) has its limits set to its body's size every
+  frame; a body trembling in its seat computes that size anew by 1e-5 points, each new limit woke the world,
+  and it never came to rest (cooling starts over on every wake). Limits now follow only a change of more than
+  `SIZE_SLACK` (0.05 points, as the hexagon outline already did) (`Frames::show_one`). Seen in kittest
+  `a_ghost_keeps_the_place_of_a_widget_that_floats` while SETL-33 was fixed; SETL-37 took the tremble away, so
+  no test fails without it now.
+- ✅ **SETL-34 A slide along a face took a hexagon off what held it** (found when the frame's header got
+  narrower, FRM-14, 15 Oct 2026): a hexagon hanging from one neighbour's face, with its slide along another's
+  blocked by the one under it, slid away from gravity once that one was lifted (dragged), off the face it hung
+  from (8.6 points); the contacts brought it back with speed, the pack under it was pushed on and the hole
+  closed, so a hexagon let go there found no free cell. A slide away from gravity's side is now blocked where
+  it would take the body off something on that side it touches (the gap and `LIFT_REACH` apart) or off
+  gravity's wall; along the face it rests on it still slides (`World::attract_pass`). Kittest
+  `a_hexagon_let_go_near_a_free_cell_glides_into_it`.
+- ✅ **SETL-33 A pack took cells gravity does not hold** (found when the frame's header got narrower, FRM-14,
+  15 Oct 2026): `World::pack_cell` took the free cell nearest gravity's side, also one on a face of a neighbour
+  across from gravity's side; gravity took the hexagon off that face and it rested tip to face against what it
+  met (kittest `the_hexagons_scene_is_a_honeycomb_at_rest`: "#17 alone"). A cell now says whether gravity holds
+  the outline there (`nest::Cell::held`: moved `HOLD_PROBE` toward gravity's side it is in something or past
+  the wall), and a pack takes a held one where there is one (`nest::pack_pick`). Test `tests/nest.rs`
+  `a_pack_rests_face_to_face_whatever_the_widths` (nine extra widths, two arena widths).
+- ✅ **SETL-32 The yielder jumped out of its row** (found when the frame's header got narrower, FRM-14,
+  15 Oct 2026): narrowed, a window's rows are too full and one of each gives way (SETL-11), a glide a step. The
+  slides its neighbours at a hard wall could not do were handed on to it on top of its own, and a corner it came
+  off pushed it out straight by the whole gap: 18 points in a step, 32.5 in a frame (kittest
+  `resizing_the_window_keeps_everything_between_the_walls`). All the contacts of a step together now move the
+  yielder no more than a glide (`spend_net`, as for outlines, SETL-17); what it does not take the next passes
+  and steps do (`World::pairs_pass`). Test `tests/robust.rs`
+  `a_window_narrower_than_its_rows_moves_nothing_by_a_jump_whatever_the_widths` (seven extra widths, narrowed
+  and widened).
 - ✅ **SETL-31 Pulls of a hexagon that nobody slides** (found when the frame's header grew wider, FRM-11,
   15 Oct 2026): in the Hexagons scene three pulls never locked at rest. A hexagon lying on gravity's side of the
   one it faces leaves the slide along that face to the other one; that one's slide was blocked, yet the pull was

@@ -79,6 +79,8 @@ const FIT_SLACK: f32 = 1.0;
 /// How far ahead of a changing body its hexagon's outline is drawn in, points: about what a body grows in
 /// a frame.
 const OUTLINE_LEAD: f32 = 8.0;
+/// Sizes closer than this are the same, points: what a body trembling in its seat computes anew.
+const SIZE_SLACK: f32 = 0.05;
 /// The most world time [`Frames::snap`] steps through: past the time a world in a cycle is cooled to rest.
 const SNAP_SECS: f32 = 30.0;
 /// Room around a body its frame may paint into when it fits: the landing glow and a floating look's edge.
@@ -1062,8 +1064,13 @@ impl<W> Frames<W> {
         if cell.ghost {
             // the place of a widget that floats, kept as it is (vertex attraction does not stretch it): a
             // click puts it back
+            // (not for the last bits of a size that a body trembling in its seat computes anew: every
+            // change of limits wakes the world, and it would never rest, SETL-35)
             let size = world_rect.size();
-            world.set_limits(body_id, size, size);
+            let held = |s: Vec2| (s - size).max_abs() < SIZE_SLACK;
+            if !(held(body.min_size) && held(body.max_size)) {
+                world.set_limits(body_id, size, size);
+            }
             let mut child = ui.new_child(
                 UiBuilder::new()
                     .id_salt(("ve_settle::ghost", id.0))
@@ -1293,7 +1300,11 @@ impl<W> Frames<W> {
             let shape = [now.x, full.max(now.y), now.y, left];
             // not for the last bits of a size that a body trembling in its seat computes anew: every
             // new outline wakes the world
-            let same = |old: [f32; 4]| old.iter().zip(shape).all(|(a, b)| (a - b).abs() < 0.05);
+            let same = |old: [f32; 4]| {
+                old.iter()
+                    .zip(shape)
+                    .all(|(a, b)| (a - b).abs() < SIZE_SLACK)
+            };
             if !cell.outlined.is_some_and(same) {
                 // drawn at the body's size, stretched by vertex attraction: the outline only follows
                 let follows = given.is_some() && cell.outlined.is_some();

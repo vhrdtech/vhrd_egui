@@ -56,12 +56,21 @@ fn hexagon(w: &mut World, size: Vec2, at: Vec2) -> BodyId {
 
 /// `n` hexagons of the sandbox's sizes laid out one by one into the cell a pack takes next.
 fn packed(width: f32, n: usize, sizes: &[(f32, f32)]) -> (World, Vec<BodyId>) {
+    packed_giving(width, n, sizes, 0.0)
+}
+
+/// [`packed`], the tiny ones (86 points tall) free to narrow by `give` points: a frame on auto size
+/// (SETL-5) is not rigid across, so it lines up by sliding even in a notch.
+fn packed_giving(width: f32, n: usize, sizes: &[(f32, f32)], give: f32) -> (World, Vec<BodyId>) {
     let mut w = World::new(Rect::from_min_size(Vec2::ZERO, v(width, 800.0)), params());
     let mut ids = Vec::new();
     for i in 0..n {
         let (sx, sy) = sizes[i % sizes.len()];
         let size = v(sx, sy);
         let id = hexagon(&mut w, size, v(width / 2.0, 5000.0 + 400.0 * i as f32));
+        if sy < 100.0 && give > 0.0 {
+            w.set_limits(id, v(sx - give, sy), size);
+        }
         let at = w.pack_cell(id, &[]).expect("a cell");
         w.put(id, at, size);
         ids.push(id);
@@ -304,3 +313,76 @@ fn without_gravity_only_the_cell_brings_a_dropped_hexagon_to_the_face() {
         }
     }
 }
+
+/// The sandbox's sizes, `dx` points wider each (a frame's header is as wide as what it holds; it has
+/// changed width more than once: FRM-11, FRM-14).
+fn widened(dx: f32) -> Vec<(f32, f32)> {
+    SIZES.iter().map(|&(x, y)| (x + dx, y)).collect()
+}
+
+/// The sandbox's sizes in the order its Hexagons scene repeats them, the three of one flat-face width
+/// `dx` points wider each (the big one's width is its own).
+fn scene(dx: f32) -> Vec<(f32, f32)> {
+    let w = widened(dx);
+    vec![w[0], w[1], w[0], w[2], SIZES[3]]
+}
+
+/// The extra widths the sweeps below go through, points.
+const WIDER: [f32; 9] = [-40.0, -23.0, -17.0, -6.0, 0.0, 6.0, 17.0, 23.0, 40.0];
+
+/// Whatever the frames' widths, a pack laid out cell by cell rests as a honeycomb: each one lies face
+/// to face with another. A pack never takes a cell gravity does not hold (on a face across from
+/// gravity's side): the hexagon floated off it and rested tip to face against what it met (SETL-33).
+#[test]
+fn a_pack_rests_face_to_face_whatever_the_widths() {
+    for dx in WIDER {
+        for width in [900.0, 1200.0] {
+            let what = format!("{dx} points wider in {width}");
+            let (mut w, ids) = packed(width, 21, &widened(dx));
+            let mut n = 0;
+            while w.step() {
+                n += 1;
+                assert!(n < 8_000, "{what}: rests");
+                assert!(w.max_overlap() < 0.01, "{what}: overlap at step {n}");
+            }
+            for &id in &ids[1..] {
+                assert!(faces_against(&w, id, 1.0) >= 1, "{what}: #{} alone", id.0);
+            }
+        }
+    }
+}
+
+/// Whatever the frames' widths, lifting any hexagon out of the pack sends none of the others away from
+/// gravity's side with speed: those it held up rise into the room, others may line a vertex up along the
+/// face they rest on (a slide, no speed). A slide along a face that lines a vertex up took one off another
+/// face it hung from once room opened under it (SETL-34), or ran it across the face of a neighbour
+/// (SETL-36); the contacts pushed that one back with a seat's speed, and the pack under it on with it:
+/// the hole the lifted one left closed.
+#[test]
+fn lifting_a_hexagon_out_of_the_pack_pushes_nothing_away_whatever_the_widths() {
+    for (dx, width) in WIDER.into_iter().flat_map(|dx| [(dx, 900.0), (dx, 1200.0)]) {
+        let (mut w, ids) = packed_giving(width, 21, &scene(dx), 40.0);
+        while w.step() {}
+        for &lift in &ids {
+            let mut world = w.clone();
+            world.grab(lift);
+            world.drag_to(lift, v(600.0, 20_000.0));
+            for step in 0..300 {
+                world.step();
+                for b in world.bodies().iter().filter(|b| b.id != lift) {
+                    // gravity is to the top: away from it is down
+                    assert!(
+                        b.vel.y < SINK_SPEED,
+                        "{dx} points wider in {width}, #{} lifted: #{} sinks at {} points/s at step {step}",
+                        lift.0,
+                        b.id.0,
+                        b.vel.y
+                    );
+                }
+            }
+        }
+    }
+}
+
+/// Faster than this away from gravity's side (points/s) a body is pushed, not settling.
+const SINK_SPEED: f32 = 10.0;

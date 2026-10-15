@@ -44,6 +44,13 @@ const YIELD_BULGE: f32 = 0.5;
 /// apart at least: off the tips, slanted edges let them come closer than
 /// the gap, never into each other.
 const RECT_FLOOR: f32 = 0.25;
+/// How much deeper a slide along a face may take a body into one it lies
+/// face to face with, as a share of the slide: along a face (a hair where
+/// the vertices meet) is about none, across a face at 60° most of it.
+const PARTNER_HAIR: f32 = 0.25;
+/// How far beyond the gap a body counts as lying on what is on gravity's
+/// side of it, points, for a slide not to take it off (SETL-34).
+const LIFT_REACH: f32 = 1.0;
 /// A stretch being let go that is down to this (points) is dropped
 /// (SETL-12): the pull is a share of the distance per second, which alone
 /// would never arrive.
@@ -283,7 +290,8 @@ pub struct Body {
     /// Steps since it was let go and landed (0 until it has landed):
     /// [`LANDED_STEPS`] and more for a body never dropped.
     landed: u32,
-    /// How far a held body pushed it this step (SETL-25).
+    /// How far a held body pushed it this step (SETL-25), and contacts
+    /// put it back onto a slope it sits on (SETL-37): no speed.
     shoved: Vec2,
     /// How far the walls (their gap lines, `walls_pass`) moved it this step
     /// (SETL-25).
@@ -1974,12 +1982,17 @@ impl World {
                     outline_hit(a, r, o, &o.rect, p.gap, Vec2::ZERO).map_or(0.0, |h| h.depth)
                 };
                 // (along the faces it lines up with it goes by them, a hair
-                // in or out as they meet: the contacts' to settle)
+                // in or out as they meet: the contacts' to settle; but not
+                // into a face of one of them that the slide runs across,
+                // which the contacts would push off at a seat's speed, and
+                // what lies beyond with it, SETL-36)
                 let into_body = self.bodies.iter().enumerate().any(|(j, o)| {
-                    j != i
-                        && !o.lifted
-                        && !partners.contains(&j)
-                        && depth(&moved, o) > depth(&a.rect, o) + 0.01
+                    let hair = if partners.contains(&j) {
+                        0.01 + PARTNER_HAIR * d.length()
+                    } else {
+                        0.01
+                    };
+                    j != i && !o.lifted && depth(&moved, o) > depth(&a.rect, o) + hair
                 });
                 let past = |side: Side| {
                     let out = |r: &Rect| match side {
@@ -1993,7 +2006,38 @@ impl World {
                 let into_wall = [Side::Left, Side::Right, Side::Top, Side::Bottom]
                     .into_iter()
                     .any(past);
-                if into_body || into_wall {
+                // Nor does a slide take a body off what holds it on gravity's
+                // side: away from gravity along a slanted face, a hexagon that
+                // also hangs from another face (or lies on the wall) leaves
+                // it, and gravity and the contacts bring it back with a seat's
+                // speed, pushing what lies beyond (when room opens under it,
+                // SETL-34). Along the face it slides on it stays on that one.
+                let lifts = toward.is_some_and(|side| {
+                    if d.dot(side.dir()) > -SLOP * 0.1 {
+                        return false;
+                    }
+                    let reach = p.gap + LIFT_REACH;
+                    let held = |r: &Rect, o: &Body| {
+                        outline_hit(a, r, o, &o.rect, reach, Vec2::ZERO).map_or(0.0, |h| h.depth)
+                    };
+                    let (axis, sign) = (side.axis(), side.dir()[side.axis()]);
+                    let ahead = |r: &Rect| r.center()[axis] * sign;
+                    let leaves = self.bodies.iter().enumerate().any(|(j, o)| {
+                        j != i
+                            && !o.lifted
+                            && ahead(&o.rect) > ahead(&a.rect)
+                            && held(&a.rect, o) > 0.0
+                            && held(&moved, o) < held(&a.rect, o) - 0.01 - PARTNER_HAIR * d.length()
+                    });
+                    let wall = |r: &Rect| match side {
+                        Side::Left => r.min.x - inner.min.x,
+                        Side::Right => inner.max.x - r.max.x,
+                        Side::Top => r.min.y - inner.min.y,
+                        Side::Bottom => inner.max.y - r.max.y,
+                    };
+                    leaves || (p.walls.has(side) && wall(&a.rect) <= LIFT_REACH)
+                });
+                if into_body || into_wall || lifts {
                     self.bodies[i].slide_blocked = true;
                 } else {
                     slid = d;
@@ -2495,11 +2539,31 @@ impl World {
                         }
                     }
                 }
+                // The yielder leaves its row by a glide a step, whatever pushes it: the slides its
+                // neighbours at a hard wall cannot do are handed on to it, and a corner it comes off
+                // pushes it out straight by the whole gap; together they moved it three glides in one
+                // step (SETL-32). What it does not take now the next passes and steps do.
+                if !(outlined || a.lifted || b.lifted) {
+                    if a.yielding {
+                        da = spend_net(a, da, glide);
+                    } else if b.yielding {
+                        db = spend_net(b, db, glide);
+                    }
+                }
                 // A pinned body is a wall: the other one takes it all.
                 if a.pinned {
                     (da, db) = (Vec2::ZERO, db - da);
                 } else if b.pinned {
                     (da, db) = (da - db, Vec2::ZERO);
+                }
+                // Put back onto the slope it sits on is a place, not speed: kept
+                // as speed (up to a seat's), a seat that had been pressed
+                // deeper by a neighbour sent the body off at 46 points/s once
+                // that one went, and what lay beyond with it (SETL-37).
+                if seated && let Some(side) = self.params.gravity_side {
+                    let g = side.axis();
+                    a.shoved[g] += da[g];
+                    b.shoved[g] += db[g];
                 }
                 a.shift(da);
                 b.shift(db);

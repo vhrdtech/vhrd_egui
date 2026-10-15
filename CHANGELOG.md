@@ -65,6 +65,14 @@ versions follow [Semantic Versioning](https://semver.org/). Feature IDs refer to
   room and on once there is more (SETL-30).
 - `ve_settle`: a hexagon's pull along a face whose slide is left to a neighbour that cannot slide is no longer
   drawn as done, so every pull shown at rest is locked (SETL-31).
+- `ve_settle`: the body that gives way out of a full row (a window made narrower) leaves at a glide a step
+  whatever pushes it; it jumped 18 points in a step (SETL-32).
+- `ve_settle`: a pack (`World::pack_cell`) takes only cells gravity holds where there are any, so a hexagon no
+  longer floats off the face it was laid on and rests alone (SETL-33).
+- `ve_settle`: a slide that lines a hexagon's vertex up no longer takes it off what holds it on gravity's
+  side (SETL-34), nor across the face of a neighbour it lies against (SETL-36); a seat put back gives no speed
+  (SETL-37). Lifting a hexagon out of the pack no longer shoves the others on and closes its hole.
+- `ve_settle`: a widget's ghost no longer keeps the world awake by a size trembling in the last bits (SETL-35).
 
 ## [0.28.0] - 2026-10-15
 

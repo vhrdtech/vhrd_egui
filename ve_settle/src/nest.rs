@@ -14,6 +14,9 @@ const FACE_SHARE: f32 = 0.25;
 const SLACK: f32 = 0.5;
 /// Two cells closer than this are one.
 const SAME: f32 = 0.5;
+/// How far toward gravity's side a cell is tried, points, to see whether it holds the outline: moved so
+/// far it is in something (on a 60° face half of it deep, still past [`SLACK`]) or past the wall.
+const HOLD_PROBE: f32 = 2.0;
 
 /// What an outline is placed among: the outlines of the others, the walls and gravity.
 pub(crate) struct Room<'a> {
@@ -38,6 +41,10 @@ pub(crate) struct Cell {
     pub touching: u32,
     /// Whether it lies against a closed wall there.
     pub walled: bool,
+    /// Whether gravity holds it there: moved toward gravity's side it would be in something or past
+    /// the wall (no gravity: always). A cell on a face of a neighbour across from gravity's side is
+    /// free but not held: gravity takes the outline off that face (SETL-33).
+    pub held: bool,
 }
 
 impl Room<'_> {
@@ -276,10 +283,14 @@ pub(crate) fn cells(shape: &Poly, room: &Room) -> Vec<Cell> {
         if touching == 0 && !walled {
             continue;
         }
+        let held = room
+            .gravity
+            .is_none_or(|side| !room.free(&there.translate(side.dir() * HOLD_PROBE)));
         out.push(Cell {
             shift: d,
             touching,
             walled,
+            held,
         });
     }
     out
@@ -287,8 +298,9 @@ pub(crate) fn cells(shape: &Poly, room: &Room) -> Vec<Cell> {
 
 /// Of `cells` for `shape`, the one a pack takes next: nearest gravity's side (by the outline's edge that
 /// faces it, to a point), then nearest the low end across it; among those that lie against another body
-/// when there are any (a pack grows face to face, not along the wall tip to tip). Without gravity: the
-/// top left.
+/// when there are any (a pack grows face to face, not along the wall tip to tip), and of those the ones
+/// gravity holds when there are any (on a face across from gravity's side the outline would float off
+/// it, and rest tip to face against whatever it meets). Without gravity: the top left.
 pub(crate) fn pack_pick(shape: &Poly, cells: &[Cell], gravity: Option<Side>) -> Option<Cell> {
     let r = shape.bounds();
     let side = gravity.unwrap_or(Side::Top);
@@ -302,9 +314,10 @@ pub(crate) fn pack_pick(shape: &Poly, cells: &[Cell], gravity: Option<Side>) -> 
         (edge.round(), across)
     };
     let faced = cells.iter().any(|c| c.touching > 0);
+    let held = cells.iter().any(|c| c.held && (!faced || c.touching > 0));
     cells
         .iter()
-        .filter(|c| !faced || c.touching > 0)
+        .filter(|c| (!faced || c.touching > 0) && (!held || c.held))
         .min_by(|a, b| {
             key(a)
                 .partial_cmp(&key(b))

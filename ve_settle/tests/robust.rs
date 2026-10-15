@@ -307,3 +307,81 @@ fn a_body_growing_in_a_full_row_never_overlaps_its_neighbours() {
         }
     }
 }
+
+/// Whatever the widths of the panels, a window made narrower than its rows (each row too full: one of
+/// it gives way and drops into the row after it) and then wider again moves no body more than two
+/// glides in a step, no two rectangles overlap, and it comes to rest. The one giving way leaves its row
+/// at a glide whatever pushes it: the slides its neighbours at a hard wall could not do were handed on
+/// to it, and a corner it came off pushed it out by the whole gap, 18 points in a step (SETL-32, seen
+/// in the sandbox once the frame's header got narrower, FRM-14).
+#[test]
+fn a_window_narrower_than_its_rows_moves_nothing_by_a_jump_whatever_the_widths() {
+    let mut params = Params {
+        home_stiffness: 0.0,
+        push_out: true,
+        ..Params::default()
+    };
+    params.max_speed = params.glide_speed;
+    params.walls.bottom = false;
+    // the sandbox's rectangle frames: medium, tiny, big, medium with sides
+    let sizes = [
+        (300.3, 162.0),
+        (235.7, 88.0),
+        (338.0, 242.0),
+        (300.3, 116.0),
+    ];
+    for dx in [-40.0, -23.0, -17.0, 0.0, 17.0, 23.0, 40.0] {
+        let wide = 900.0;
+        let mut world = World::new(
+            Rect::from_min_size(Vec2::ZERO, Vec2::new(wide, 760.0)),
+            params,
+        );
+        let (mut x, mut y, mut row) = (6.0, 6.0, 0.0f32);
+        for i in 0..14 {
+            let (w, h) = sizes[i % sizes.len()];
+            let size = Vec2::new(w + dx, h);
+            if x + size.x + 6.0 > wide {
+                (x, y, row) = (6.0, y + row + 6.0, 0.0);
+            }
+            let at = Vec2::new(x + size.x / 2.0, y + h / 2.0);
+            let desc = BodyDesc::new(at, size);
+            world.add(if i % 3 == 0 {
+                desc.min_size(size).max_size(size)
+            } else {
+                desc.min_size(Vec2::new(size.x * 0.7, h)).max_size(size)
+            });
+            x += size.x + 6.0;
+            row = row.max(h);
+        }
+        assert!(world.settle(6_000).is_some(), "{dx}: the rows settle");
+        let most = 2.0 * params.glide_speed * params.dt;
+        for width in [750.0, 1350.0] {
+            let what = format!("{dx} points wider, the window {width} wide");
+            world.set_bounds(Rect::from_min_size(Vec2::ZERO, Vec2::new(width, 760.0)));
+            let mut n = 0;
+            loop {
+                let before: Vec<Rect> = world.bodies().iter().map(|b| b.rect).collect();
+                if !world.step() {
+                    break;
+                }
+                n += 1;
+                assert!(n < 6_000, "{what}: rests");
+                for (b, was) in world.bodies().iter().zip(&before) {
+                    let moved = (b.rect.min - was.min)
+                        .max_abs()
+                        .max((b.rect.max - was.max).max_abs());
+                    assert!(
+                        moved <= most,
+                        "{what}: #{} moved {moved} points in step {n}",
+                        b.id.0
+                    );
+                }
+                assert!(
+                    world.max_overlap() <= 0.01,
+                    "{what}: two rectangles overlap by {} at step {n}",
+                    world.max_overlap()
+                );
+            }
+        }
+    }
+}
