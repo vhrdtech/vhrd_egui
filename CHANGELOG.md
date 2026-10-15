@@ -48,6 +48,14 @@ versions follow [Semantic Versioning](https://semver.org/). Feature IDs refer to
   Code that finds the switch by its AccessKit label ("auto", "min", ...) looks for "width: auto" etc. A host
   that wants the old cut-off behaviour sets `.scroll_fallback(false)`.
 
+### Fixed
+
+- `ve_settle`: a body growing in a row already full between hard walls (a frame switched to wide) no longer
+  presses its rectangle into its neighbour's while the row's yielder makes room; it grows as far as there is
+  room and on once there is more (SETL-30).
+- `ve_settle`: a hexagon's pull along a face whose slide is left to a neighbour that cannot slide is no longer
+  drawn as done, so every pull shown at rest is locked (SETL-31).
+
 ## [0.28.0] - 2026-10-15
 
 ### Added

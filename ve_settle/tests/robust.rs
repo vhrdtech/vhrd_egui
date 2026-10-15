@@ -246,3 +246,64 @@ fn a_change_of_parameters_puts_no_energy_in() {
     let p = world.params();
     assert!(p.dt > 0.0 && p.gap == 0.0 && p.glide_speed > 0.0 && p.iterations == 1);
 }
+
+/// A rigid body in a full row between two hard walls grows (a frame switched to a wider size): the row is
+/// too full, and the one that gives way leaves it at a glide, slower than the body grows. Whatever the
+/// widths, the rectangles never overlap on the way (the jam takes up the gaps, not the rectangles), and
+/// the body ends at its new size. (Seen in the sandbox once the frame's header grew wider, FRM-11: the row
+/// was 0.9 points too deep.)
+#[test]
+fn a_body_growing_in_a_full_row_never_overlaps_its_neighbours() {
+    for grow_by in [20.0, 45.0, 70.0, 110.0, 160.0] {
+        for first in [250.0, 280.0, 310.0] {
+            let params = Params {
+                walls: ve_settle::Walls {
+                    bottom: false,
+                    ..ve_settle::Walls::ALL
+                },
+                ..Params::default()
+            };
+            let bounds = Rect::from_min_size(Vec2::ZERO, Vec2::new(900.0, 700.0));
+            let mut world = World::new(bounds, params);
+            // a full row along the top, a second one under it
+            let rows = [
+                (6.0, [first, 250.0, 870.0 - first - 250.0 - 12.0], 160.0),
+                (172.0, [300.0, 260.0, 290.0], 120.0),
+            ];
+            let mut grower = None;
+            for (y, widths, h) in rows {
+                let mut x = 6.0;
+                for w in widths {
+                    let size = Vec2::new(w, h);
+                    let at = Vec2::new(x + w / 2.0, y + h / 2.0);
+                    let id = world.add(BodyDesc::new(at, size).min_size(size).max_size(size));
+                    grower.get_or_insert(id);
+                    x += w + 6.0;
+                }
+            }
+            let what = format!("{first} grown by {grow_by}");
+            assert!(world.settle(6_000).is_some(), "{what}: the rows settle");
+            assert_eq!(world.max_overlap(), 0.0, "{what}");
+            let id = grower.expect("a body");
+            let wide = Vec2::new(first + grow_by, 160.0);
+            world.set_limits(id, wide, wide);
+            world.set_want(id, wide);
+            for n in 0..6_000 {
+                if !world.step() {
+                    break;
+                }
+                assert!(
+                    world.max_overlap() <= 0.01,
+                    "{what}: two rectangles overlap by {} at step {n}",
+                    world.max_overlap()
+                );
+            }
+            assert!(world.is_at_rest(), "{what}: it comes to rest");
+            let size = world.body(id).expect("the body").rect.size();
+            assert!(
+                (size.x - wide.x).abs() < 0.5,
+                "{what}: it grew to {size:?}, not {wide:?}"
+            );
+        }
+    }
+}

@@ -228,6 +228,13 @@ pub struct Body {
     /// (rigid, or at its minimum size), points; let go at
     /// [`Params::restore`] like squeeze.
     pub jam: Vec2,
+    /// The jam it took on in the last step: on such an axis it grows no
+    /// more than `room` lets it.
+    jammed: Vec2,
+    /// How far its rectangle may still grow toward its nearest plain
+    /// neighbour on each axis, either side, before the two are closer than
+    /// [`RECT_FLOOR`] of the gap, as the last step left them, points.
+    room: Vec2,
     /// Its outline when it is not the plain rectangle: a convex polygon in
     /// unit coordinates of `rect`, so it is squeezed and resized with it
     /// (SETL-4). Such a body does not bulge.
@@ -645,6 +652,8 @@ impl World {
             slide_pull: Vec2::ZERO,
             bulge: Vec2::ZERO,
             jam: Vec2::ZERO,
+            jammed: Vec2::ZERO,
+            room: Vec2::ZERO,
             outline: desc.outline,
             stretch_lo: Vec2::ZERO,
             stretch_hi: Vec2::ZERO,
@@ -1173,7 +1182,8 @@ impl World {
             b.prev = b.rect;
             b.pressure = 0.0;
             // A bulge still changing keeps the world awake, like a moving body.
-            home_moved = home_moved.max(resize(b, &p, dt));
+            let jammed = std::mem::replace(&mut b.jammed, Vec2::ZERO);
+            home_moved = home_moved.max(resize(b, &p, dt, jammed));
         }
         // Cooling: a world that has not come to rest by itself long
         // after the last change from outside is in a cycle (a corner
@@ -1233,6 +1243,7 @@ impl World {
             }
         }
         self.hard_pass();
+        self.measure_room();
         self.land_lifted();
         // The snaps as the step leaves the bodies: from the corner where it
         // is now, by the same way to go (the overlay draws them after the
@@ -1789,7 +1800,9 @@ impl World {
                 // Shown with the slide where it is done: by this body along the
                 // face it slides on, or by the one nested under it.
                 for (j, from, to, along, theirs, rigid) in pending {
-                    let done = (slider == Some(j) && !blocked) || theirs;
+                    // (by this body only where its slide is not left to the
+                    // other one or held back: a pull nobody does never closes)
+                    let done = (slider == Some(j) && slide != Vec2::ZERO) || theirs;
                     let mut to = if done { to } else { to - along };
                     // A rigid body's vertex is pulled as far as the slide takes
                     // it, no farther: the rest along the face is a difference in
@@ -2251,7 +2264,9 @@ impl World {
                 if let Some(share) = squeeze.filter(|_| Some(axis) != self.params.free_axis()) {
                     squeezed = (depth * share / (1.0 + share)).min(b.give(axis));
                     let felt = share.max(JAM_SHARE);
-                    b.jam[axis] += (depth * felt / (1.0 + felt) - squeezed).max(0.0);
+                    let jam = (depth * felt / (1.0 + felt) - squeezed).max(0.0);
+                    b.jam[axis] += jam;
+                    b.jammed[axis] += jam;
                 }
                 b.squeeze[axis] += squeezed;
                 // What the wall takes back counts against what neighbours
@@ -2370,8 +2385,11 @@ impl World {
                     s_hi = (depth * w_hi / total).min(hi.give(axis));
                     let felt = share.max(JAM_SHARE);
                     let each = depth * felt / (2.0 + 2.0 * felt);
-                    lo.jam[axis] += (each - s_lo).max(0.0);
-                    hi.jam[axis] += (each - s_hi).max(0.0);
+                    let (j_lo, j_hi) = ((each - s_lo).max(0.0), (each - s_hi).max(0.0));
+                    lo.jam[axis] += j_lo;
+                    hi.jam[axis] += j_hi;
+                    lo.jammed[axis] += j_lo;
+                    hi.jammed[axis] += j_hi;
                 }
                 let each = hit.normal * ((depth - s_lo - s_hi) * 0.5);
                 lo.squeeze[axis] += s_lo;
@@ -2629,6 +2647,37 @@ impl World {
         }
     }
 
+    /// [`Body::room`] of every jammed body: a row too full between hard
+    /// walls, held by the walls, takes up the gaps of its pairs, but a
+    /// body growing in it must not take its rectangle into a neighbour's
+    /// (the yielder makes the room at a glide, slower than it grows).
+    fn measure_room(&mut self) {
+        let floor = self.params.gap * RECT_FLOOR;
+        for i in 0..self.bodies.len() {
+            let a = &self.bodies[i];
+            let mut room = Vec2::splat(f32::INFINITY);
+            if a.jammed.x > SLOP || a.jammed.y > SLOP {
+                for (j, o) in self.bodies.iter().enumerate() {
+                    if j == i || o.lifted || a.outline.is_some() || o.outline.is_some() {
+                        continue;
+                    }
+                    for axis in Axis::BOTH {
+                        let across = axis.other();
+                        let side_by_side = a.rect.max[across].min(o.rect.max[across])
+                            - a.rect.min[across].max(o.rect.min[across]);
+                        if side_by_side <= 0.0 {
+                            continue;
+                        }
+                        let apart = (o.rect.min[axis] - a.rect.max[axis])
+                            .max(a.rect.min[axis] - o.rect.max[axis]);
+                        room[axis] = room[axis].min(apart - floor);
+                    }
+                }
+            }
+            self.bodies[i].room = room;
+        }
+    }
+
     /// A lifted body that is let go and touches nothing turns solid.
     fn land_lifted(&mut self) {
         let gap = self.params.gap;
@@ -2787,15 +2836,27 @@ fn washboard(offset: f32, rel_vel: f32, p: &Params) -> f32 {
 }
 
 /// Follow the wanted size, let go of squeeze and jam, keeping the middle,
-/// and let the bulge follow the pressure. Returns how much the bulge
+/// and let the bulge follow the pressure. On an axis where the last step
+/// jammed it (`jammed`: a row too full between hard walls, nothing left
+/// to give) it grows only as far as [`Body::room`] lets its rectangle:
+/// growing on would press the row deeper than its gaps, and the
+/// rectangles would overlap while the body that gives way is still on its
+/// way out at a glide. The jam in the gaps is pressure enough for that
+/// one to go; once there is room it grows on. Returns how much the bulge
 /// changed.
-fn resize(b: &mut Body, p: &Params, dt: f32) -> f32 {
+fn resize(b: &mut Body, p: &Params, dt: f32, jammed: Vec2) -> f32 {
     let target = b.want.max(b.min_size).min(b.max_size);
     let grow = p.grow_speed * dt;
     let keep = (-p.restore * dt).exp();
     let mut bulged = 0.0f32;
     for axis in Axis::BOTH {
-        b.natural[axis] += (target[axis] - b.natural[axis]).clamp(-grow, grow);
+        // (it grows on both sides: half of it on each)
+        let up = if jammed[axis] > SLOP {
+            grow.min(2.0 * b.room[axis]).max(0.0)
+        } else {
+            grow
+        };
+        b.natural[axis] += (target[axis] - b.natural[axis]).clamp(-grow, up);
         let mut squeeze = b.squeeze[axis] * keep;
         if squeeze < 1e-4 {
             squeeze = 0.0;

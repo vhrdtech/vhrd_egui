@@ -1044,6 +1044,20 @@ up and Packery's "others flow around the dragged one". No app uses it yet.
   blocked). A honeycomb under gravity needs attraction as a force that can hold a body off the wall, as the
   rectangles' corner snap (1500) holds against gravity (600); open question for the user. Answered by SETL-28:
   the honeycomb is laid out cell by cell, and the solver holds it.
+- ✅ **SETL-31 Pulls of a hexagon that nobody slides** (found when the frame's header grew wider, FRM-11,
+  15 Oct 2026): in the Hexagons scene three pulls never locked at rest. A hexagon lying on gravity's side of the
+  one it faces leaves the slide along that face to the other one; that one's slide was blocked, yet the pull was
+  still drawn as done by the first, so it stayed open for ever. A pull now counts as done by a body only where
+  its slide really runs (`World::attract_pass`); kittest `the_pulls_of_the_hexagons_scene_are_done_at_rest`.
+- ✅ **SETL-30 A body growing in a full row went into its neighbour** (found when the frame's header grew wider,
+  FRM-11, 15 Oct 2026): a frame switched to wide in a row already full between the side walls grows faster
+  (`grow_speed`) than the row's yielder (SETL-11) leaves it (a glide, half of it sideways), and the walls hold:
+  the row was pressed past its gaps and two rectangles lay 0.9 points in each other. Now a body jammed on an axis
+  (`Body::jam` taken on in the last step) grows there only as far as its rectangle has room to its nearest
+  neighbour, a `RECT_FLOOR` share of the gap kept (`World::measure_room`, `resize`); the jam in the gaps still
+  sends the yielder out, and the body grows on once there is room. Test `tests/robust.rs`
+  `a_body_growing_in_a_full_row_never_overlaps_its_neighbours` (fifteen widths), kittest
+  `the_size_switch_changes_the_body_and_the_neighbours_make_room`.
 - ✅ **SETL-29 Frames for a dashboard** (P2605#13oct-1130b, dash-egui plan 2/6, for tpm_mesh_dash APP-109):
   what `ve_settle::frames` lacked before a live dashboard can sit on it, found by reading the dash's
   `masonry.rs` and `app.rs` against frames.rs 0.23.0. (a) `Frames::hands`: `Hands::All` (default), `MouseOnly`
