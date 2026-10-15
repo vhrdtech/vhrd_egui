@@ -3,8 +3,9 @@
 //! word (auto, min, nom, wide, tall) is in the tooltip and the accessible label.
 //!
 //! The glyph is a tiny body whose length along the switch's axis shows the step, with a tick for each of the
-//! three steps (min, nom, wide or tall) on that axis, the current one lit in the accent. On auto the outline
-//! is dashed and a double arrow runs along the axis; the tick of the step auto shows is lit, softer. The width
+//! three steps (min, nom, wide or tall) on that axis. The glyph is in the muted ink of ⓘ and ☰ (brighter under
+//! the pointer); only the current step's tick is lit in the accent. On auto the outline is dashed and a
+//! double arrow runs along the axis; the tick of the step auto shows is lit, softer. The width
 //! glyph lies along x with its ticks below, the height glyph is the same turned onto y with its ticks right.
 
 use egui::{Color32, Pos2, Rect, Response, Sense, Shape, Stroke, Ui, pos2, vec2};
@@ -148,7 +149,7 @@ fn glyph_shapes(look: &Look<'_>, g: Rect, ink: Color32, accent: Color32) -> Vec<
         // the double arrow along the axis, over the whole length the body can take
         let mid = (c0 + c1) / 2.0;
         let (s, e) = (0.5, 0.5 + STEPS[2]);
-        let arrow = Stroke::new(ICON_STROKE, accent);
+        let arrow = Stroke::new(ICON_STROKE, ink);
         shapes.push(Shape::line_segment([at(s, mid), at(e, mid)], arrow));
         for (tip, back) in [(s, s + 2.2), (e, e - 2.2)] {
             shapes.push(Shape::line(
@@ -157,11 +158,11 @@ fn glyph_shapes(look: &Look<'_>, g: Rect, ink: Color32, accent: Color32) -> Vec<
             ));
         }
     } else {
-        shapes.push(Shape::rect_filled(body, 1.0, accent.gamma_multiply(0.35)));
+        shapes.push(Shape::rect_filled(body, 1.0, ink.gamma_multiply(0.3)));
         shapes.push(Shape::rect_stroke(
             body,
             1.0,
-            Stroke::new(ICON_STROKE, accent),
+            Stroke::new(ICON_STROKE, ink),
             egui::StrokeKind::Inside,
         ));
     }
