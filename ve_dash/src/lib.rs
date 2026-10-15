@@ -4,9 +4,11 @@
 //! CVD-validated colors, a [`History`] ring buffer, a [`Decay`]
 //! VU-style value smoother, and widgets —
 //! [`Sparkline`] (filled line chart with hover readout, optional load colors), [`Meter`]
-//! (segmented block meter with a heat gradient), [`SegBar`] (exactly 5 or 10 segments), [`StatusLight`]
+//! (segmented block meter with a heat gradient and a [`Blocks`] count, 10 by default), [`StatusLight`]
 //! (glowing dot + label), [`StatTile`] (headline number); the frame around them is `ve_frame::WidgetFrame`. [`steady_width`] keeps live values from shoving their
 //! neighbours around, and [`SteadyColumn`] aligns the first cell of list rows without a hard-coded width.
+//!
+//! `SegBar` and `Segments` are deprecated: folded into [`Meter`] and [`Blocks`].
 //!
 //! Colors come from `ve_theme`'s design tokens ([`Theme::from_tokens`]); apps turn the whole
 //! look on with `ve_theme::setup(ctx)`, which also installs the brand fonts. ve_dash's own
@@ -32,7 +34,8 @@ pub use column::SteadyColumn;
 pub use decay::Decay;
 pub use history::History;
 pub use info::info_icon;
-pub use meter::Meter;
+pub use meter::{Blocks, Meter};
+#[allow(deprecated)]
 pub use segbar::{SegBar, Segments, lit_segments};
 pub use sparkline::{Sparkline, age_label};
 pub use stat::StatTile;

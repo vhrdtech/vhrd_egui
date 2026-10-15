@@ -51,8 +51,8 @@ Cargo workspace, edition 2024, one shared version (`[workspace.package]`).
 - `ve_theme/` — the design system: brand `Tokens` (colors, spacing, radii, strokes, shadows, type scale) applied
   as egui dark and light styles, IBM Plex fonts, `UiExt` helpers (primary / danger button, section header,
   panel title bar, toolbar, muted label, badge), the gallery example.
-- `ve_dash/` — btop-style dashboard blocks (theme from `ve_theme` tokens, sparkline, meter, segmented bar,
-  tiles).
+- `ve_dash/` — btop-style dashboard blocks (theme from `ve_theme` tokens, sparkline, meter with a fixed or
+  auto block count, tiles).
 - `ve_backdrop/` — the animated app background: a grid of dots or squares reacting to the pointer and to widget
   frames (`Backdrop`, `Lit`, `Settings`), a wgpu shader (`backdrop.wgsl`) with a CPU-painted fallback; the
   math lives once in `field.rs` and the shader mirrors it, so change both together. Emulated transparency
@@ -127,7 +127,9 @@ reads before writing UI is `egui_app_skill/references/ui-guide.md`, kept in step
   row, its chart, its status light, its name in a legend) lights up (`hover_link`, BAS-3 hover-link).
 - **Labels are not selectable** (`setup_labels(ctx)` at startup, BAS-2 label-select); text worth copying (ids,
   paths, commands) uses `copyable_label`.
-- Percent bars use 5 or 10 segments (`SegBar`, DASH-13 seg-bar).
+- **Percent bars use a fixed block count**, 10 by default, 20/25/50/100 when finer steps help
+  (`Meter::blocks(Blocks)`, DASH-13 seg-bar / DASH-4 meter); `Blocks::Auto` (grows with the width) only
+  where the width itself should carry meaning.
 - **Learned widths, never hard-coded ones**: a piece whose content changes length (live numbers, names,
   columns across rows) keeps the widest it has been (`ve_dash::steady_width`, `StatTile::steady()`), so nothing
   jumps; no fixed pixel widths in app code (user, 8 Oct 2026). Numbers use tabular digits.

@@ -52,7 +52,8 @@ The rules every app on vhrd_egui follows (helpers in `ve_basics`, the full text 
   row, its chart, its status light, its name in a legend) lights up (`hover_link`).
 - **Labels are not selectable** (`setup_labels` at startup); text worth copying (ids, paths, commands) uses
   `copyable_label`.
-- **Percent bars use 5 or 10 segments** (`ve_dash::SegBar`) when the app shows load or progress.
+- **Percent bars use a fixed block count**, 10 by default, 20/25/50/100 when finer steps help
+  (`ve_dash::Meter::blocks`); `Blocks::Auto` only where the width itself should carry meaning.
 {% if theme -%}
 - **The theme is `ve_theme`**: colours, spacing and type come from its tokens (`ve_theme::setup` at startup);
   no hard-coded colours in widgets, use the tokens, status colours always with a text label.

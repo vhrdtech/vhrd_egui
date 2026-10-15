@@ -96,7 +96,8 @@ it upgrades like a generated app.
 
 Read `references/ui-guide.md` before writing UI: generous tooltips on every control, number, badge and
 abbreviation; related items highlight together on hover (`ve_basics::hover_link`); labels are not selectable
-(`setup_labels`), `copyable_label` for ids, paths, commands; percent bars with 5 or 10 segments (`ve_dash::SegBar`);
+(`setup_labels`), `copyable_label` for ids, paths, commands; percent bars with a fixed block count, 10 by
+default (`ve_dash::Meter::blocks`);
 colours, spacing and type from `ve_theme` tokens, status colours always with a text label; no blocking I/O in
 `ui()`; three kinds of state (settings, visual, transient), transient never serialized.
 

@@ -5,6 +5,28 @@ versions follow [Semantic Versioning](https://semver.org/). Feature IDs refer to
 
 ## [Unreleased]
 
+### Added
+
+- `ve_dash`: `Blocks` (DASH-4) — how many blocks a `Meter` shows: `Ten` (default), `Twenty`, `TwentyFive`,
+  `Fifty`, `Hundred`, `Custom(n)` (clamped `1..=200`), or `Auto` (grows with the width, the old default
+  behaviour); `Meter::blocks(Blocks)`, `Blocks::count(width)`, `Blocks::ALL` + `label()` for a settings combo
+  box. A fixed count stretches its blocks to fill the width, shrinking the gap (2 -> 1 -> 0 px) before a block
+  would go under 1 px, and never drops a block. `dash_demo` and the `ve_frame` playground get a live combo box
+  to switch it.
+
+### Changed
+
+- `ve_dash::Meter` (DASH-4): default block count is now `Blocks::Ten` (was: always grows with the width, now
+  `Blocks::Auto`); the heat-rounding rule that lit at least one block for any non-zero value (previously only
+  on `SegBar`) now applies to `Meter` too. Tooltip is now `"63 % (6 of 10 blocks)"` (was just the percentage).
+- `ve_dash`: percent bars use a fixed block count by default (10, finer with 20/25/50/100), not a width-grown
+  one; `AGENTS.md`, `egui_app_skill` (`SKILL.md`, `references/ui-guide.md`, `templates/AGENTS.md.j2`) updated.
+
+### Deprecated
+
+- `ve_dash::SegBar`, `Segments` and `lit_segments` (DASH-13): folded into `Meter` / `Blocks` (`Segments::Five`
+  is `Blocks::Custom(5)`, `Segments::Ten` is `Blocks::Ten`); kept as thin forwards, still compile.
+
 ## [0.27.0] - 2026-10-13
 
 ### Changed

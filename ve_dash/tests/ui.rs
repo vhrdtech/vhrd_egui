@@ -12,7 +12,7 @@ use std::cell::Cell;
 use std::rc::Rc;
 
 use ve_dash::{
-    Meter, SegBar, Sparkline, StatTile, Status, StatusLight, SteadyColumn, Theme, steady_width,
+    Blocks, Meter, Sparkline, StatTile, Status, StatusLight, SteadyColumn, Theme, steady_width,
 };
 use ve_frame::{FrameState, WidgetFrame};
 
@@ -43,7 +43,7 @@ fn status_light_label_is_accessible() {
 }
 
 #[test]
-fn meter_shows_percent_tooltip_on_hover() {
+fn meter_shows_percent_and_block_count_tooltip_on_hover() {
     let mut h = Harness::builder()
         .with_size(vec2(220.0, 60.0))
         .build_ui(|ui| {
@@ -55,9 +55,48 @@ fn meter_shows_percent_tooltip_on_hover() {
         h.step(); // 0.25 s per step; the tooltip appears after 0.5 s
     }
     assert!(
-        h.query_by_label("63 %").is_some(),
-        "hovering the meter must reveal the exact percentage"
+        h.query_by_label("63 % (6 of 10 blocks)").is_some(),
+        "hovering the meter must reveal the exact percentage and the block count"
     );
+}
+
+/// `Blocks::Auto` names its (width-dependent) count too, not just the percentage.
+#[test]
+fn meter_auto_blocks_names_its_count_in_the_tooltip() {
+    let mut h = Harness::builder()
+        .with_size(vec2(220.0, 60.0))
+        .build_ui(|ui| {
+            ui.add(Meter::new(0.63).blocks(Blocks::Auto).width(150.0));
+        });
+    h.run();
+    h.hover_at(pos2(60.0, 14.0));
+    for _ in 0..8 {
+        h.step();
+    }
+    assert!(
+        h.query_by_label_contains("63 % (").is_some(),
+        "an auto meter's tooltip must still say the lit and total block count"
+    );
+}
+
+/// A fixed block count stays the same whether the meter is narrow or wide; only its blocks' width changes.
+#[test]
+fn meter_fixed_blocks_stay_fixed_across_widths() {
+    let tooltip_of = |width: f32| {
+        let mut h = Harness::builder()
+            .with_size(vec2(400.0, 60.0))
+            .build_ui(move |ui| {
+                ui.add(Meter::new(0.63).blocks(Blocks::Ten).width(width));
+            });
+        h.run();
+        h.hover_at(pos2(20.0, 14.0));
+        for _ in 0..8 {
+            h.step();
+        }
+        h.query_by_label("63 % (6 of 10 blocks)").is_some()
+    };
+    assert!(tooltip_of(40.0), "narrow: still 10 blocks");
+    assert!(tooltip_of(300.0), "wide: still 10 blocks, not grown");
 }
 
 /// A value that gets shorter keeps its widest width, so what follows stays put.
@@ -147,19 +186,21 @@ fn dash_panel_snapshot() {
     h.snapshot_options("dash_panel", &tolerant());
 }
 
+/// Deprecated, kept compiling: `SegBar::ten` is now a thin forward to `Meter::new(..).blocks(Blocks::Ten)`.
 #[test]
-fn segbar_tooltip_names_percent_and_segments() {
+#[allow(deprecated)]
+fn deprecated_segbar_still_forwards_to_meter() {
     let mut h = Harness::builder()
         .with_size(vec2(220.0, 60.0))
         .build_ui(|ui| {
-            ui.add(SegBar::ten(0.63).width(100.0));
+            ui.add(ve_dash::SegBar::ten(0.63).width(100.0));
         });
     h.run();
     h.hover_at(pos2(30.0, 14.0));
     for _ in 0..8 {
         h.step();
     }
-    assert!(h.query_by_label("63 % (6 of 10 segments)").is_some());
+    assert!(h.query_by_label("63 % (6 of 10 blocks)").is_some());
 }
 
 /// Rows with names of different lengths: the cell after the name starts at the same x in every row.

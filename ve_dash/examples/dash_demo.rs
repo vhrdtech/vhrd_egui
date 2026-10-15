@@ -14,7 +14,7 @@
 use eframe::egui;
 use egui::{Align2, FontId, RichText, Ui, vec2};
 use ve_dash::{
-    Decay, History, Meter, Sparkline, StatTile, Status, StatusLight, SteadyColumn, Theme,
+    Blocks, Decay, History, Meter, Sparkline, StatTile, Status, StatusLight, SteadyColumn, Theme,
 };
 use ve_frame::{FrameState, WidgetFrame};
 
@@ -103,6 +103,8 @@ struct App {
     nodes: Vec<Node>,
     /// Exponentially smoothed frames per second, for the header tile.
     fps: f32,
+    /// How many blocks the load meters show; a combo box in the header switches it live.
+    blocks: Blocks,
 }
 
 impl App {
@@ -121,10 +123,11 @@ impl App {
             theme,
             nodes,
             fps: 0.0,
+            blocks: Blocks::default(),
         }
     }
 
-    fn header(&self, ui: &mut Ui) {
+    fn header(&mut self, ui: &mut Ui) {
         let online = self.nodes.iter().filter(|n| n.online).count();
         let total = self.nodes.len();
         let all_up = online == total && total > 0;
@@ -161,11 +164,24 @@ impl App {
                     .min_width(0.0)
                     .steady(),
             );
+            ui.label(RichText::new("load meter blocks").color(self.theme.text_muted).size(11.0));
+            egui::ComboBox::from_id_salt("blocks")
+                .selected_text(self.blocks.label())
+                .show_ui(ui, |ui| {
+                    for blocks in Blocks::ALL {
+                        ui.selectable_value(&mut self.blocks, blocks, blocks.label());
+                    }
+                })
+                .response
+                .on_hover_text(
+                    "How many blocks every node's link-load meter shows; Auto grows with the panel's width",
+                );
         });
     }
 
     fn node_panel(&mut self, ui: &mut Ui, idx: usize) {
         let theme = self.theme.clone();
+        let blocks = self.blocks;
         let node = &mut self.nodes[idx];
         let title = if node.is_self {
             format!("{} (this pc)", node.name)
@@ -244,7 +260,11 @@ impl App {
                     .size(11.0),
             );
             let load = node.load.value();
-            ui.add(Meter::new(load).text(format!("{:.0} %", load * 100.0)));
+            ui.add(
+                Meter::new(load)
+                    .blocks(blocks)
+                    .text(format!("{:.0} %", load * 100.0)),
+            );
         });
     }
 }

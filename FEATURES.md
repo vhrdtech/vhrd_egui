@@ -164,8 +164,14 @@ chart must carry a direct text label (they all do); status colors always ship wi
 - ✅ **DASH-2 History**: fixed-capacity ring buffer feeding the charts. `ve_dash/src/history.rs`, tested.
 - ✅ **DASH-3 Sparkline**: thin line + gradient fill, auto or fixed range, hover crosshair with value readout.
   `ve_dash/src/sparkline.rs`.
-- ✅ **DASH-4 Meter**: segmented block meter, heat gradient by position or fixed color, optional value text.
-  `ve_dash/src/meter.rs`.
+- ✅ **DASH-4 Meter**: segmented block meter, heat gradient by position or fixed color, optional value text,
+  `Blocks` count (`Meter::blocks`; `Ten` by default so bars across an app stay comparable, `Twenty` /
+  `TwentyFive` / `Fifty` / `Hundred` / `Custom(n)` for finer steps, `Auto` grows the count with the width —
+  today's old behaviour — for the rare case where the width itself should carry meaning). A fixed count
+  keeps its blocks and stretches their width to fill, shrinking the gap (2 -> 1 -> 0 px) before letting a
+  block go under 1 px; it never drops a block. Lit blocks round to the nearest, any non-zero value lights at
+  least one; tooltip `"63 % (6 of 10 blocks)"` (DASH-13). `ve_dash/src/meter.rs` (unit tests), kittest in
+  `ve_dash/tests/ui.rs`.
 - ✅ **DASH-5 Status light**: glowing dot + label (`Status`: good / warn / crit / off). `ve_dash/src/status.rs`.
   The LED of a widget frame is this dot (FRM-1).
 - ✅ **DASH-6 Stat tile**: small label over big monospace value with unit. `ve_dash/src/stat.rs`.
@@ -183,9 +189,13 @@ chart must carry a direct text label (they all do); status colors always ship wi
   had (grow at once; shrink only by compaction, DASH-20), so live values changing length don't move what follows.
   `ve_dash/src/steady.rs`, kittest in `ve_dash/tests/ui.rs`.
 
-- ✅ **DASH-13 Segmented bar**: `SegBar` / `Segments` — a small percent bar of exactly 5 or 10 segments, heat
-  gradient or fixed color, tooltip "63 % (6 of 10 segments)"; any non-zero value lights at least one segment.
-  `ve_dash/src/segbar.rs` (unit tests), kittest in `ve_dash/tests/ui.rs`.
+- ✅ **DASH-13 Segmented bar folded into Meter** (user, 15 Oct 2026, P2605): `SegBar` and `Segments` (exactly 5
+  or 10 segments) are now one widget with `Meter` and its `Blocks` count (DASH-4): `Segments::Five` is
+  `Blocks::Custom(5)`, `Segments::Ten` is `Blocks::Ten`. `SegBar` / `Segments` / `lit_segments` stay as
+  `#[deprecated]` thin forwards to `Meter` / `Blocks`, so existing callers keep compiling; new code uses
+  `Meter::blocks` directly. `ve_dash/src/segbar.rs`, `ve_dash/src/meter.rs`. Not changed in this session:
+  tpm_mesh_dash, which still calls `Meter::new` on auto in `usage.rs`, `machine.rs`, `cluster.rs` — a tpm task
+  tracks which of those should move to `.blocks(Blocks::Ten)` vs stay `Auto` (P2605).
 
 ## Basics (`BAS`)
 

@@ -20,7 +20,7 @@ use eframe::egui;
 use egui::{Align, Layout, RichText, Ui};
 use serde::{Deserialize, Serialize};
 use ve_backdrop::{Backdrop, Lit};
-use ve_dash::{Meter, Sparkline, StatusLight, Theme};
+use ve_dash::{Blocks, Meter, Sparkline, StatusLight, Theme};
 use ve_frame::{
     Applied, Dock, FloatLook, FrameAction, FrameState, HexFace, LandMode, Machine, Moves, Parcel,
     Remote, Shape, SideItem, Size, SizeHints, Slot, SlotId, Status, ViewportSlot, WidgetFrame,
@@ -52,6 +52,13 @@ fn main() -> eframe::Result {
             Ok(Box::new(App(playground)))
         }),
     )
+}
+
+/// Egui memory id for the live `Blocks` setting the demo widgets' meters read (set by
+/// `Playground::content`'s combo box, read by `Demo::body`): simplest way to reach a
+/// `ve_dash::Blocks` into the per-widget `body()` without threading it through every demo widget.
+fn meter_blocks_id() -> egui::Id {
+    egui::Id::new("ve_frame_playground_meter_blocks")
 }
 
 struct App(Playground);
@@ -330,6 +337,9 @@ impl Demo {
     /// The body, arranged for `size`.
     fn body(&mut self, ui: &mut Ui, size: Size) {
         let theme = Theme::from_tokens(&ve_theme::Tokens::of_ui(ui));
+        let blocks = ui
+            .data(|d| d.get_temp::<Blocks>(meter_blocks_id()))
+            .unwrap_or_default();
         let step = if self.double { 2 } else { 1 };
         let add = |ui: &mut Ui, clicks: &mut u32| {
             if ui
@@ -358,7 +368,11 @@ impl Demo {
                     ui.add(Sparkline::new(&wave).height(36.0).color(theme.accent));
                 }
                 if self.scale == Scale::Big {
-                    ui.add(Meter::new(0.63).width(ui.available_width().min(300.0)));
+                    ui.add(
+                        Meter::new(0.63)
+                            .blocks(blocks)
+                            .width(ui.available_width().min(300.0)),
+                    );
                     ui.weak("Normal form: count, chart and meter stacked in one column.");
                 }
             }
@@ -368,7 +382,7 @@ impl Demo {
                     add(ui, &mut self.clicks);
                     ui.weak("wide form");
                     if self.scale != Scale::Tiny {
-                        ui.add(Meter::new(0.63).width(120.0));
+                        ui.add(Meter::new(0.63).blocks(blocks).width(120.0));
                     }
                 });
                 if self.scale != Scale::Tiny {
@@ -810,6 +824,21 @@ impl Playground {
 
     fn content(&mut self, ui: &mut Ui) {
         self.controls(ui);
+        ui.horizontal(|ui| {
+            let id = meter_blocks_id();
+            let mut blocks = ui.data(|d| d.get_temp::<Blocks>(id)).unwrap_or_default();
+            ui.label("meter blocks").on_hover_text(
+                "How many blocks the demo widgets' meters show; Auto grows with the widget's width",
+            );
+            egui::ComboBox::from_id_salt("meter_blocks")
+                .selected_text(blocks.label())
+                .show_ui(ui, |ui| {
+                    for b in Blocks::ALL {
+                        ui.selectable_value(&mut blocks, b, b.label());
+                    }
+                });
+            ui.data_mut(|d| d.insert_temp(id, blocks));
+        });
         ui.separator();
         let remote = self.transport.then_some(&self.loopback as &dyn Remote);
         let moves = self.dock.moves(remote);

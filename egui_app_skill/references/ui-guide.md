@@ -46,10 +46,13 @@ uses `ve_basics::copyable_label(ui, text)`.
 
 ## Numbers and bars
 
-Percent bars use exactly 5 or 10 segments (`ve_dash::SegBar`), so the value reads at a glance; any non-zero value
-lights at least one segment; the tooltip says the percentage and the segments. Live values that change length
-use `ve_dash::steady_width` / `StatTile::steady()` so what follows does not jump. Jumpy per-frame values go
-through `ve_dash::Decay` before they drive a bar.
+Percent bars use a fixed block count, 10 by default (`ve_dash::Meter`, `Meter::blocks(Blocks)`): 20, 25, 50 or
+100 when finer steps help, so bars across an app stay comparable; `Blocks::Auto` grows the count with the
+width (the old always-grows behaviour) and is for the rare case where the width itself should carry meaning,
+not for ordinary load bars. Any non-zero value lights at least one block; the tooltip says the percentage and
+the block count (`"63 % (6 of 10 blocks)"`). Live values that change length use `ve_dash::steady_width` /
+`StatTile::steady()` so what follows does not jump. Jumpy per-frame values go through `ve_dash::Decay` before
+they drive a bar.
 
 Widths are learned, never hard-coded: anything whose content changes length (numbers, names, a column shared by
 rows) keeps the widest it has been, via `steady_width` or a learned-width helper in ve_dash; no fixed pixel widths
