@@ -5,6 +5,8 @@ versions follow [Semantic Versioning](https://semver.org/). Feature IDs refer to
 
 ## [Unreleased]
 
+## [0.29.0] - 2026-10-15
+
 ### Added
 
 - `ve_frame` (FRM-11): a height switch beside the width switch, auto / min / nom / tall. `HeightMode` and
