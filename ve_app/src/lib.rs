@@ -207,9 +207,7 @@ impl Shell {
         let mut widget: Box<dyn Widget> = serde_json::from_str(&parcel.widget)
             .map_err(|e| format!("{}: unreadable widget, {e}", parcel.title))?;
         widget.init(&self.cx);
-        self.state
-            .widgets
-            .add_with(widget, FrameState::sized(parcel.size));
+        self.state.widgets.add_with(widget, parcel.frame_state());
         Ok(())
     }
 

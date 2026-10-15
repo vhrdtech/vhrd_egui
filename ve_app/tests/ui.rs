@@ -289,6 +289,7 @@ fn widget_goes_to_another_machine_and_is_received() {
                 title: "Gauge".into(),
                 widget: "{\"type\":\"Gauge\"}".into(),
                 size: Default::default(),
+                height: Default::default(),
             })
             .is_err(),
         "a widget type this build doesn't have is refused, not a panic"

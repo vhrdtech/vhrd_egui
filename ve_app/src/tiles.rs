@@ -206,6 +206,7 @@ pub(crate) fn framed(
     if let Some(sizes) = spec.sizes {
         f = f.sizes(sizes);
     }
+    f = f.scroll(spec.scroll);
     if !spec.stats.is_empty() {
         let stats = spec.stats;
         f = f.info(move |ui| {
@@ -220,8 +221,8 @@ pub(crate) fn framed(
                 });
         });
     }
-    f.show(ui, frame, |ui, size| {
-        widget.ui_sized(ui, cx, widget_id, size)
+    f.show_area(ui, frame, |ui, area| {
+        widget.ui_sized(ui, cx, widget_id, area.size, area.height)
     })
     .action
 }

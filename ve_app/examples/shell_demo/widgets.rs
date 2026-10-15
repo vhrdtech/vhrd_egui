@@ -91,10 +91,10 @@ impl Widget for Level {
     }
 
     fn ui(&mut self, ui: &mut Ui, cx: &Context, id: Id) {
-        self.ui_sized(ui, cx, id, Size::Nom);
+        self.ui_sized(ui, cx, id, Size::Nom, Height::Nom);
     }
 
-    fn ui_sized(&mut self, ui: &mut Ui, _cx: &Context, _id: Id, size: Size) {
+    fn ui_sized(&mut self, ui: &mut Ui, _cx: &Context, _id: Id, size: Size, height: Height) {
         let mut slider = |ui: &mut Ui| {
             ui.add(egui::Slider::new(&mut self.level, 0.0..=10.0).suffix(" V"))
                 .on_hover_text("Output level in volts, 0 to 10 V");
@@ -118,6 +118,20 @@ impl Widget for Level {
                 });
             }
         }
+        if height == Height::Tall && size != Size::Min {
+            // the tall form adds the presets
+            ui.horizontal(|ui| {
+                for preset in [0.0, 3.3, 5.0, 10.0] {
+                    if ui
+                        .button(format!("{preset} V"))
+                        .on_hover_text(format!("Set the level to {preset} V"))
+                        .clicked()
+                    {
+                        self.level = preset;
+                    }
+                }
+            });
+        }
     }
 
     fn frame_spec(&self) -> FrameSpec {
@@ -130,7 +144,8 @@ impl Widget for Level {
             led: Some(led),
             about: "An output level with a busy switch.".to_owned(),
             stats: vec![("level".to_owned(), format!("{:.1} V", self.level))],
-            sizes: Some(SizeHints::new([190.0, 22.0], [220.0, 48.0], [320.0, 22.0])),
+            sizes: Some(SizeHints::new([190.0, 22.0], [220.0, 48.0], [320.0, 22.0]).tall(80.0)),
+            ..FrameSpec::default()
         }
     }
 

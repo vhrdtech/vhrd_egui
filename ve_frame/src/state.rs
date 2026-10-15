@@ -2,7 +2,7 @@
 
 use serde::{Deserialize, Serialize};
 
-use crate::size::{Size, SizeMode};
+use crate::size::{Height, HeightMode, Size, SizeMode};
 
 /// An OS window of the app: `MAIN` is the one the app started with, the others are numbered as they are
 /// opened (egui viewports).
@@ -63,8 +63,10 @@ pub(crate) enum Landing {
 #[derive(Clone, Copy, Debug, Default, PartialEq, Serialize, Deserialize)]
 #[serde(default)]
 pub struct FrameState {
-    /// What the size switch is set to.
+    /// What the width switch is set to.
     pub size: SizeMode,
+    /// What the height switch is set to (FRM-11); auto in states saved before it existed.
+    pub height: HeightMode,
     /// Where the frame sits.
     pub placement: Placement,
     /// The size the user dragged the floating window to, in points; `None` until then: the window is as big
@@ -83,6 +85,9 @@ pub struct FrameState {
     /// The size shown last frame: auto's memory for its hysteresis. Not saved.
     #[serde(skip)]
     pub(crate) last_size: Option<Size>,
+    /// The height shown last frame, the same for the height.
+    #[serde(skip)]
+    pub(crate) last_height: Option<Height>,
     #[serde(skip)]
     pub(crate) landing: Landing,
     /// How strong the landing glow was drawn last frame, 1 to 0.
@@ -118,15 +123,20 @@ pub struct FrameState {
     pub(crate) plucking: Landing,
     #[serde(skip)]
     pub(crate) pluck: f32,
-    /// Where the size switch was drawn last, if the frame has one.
+    /// Where the width and the height switch were drawn last, if the frame has them.
     #[serde(skip)]
     pub(crate) switch_at: Option<egui::Pos2>,
+    #[serde(skip)]
+    pub(crate) height_switch_at: Option<egui::Pos2>,
+    /// Which of the two switches the anchor belongs to: the height switch when true.
+    #[serde(skip)]
+    pub(crate) anchor_height: bool,
     /// Whether the ☰ menu was open when the frame was drawn last, and where its button is.
     #[serde(skip)]
     pub(crate) menu_open: bool,
     #[serde(skip)]
     pub(crate) menu_at: Option<egui::Rect>,
-    /// The size switch was clicked at this screen point: it should be there again once the frame has its new
+    /// A size switch was clicked at this screen point: it should be there again once the frame has its new
     /// size (the window moves, or the grid scrolls). `anchor_fresh` in the frame of the click, `anchor_due` in
     /// the one after, when the new layout is known.
     #[serde(skip)]
@@ -138,6 +148,9 @@ pub struct FrameState {
     /// What a layout picked for auto ([`FrameState::set_auto_pick`]).
     #[serde(skip)]
     pub(crate) auto_pick: Option<Size>,
+    /// What a layout picked for the height on auto ([`FrameState::set_auto_pick_height`]).
+    #[serde(skip)]
+    pub(crate) auto_pick_height: Option<Height>,
     /// The size a layout gives a hexagon in a grid ([`FrameState::set_layout_size`]).
     #[serde(skip)]
     pub(crate) layout_size: Option<[f32; 2]>,
@@ -186,9 +199,14 @@ impl FrameState {
         }
     }
 
-    /// The size the body was given last frame; `None` before the first one.
+    /// The width step the body was given last frame; `None` before the first one.
     pub fn shown_size(&self) -> Option<Size> {
         self.last_size
+    }
+
+    /// The height step the body was given last frame; `None` before the first one.
+    pub fn shown_height(&self) -> Option<Height> {
+        self.last_height
     }
 
     /// The widget just arrived where it is now: its frame glows for [`GLOW_SECS`] so the eye finds it.
@@ -271,6 +289,18 @@ impl FrameState {
         self.auto_pick
     }
 
+    /// The same as [`Self::set_auto_pick`] for the height: with `Some`, a frame whose height switch is on auto
+    /// shows that height step instead of choosing by the room's height ([`crate::auto_height`]). Ignored for
+    /// a widget without heights of its own ([`crate::SizeHints::has_heights`]). Not saved.
+    pub fn set_auto_pick_height(&mut self, pick: Option<Height>) {
+        self.auto_pick_height = pick;
+    }
+
+    /// What a layout picked for the height on auto, if it did.
+    pub fn auto_pick_height(&self) -> Option<Height> {
+        self.auto_pick_height
+    }
+
     /// A layout that sizes frames itself gives a hexagon in a grid its whole size, outline included, as a
     /// floating hexagon has the size of its window: its body is what that leaves (never under the hint's
     /// minimum), its faces stay at 60°. `None`: the hints make the outline. A rectangle takes the room it is
@@ -294,9 +324,23 @@ impl FrameState {
         self.menu_at
     }
 
-    /// Where the size switch was drawn last, if the frame has one.
+    /// Where the width switch was drawn last, if the frame has one.
     pub fn switch_pos(&self) -> Option<egui::Pos2> {
         self.switch_at
+    }
+
+    /// Where the height switch was drawn last, if the frame has one.
+    pub fn height_switch_pos(&self) -> Option<egui::Pos2> {
+        self.height_switch_at
+    }
+
+    /// Where the switch that was clicked last is now: the one an anchor holds in place.
+    pub(crate) fn anchored_switch(&self) -> Option<egui::Pos2> {
+        if self.anchor_height {
+            self.height_switch_at
+        } else {
+            self.switch_at
+        }
     }
 
     /// Whether the frame, floating, can be resized by the user (set when it is drawn).

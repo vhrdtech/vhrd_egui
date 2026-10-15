@@ -60,8 +60,8 @@ use std::collections::HashMap;
 
 use egui::{Align, Id, Layout, Sense, Ui, UiBuilder, pos2, vec2};
 use ve_frame::{
-    AUTO_HYSTERESIS, Applied, Dock, FrameAction, Shape, Size, SizeHints, SizeMode, Slot, SlotId,
-    ViewportSlot,
+    AUTO_HYSTERESIS, Applied, Dock, FrameAction, Height, HeightMode, Shape, Size, SizeHints,
+    SizeMode, Slot, SlotId, ViewportSlot,
 };
 
 use crate::{BodyDesc, BodyId, Poly, Rect, Vec2, World};
@@ -250,7 +250,9 @@ struct Cell {
     /// Where its body was last (world), and how big: where it comes back to.
     center: Vec2,
     size: Vec2,
-    mode: SizeMode,
+    /// What its width and height switches were set to, and the height step it showed, last frame.
+    mode: (SizeMode, HeightMode),
+    shown_height: Option<Height>,
     /// Its body stays in the world as a ghost while it floats.
     ghost: bool,
     /// The top right corner (world) to hold while the body takes the size of a new form, and the frames
@@ -277,7 +279,8 @@ impl Cell {
             hex_least: [egui::Vec2::ZERO; 3],
             center,
             size,
-            mode: SizeMode::Auto,
+            mode: (SizeMode::Auto, HeightMode::Auto),
+            shown_height: None,
             ghost: false,
             anchor: None,
             outlined: None,
@@ -1196,9 +1199,15 @@ impl<W> Frames<W> {
         }
 
         let frame = &slot.frame;
-        if frame.size != cell.mode {
-            // the size switch was clicked: hold the corner it sits in while the body takes the new size
-            cell.mode = frame.size;
+        if frame.shown_height() != cell.shown_height {
+            // another height step: what was learned per width step was drawn at the old height
+            cell.shown_height = frame.shown_height();
+            cell.outer = [None; 3];
+            cell.hex_least = [egui::Vec2::ZERO; 3];
+        }
+        if (frame.size, frame.height) != cell.mode {
+            // a size switch was clicked: hold the corner it sits in while the body takes the new size
+            cell.mode = (frame.size, frame.height);
             cell.anchor = Some((Vec2::new(world_rect.max.x, world_rect.min.y), 1));
             cell.held = None;
             self.epoch += 1;

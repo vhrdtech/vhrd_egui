@@ -8,7 +8,7 @@ pub use ve_macro::svt;
 use egui::{Id, Ui, WidgetText};
 use erased_serde::{Deserializer, Serialize};
 
-use ve_frame::{Size, SizeHints, Status};
+use ve_frame::{Height, Size, SizeHints, Status};
 
 use crate::context::Context;
 
@@ -23,9 +23,12 @@ pub struct FrameSpec {
     pub about: String,
     /// The widget's own stats in the ⓘ tooltip, as label and value rows ("samples", "1204").
     pub stats: Vec<(String, String)>,
-    /// The sizes the widget offers; turns the size switch on and makes [`Widget::ui_sized`] worth
-    /// implementing.
+    /// The sizes the widget offers; turns the size switches on and makes [`Widget::ui_sized`] worth
+    /// implementing. The height switch is live when they have a tall form ([`SizeHints::tall`]).
     pub sizes: Option<SizeHints>,
+    /// Let the body scroll on these axes when it wants more than its place gives (a tile, a small window);
+    /// off on both by default (`ve_frame::WidgetFrame::scroll`).
+    pub scroll: egui::Vec2b,
 }
 
 #[typetag::serde(tag = "type")]
@@ -46,11 +49,12 @@ pub trait Widget {
     /// Render the widget's UI.
     fn ui(&mut self, ui: &mut Ui, cx: &Context, id: Id);
 
-    /// Render the widget's UI arranged for `size`: min (exactly [`FrameSpec::sizes`]' `min`), nom or wide.
-    /// Hosts call this one; by default it ignores the size and calls [`Self::ui`]. Implement it together with
+    /// Render the widget's UI arranged for the width step `size` (min: exactly [`FrameSpec::sizes`]' `min`
+    /// wide; nom or wide) and the height step `height` (min: exactly `min` high; nom or tall). Hosts call this
+    /// one; by default it ignores both and calls [`Self::ui`]. Implement it together with
     /// [`FrameSpec::sizes`].
-    fn ui_sized(&mut self, ui: &mut Ui, cx: &Context, id: Id, size: Size) {
-        let _ = size;
+    fn ui_sized(&mut self, ui: &mut Ui, cx: &Context, id: Id, size: Size, height: Height) {
+        let _ = (size, height);
         self.ui(ui, cx, id);
     }
 

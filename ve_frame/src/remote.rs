@@ -2,7 +2,8 @@
 
 use serde::{Deserialize, Serialize};
 
-use crate::size::SizeMode;
+use crate::size::{HeightMode, SizeMode};
+use crate::state::FrameState;
 
 /// A machine a widget can be sent to.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -41,8 +42,21 @@ pub struct Parcel {
     /// The widget serialized the way the app saves its layout (for `ve_widget` widgets: the typetag JSON with
     /// seed and visual state). Transient state is rebuilt on arrival (`Widget::init`).
     pub widget: String,
-    /// The size switch travels along; the placement does not: the widget arrives in the grid.
+    /// The size switches travel along; the placement does not: the widget arrives in the grid.
     pub size: SizeMode,
+    /// The height switch (FRM-11); auto from a sender that doesn't have it yet.
+    #[serde(default)]
+    pub height: HeightMode,
+}
+
+impl Parcel {
+    /// The frame state the widget arrives with: in the main grid, its switches as they were.
+    pub fn frame_state(&self) -> FrameState {
+        FrameState {
+            height: self.height,
+            ..FrameState::sized(self.size)
+        }
+    }
 }
 
 /// The app's transport to other machines. An app that has one hands it to the widget host (`Moves::remote`,

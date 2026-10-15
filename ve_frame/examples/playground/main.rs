@@ -22,9 +22,9 @@ use serde::{Deserialize, Serialize};
 use ve_backdrop::{Backdrop, Lit};
 use ve_dash::{Blocks, Meter, Sparkline, StatusLight, Theme};
 use ve_frame::{
-    Applied, Dock, FloatLook, FrameAction, FrameState, HexFace, LandMode, Machine, Moves, Parcel,
-    Remote, Shape, SideItem, Size, SizeHints, Slot, SlotId, Status, ViewportSlot, WidgetFrame,
-    Wing, outer_width,
+    Applied, Dock, FloatLook, FrameAction, HexFace, LandMode, Machine, Moves, Parcel, Remote,
+    Shape, SideItem, Size, SizeHints, Slot, SlotId, Status, ViewportSlot, WidgetFrame, Wing,
+    outer_width,
 };
 
 #[allow(dead_code)] // the UI tests include this file as a module and start their own harness
@@ -924,7 +924,7 @@ impl Playground {
         for parcel in std::mem::take(&mut self.loopback.inbox) {
             match serde_json::from_str::<Demo>(&parcel.widget) {
                 Ok(demo) => {
-                    self.dock.add_with(demo, FrameState::sized(parcel.size));
+                    self.dock.add_with(demo, parcel.frame_state());
                     self.message = format!("{}: arrived", parcel.title);
                 }
                 Err(e) => self.message = format!("{}: unreadable parcel, {e}", parcel.title),

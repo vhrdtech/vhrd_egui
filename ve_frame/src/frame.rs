@@ -2,15 +2,16 @@
 
 use egui::{
     Align, Color32, CornerRadius, FontId, Frame, Id, Label, Layout, Margin, Pos2, Rect, Response,
-    RichText, Sense, Stroke, Ui, UiBuilder, Vec2, pos2, vec2,
+    RichText, Sense, Stroke, Ui, UiBuilder, Vec2, Vec2b, pos2, vec2,
 };
-use ve_dash::{ActionChip, Status, StatusLight, Theme, info_icon};
+use ve_dash::{Status, StatusLight, Theme, info_icon};
 use ve_theme::Tokens;
 
 use crate::hex::{self, HexFace, SideItem, Wing};
 use crate::menu::{self, Moves};
-use crate::size::{Size, SizeHints, SizeMode};
+use crate::size::{Height, HeightMode, Size, SizeHints, SizeMode, auto_height};
 use crate::state::{AWAY_SECS, FOLD_SECS, FrameAction, FrameState, GLOW_SECS, LandMode, Landing};
+use crate::switch::{self, Axis};
 
 /// Height of the header row.
 pub(crate) const HEADER_H: f32 = 26.0;
@@ -61,8 +62,10 @@ impl Default for FloatLook {
 /// What a body is given to lay itself out ([`WidgetFrame::show_area`]).
 #[derive(Clone, Debug, PartialEq)]
 pub struct BodyArea {
-    /// The size to arrange for.
+    /// The width step to arrange for.
     pub size: Size,
+    /// The height step to arrange for (FRM-11).
+    pub height: Height,
     /// The body's own rectangle: where the `Ui` lays out.
     pub rect: Rect,
     /// The regions left and right of a hexagon's body, when the frame offers them
@@ -75,8 +78,10 @@ pub struct BodyArea {
 pub struct FrameResponse<R> {
     /// What the body returned.
     pub inner: R,
-    /// The size the body was given.
+    /// The width step the body was given.
     pub size: Size,
+    /// The height step the body was given.
+    pub height: Height,
     /// What the user picked in the menu this frame, for the widget's owner to carry out.
     pub action: Option<FrameAction>,
     /// The whole frame.
@@ -98,9 +103,10 @@ impl<R> FrameResponse<R> {
 /// The frame a widget sits in. Everything but the title is optional:
 ///
 /// - header: an LED ([`Self::led`]), the title, an ⓘ whose tooltip says what the widget is and shows its stats
-///   ([`Self::about`], [`Self::info`]), the size switch ([`Self::sizes`]) and the ☰ menu ([`Self::moves`],
-///   [`Self::menu`]);
-/// - the body, told which [`Size`] to arrange itself for;
+///   ([`Self::about`], [`Self::info`]), the pair of size switches, width and height ([`Self::sizes`]), and the
+///   ☰ menu ([`Self::moves`], [`Self::menu`]);
+/// - the body, told which [`Size`] (and, through [`Self::show_area`], which [`Height`]) to arrange itself
+///   for, optionally in a scroll area ([`Self::scroll`]);
 /// - a footer ([`Self::footer`]);
 /// - sides for more UI: left and right of a rectangle ([`Self::left`], [`Self::right`]), the four slanted
 ///   faces of a hexagon ([`Self::hex_side`]).
@@ -148,6 +154,7 @@ pub struct WidgetFrame<'a> {
     hex_wings: bool,
     hex_bar: f32,
     fold_in_grid: bool,
+    scroll: Vec2b,
     float_look: FloatLook,
     land_mode: LandMode,
     /// Worked out when the frame is drawn: its border, its shadow, and whether the header has the fold
@@ -181,6 +188,7 @@ impl<'a> WidgetFrame<'a> {
             hex_wings: false,
             hex_bar: hex::BAR_THICKNESS,
             fold_in_grid: false,
+            scroll: Vec2b::FALSE,
             float_look: FloatLook::default(),
             land_mode: LandMode::default(),
             edge: Stroke::NONE,
@@ -215,7 +223,8 @@ impl<'a> WidgetFrame<'a> {
         self
     }
 
-    /// The sizes the widget offers; turns the size switch on.
+    /// The sizes the widget offers; turns the size switches on (the height switch is live when the hints
+    /// have a tall form, [`SizeHints::tall`]).
     pub fn sizes(mut self, hints: SizeHints) -> Self {
         self.sizes = Some(hints);
         self
@@ -333,7 +342,17 @@ impl<'a> WidgetFrame<'a> {
         self
     }
 
-    /// Draw the frame. `body` gets the size to arrange itself for.
+    /// Let the body scroll on these axes, as an `egui::Window` does (off on both by default). When the content
+    /// wants more than the frame gives on such an axis (a floating window smaller than its content, a tile, a
+    /// cell of a layout, a pinned min form), the body sits in an `egui::ScrollArea` on that axis so nothing is
+    /// pushed out of view. Off, the body grows the frame (or is cut off where its place is fixed).
+    pub fn scroll(mut self, scroll: impl Into<Vec2b>) -> Self {
+        self.scroll = scroll.into();
+        self
+    }
+
+    /// Draw the frame. `body` gets the width step to arrange itself for; [`Self::show_area`] tells it the
+    /// height step too.
     pub fn show<R>(
         self,
         ui: &mut Ui,
@@ -343,8 +362,8 @@ impl<'a> WidgetFrame<'a> {
         self.show_area(ui, state, |ui, area| body(ui, area.size))
     }
 
-    /// Draw the frame. `body` gets its [`BodyArea`]: the size to arrange for, its rectangle and, in a hexagon
-    /// with [`Self::hex_wings`], the regions beside it.
+    /// Draw the frame. `body` gets its [`BodyArea`]: the width and height steps to arrange for, its rectangle
+    /// and, in a hexagon with [`Self::hex_wings`], the regions beside it.
     pub fn show_area<R>(
         mut self,
         ui: &mut Ui,
@@ -390,6 +409,7 @@ impl<'a> WidgetFrame<'a> {
             ui.available_size()
         };
         state.switch_at = None;
+        state.height_switch_at = None;
         state.settling = false;
         state.anchor_due = std::mem::take(&mut state.anchor_fresh);
         let border = if self.bare { 0.0 } else { 1.0 };
@@ -421,6 +441,7 @@ impl<'a> WidgetFrame<'a> {
                         min: outer(Size::Min),
                         nom: outer(Size::Nom),
                         wide: outer(Size::Wide),
+                        tall: None,
                     };
                     state.size.resolve(state.last_size, avail.x, &outline)
                 }
@@ -431,6 +452,8 @@ impl<'a> WidgetFrame<'a> {
         };
         let size = picked.unwrap_or_else(own);
         state.last_size = Some(size);
+        let height = self.resolve_height(ui, &theme, state, (size, avail, room, hex_room));
+        state.last_height = Some(height);
         // Folding: a floating frame folds down to its header. The frame is always laid out in full, with its
         // real size; while it is folded or on its way, only the top of it is given room and shown, the rest
         // is cut off. Nothing is ever rescaled.
@@ -461,9 +484,10 @@ impl<'a> WidgetFrame<'a> {
             ui.push_id(("ve_frame", salt), |ui| match shape {
                 Shape::Rect => {
                     let mem = (mem, last_place);
-                    self.show_rect(ui, &theme, state, (size, room, avail), (mem, learned), body)
+                    let sizes = (size, height, room, avail);
+                    self.show_rect(ui, &theme, state, sizes, (mem, learned), body)
                 }
-                Shape::Hex => self.show_hex(ui, &theme, state, size, body),
+                Shape::Hex => self.show_hex(ui, &theme, state, (size, height), body),
             })
             .inner
         };
@@ -514,7 +538,7 @@ impl<'a> WidgetFrame<'a> {
             // The size switch was clicked last frame and the frame has its new size now: scroll so the
             // switch is where it was, ready for the next click. A floating frame's window moves instead
             // (`Dock::show_windows`).
-            if let (Some(anchor), Some(now)) = (state.anchor.take(), state.switch_at) {
+            if let (Some(anchor), Some(now)) = (state.anchor.take(), state.anchored_switch()) {
                 let back = anchor - now;
                 if back.length() > 0.5 {
                     ui.scroll_with_delta_animation(back, egui::style::ScrollAnimation::none());
@@ -524,6 +548,48 @@ impl<'a> WidgetFrame<'a> {
             }
         }
         r
+    }
+
+    /// The height step the body gets: pinned, a layout's pick, or auto's choice by the room's height (the
+    /// body's room in a rectangle or a sized hexagon, the outline's in a hexagon its hints make). A widget
+    /// without heights of its own follows its width step.
+    fn resolve_height(
+        &self,
+        ui: &Ui,
+        theme: &Theme,
+        state: &FrameState,
+        (size, avail, room, hex_room): (Size, Vec2, Vec2, Option<Vec2>),
+    ) -> Height {
+        let Some(hints) = &self.sizes else {
+            return Height::Nom;
+        };
+        if !hints.has_heights() {
+            return SizeHints::follow(size);
+        }
+        if let Some(fixed) = state.height.fixed() {
+            return fixed;
+        }
+        if let Some(pick) = state.auto_pick_height {
+            return pick;
+        }
+        if !avail.y.is_finite() {
+            // no bound: nothing to choose from, auto is the normal form
+            return Height::Nom;
+        }
+        let prev = state.last_height;
+        match (self.shape, hex_room) {
+            (Shape::Rect, _) => auto_height(prev, room.y, size, hints),
+            (Shape::Hex, Some(room)) => auto_height(prev, room.y, size, hints),
+            (Shape::Hex, None) => {
+                // a hexagon is as tall as its body makes it: choose by the whole outline
+                let header_min = self.header_min_width(ui, theme);
+                let outer = |h| self.hex_outer(hints.body(size, h), header_min).y;
+                let body_of = |h| hints.height(size, h);
+                // the outline adds the same to every step: compare the room left for the body
+                let chrome = outer(Height::Nom) - body_of(Height::Nom);
+                auto_height(prev, avail.y - chrome, size, hints)
+            }
+        }
     }
 
     /// The body a hexagon has room for in the size it was given: a floating one's window size, or in a grid
@@ -596,7 +662,7 @@ impl<'a> WidgetFrame<'a> {
         ui: &mut Ui,
         theme: &Theme,
         state: &mut FrameState,
-        (size, room, avail): (Size, Vec2, Vec2),
+        (size, height, room, avail): (Size, Height, Vec2, Vec2),
         ((mem, last_place), learned): ((Id, Id), Learned),
         body: impl FnOnce(&mut Ui, &BodyArea) -> R,
     ) -> FrameResponse<R> {
@@ -606,12 +672,12 @@ impl<'a> WidgetFrame<'a> {
         let least_w = (header_min - learned.sides_w - 2.0 * PAD).max(0.0);
         let plan = BodyPlan::new(
             self.sizes.as_ref(),
-            state.size,
-            size,
+            (state.size, state.height),
+            (size, height),
             self.fill,
-            room.x,
-            room.y,
+            room,
         );
+        let scroll = self.scroll;
 
         let mut frame = Frame::new();
         if !self.bare {
@@ -651,7 +717,8 @@ impl<'a> WidgetFrame<'a> {
                     sides_w += r.width();
                     dividers.push(r.right());
                 }
-                let (inner, body_rect) = plan.show(ui, spacing, size, body);
+                let (inner, body_rect) =
+                    plan.show(ui, spacing, (size, height), (scroll, room), body);
                 let spare = least_w - body_rect.width();
                 if spare > 0.0 {
                     ui.add_space(spare);
@@ -772,6 +839,7 @@ impl<'a> WidgetFrame<'a> {
         FrameResponse {
             inner: laid.inner,
             size,
+            height,
             action,
             response: out.response,
             body_rect: laid.body_rect,
@@ -784,10 +852,10 @@ impl<'a> WidgetFrame<'a> {
         ui: &mut Ui,
         theme: &Theme,
         state: &mut FrameState,
-        size: Size,
+        (size, height): (Size, Height),
         body: impl FnOnce(&mut Ui, &BodyArea) -> R,
     ) -> FrameResponse<R> {
-        let hinted = self.sizes.map_or(HEX_BODY, |h| h.of(size));
+        let hinted = self.sizes.map_or(HEX_BODY, |h| h.body(size, height));
         // floating with a size of its own: the body is what that leaves; else the hint makes the outline
         let content = self.hex_room(state).unwrap_or(hinted);
         let header_min = self.header_min_width(ui, theme);
@@ -873,10 +941,19 @@ impl<'a> WidgetFrame<'a> {
             pos2(rect.left() + slant + pad, header_rect.bottom() + PAD),
             content,
         );
-        // min is the widget's fixed form, however large the hexagon was dragged
-        let body_rect = match (size, self.sizes) {
-            (Size::Min, Some(hints)) => Rect::from_min_size(column.min, hints.min),
-            _ => column,
+        // min is the widget's fixed form on its axis, however large the hexagon was dragged
+        let body_rect = match self.sizes {
+            Some(hints) => {
+                let mut fixed = column.size();
+                if size == Size::Min {
+                    fixed.x = hints.min.x;
+                }
+                if height == Height::Min {
+                    fixed.y = hints.min.y;
+                }
+                Rect::from_min_size(column.min, fixed)
+            }
+            None => column,
         };
         let wings = wings_on.then(|| {
             let between = egui::Rangef::new(header_rect.bottom() + 2.0, footer_top - 2.0);
@@ -895,10 +972,18 @@ impl<'a> WidgetFrame<'a> {
         child.shrink_clip_rect(clip);
         let area = BodyArea {
             size,
+            height,
             rect: body_rect,
             wings,
         };
-        let inner = body(&mut child, &area);
+        let inner = if self.scroll.any() {
+            let view = (body_rect.size(), false);
+            scrolled(&mut child, self.scroll, view, body_rect.size(), |ui, _| {
+                body(ui, &area)
+            })
+        } else {
+            body(&mut child, &area)
+        };
 
         if let Some(add) = self.footer.take() {
             ui.painter()
@@ -919,6 +1004,7 @@ impl<'a> WidgetFrame<'a> {
         FrameResponse {
             inner,
             size,
+            height,
             action,
             response,
             body_rect,
@@ -950,7 +1036,7 @@ impl<'a> WidgetFrame<'a> {
             width += INFO + GAP;
         }
         if self.sizes.is_some() {
-            width += chip_width(ui, theme) + GAP;
+            width += switch::pair_width(ui, theme, PAIR_GAP) + GAP;
         }
         if self.has_menu() {
             width += MENU_W + GAP;
@@ -1020,7 +1106,9 @@ impl<'a> WidgetFrame<'a> {
                             // pointer, which is where it is right after the click
                             let (fill, stroke) = menu_open_look(theme);
                             let w = &mut h.visuals_mut().widgets;
-                            for look in [&mut w.inactive, &mut w.hovered, &mut w.active, &mut w.open] {
+                            for look in
+                                [&mut w.inactive, &mut w.hovered, &mut w.active, &mut w.open]
+                            {
                                 look.weak_bg_fill = fill;
                                 look.bg_fill = fill;
                                 look.bg_stroke = stroke;
@@ -1049,30 +1137,13 @@ impl<'a> WidgetFrame<'a> {
                     "Widget menu: pop it out as a window, send it to another window or machine",
                 );
             }
-            if sizes.is_some() {
-                let mode = state.size;
-                let chip = ActionChip::new(
-                    RichText::new(mode.label())
-                        .font(chip_font())
-                        .color(theme.text_muted),
-                    theme,
-                )
-                .min_width(chip_width(h, theme))
-                .active(mode != SizeMode::Auto)
-                .hover(format!(
-                    "Widget size: {} (click for {}). Auto picks min, nom or wide from the room the widget \
-                     gets; min is its smallest, fixed form; nom its normal one; wide the one for a whole row.",
-                    mode.label(),
-                    mode.next().label()
-                ))
-                .show(h);
-                state.switch_at = Some(chip.rect.center());
-                if chip.clicked() {
-                    state.size = mode.next();
-                    // the switch should be under the pointer again once the frame has its new size
-                    state.anchor = state.switch_at;
-                    state.anchor_fresh = true;
-                }
+            if let Some(hints) = sizes {
+                // right to left: the height switch first, so the pair reads width, height
+                h.scope(|h| {
+                    h.spacing_mut().item_spacing.x = PAIR_GAP;
+                    height_switch(h, theme, state, &hints);
+                    width_switch(h, theme, state);
+                });
             }
             if has_info {
                 info_icon(h, theme, INFO).on_hover_ui(|ui| {
@@ -1098,15 +1169,104 @@ impl<'a> WidgetFrame<'a> {
                     return;
                 }
                 h.add(
-                    Label::new(
-                        RichText::new(&title).font(title_font()).color(theme.text),
-                    )
-                    .selectable(false)
-                    .truncate(),
+                    Label::new(RichText::new(&title).font(title_font()).color(theme.text))
+                        .selectable(false)
+                        .truncate(),
                 );
             });
         });
         action
+    }
+}
+
+/// The width switch of the header pair (FRM-2, FRM-11).
+fn width_switch(ui: &mut Ui, theme: &Theme, state: &mut FrameState) {
+    let mode = state.size;
+    let shown = state.last_size.unwrap_or_default();
+    let what = match mode {
+        SizeMode::Auto => format!(
+            "auto: picks min, nom or wide by the room's width, {} now",
+            shown.label()
+        ),
+        SizeMode::Min => "min: the widget's smallest form, a fixed width".to_owned(),
+        SizeMode::Nom => "nom: the widget's normal width".to_owned(),
+        SizeMode::Wide => "wide: the width for a whole row".to_owned(),
+    };
+    let next = match mode.next() {
+        SizeMode::Auto => "auto (by the room's width)",
+        SizeMode::Min => "min",
+        SizeMode::Nom => "nom",
+        SizeMode::Wide => "wide",
+    };
+    let tip = format!(
+        "Widget width: {what}.\nClick for {next}. The marks under the box are min, nom and wide; the lit \
+         one is shown. The switch beside it sets the height."
+    );
+    let look = switch::Look {
+        axis: Axis::Width,
+        word: mode.label(),
+        auto: mode == SizeMode::Auto,
+        shown: shown.index(),
+        enabled: true,
+    };
+    let r = switch::show(ui, theme, &look, &tip);
+    state.switch_at = Some(r.rect.center());
+    if r.clicked() {
+        state.size = mode.next();
+        // the switch should be under the pointer again once the frame has its new size
+        state.anchor = state.switch_at;
+        state.anchor_height = false;
+        state.anchor_fresh = true;
+    }
+}
+
+/// The height switch of the header pair (FRM-11): live when the widget offers heights of its own, else
+/// drawn faint with the reason.
+fn height_switch(ui: &mut Ui, theme: &Theme, state: &mut FrameState, hints: &SizeHints) {
+    let mode = state.height;
+    let shown = state.last_height.unwrap_or_default();
+    let enabled = hints.has_heights();
+    let tip = if enabled {
+        let what = match mode {
+            HeightMode::Auto => format!(
+                "auto: picks min, nom or tall by the room's height, {} now",
+                shown.label()
+            ),
+            HeightMode::Min => "min: the widget's smallest form, a fixed height".to_owned(),
+            HeightMode::Nom => "nom: the widget's normal height".to_owned(),
+            HeightMode::Tall => "tall: room for more rows or a larger chart".to_owned(),
+        };
+        let next = match mode.next() {
+            HeightMode::Auto => "auto (by the room's height)",
+            HeightMode::Min => "min",
+            HeightMode::Nom => "nom",
+            HeightMode::Tall => "tall",
+        };
+        format!(
+            "Widget height: {what}.\nClick for {next}. The marks right of the box are min, nom and tall; \
+             the lit one is shown. The switch beside it sets the width."
+        )
+    } else {
+        format!(
+            "Widget height: not adjustable, this widget has one height for each width (no tall form). It \
+             follows the width switch: {} now.",
+            shown.label()
+        )
+    };
+    let look = switch::Look {
+        axis: Axis::Height,
+        word: if enabled { mode.label() } else { shown.label() },
+        auto: enabled && mode == HeightMode::Auto,
+        shown: shown.index(),
+        enabled,
+    };
+    let r = switch::show(ui, theme, &look, &tip);
+    state.height_switch_at = Some(r.rect.center());
+    if r.clicked() {
+        state.height = mode.next();
+        state.anchor = state.height_switch_at;
+        state.anchor_height = true;
+        state.anchor_fresh = true;
     }
 }
 
@@ -1385,6 +1545,8 @@ fn landing_glow(ui: &Ui, theme: &Theme, state: &mut FrameState, rect: Rect, shap
 
 /// Horizontal gap between header items.
 const GAP: f32 = 6.0;
+/// The gap between the two size switches.
+const PAIR_GAP: f32 = 2.0;
 /// The LED's dot and the room it takes with its glow.
 const LED_DOT: f32 = 7.0;
 const LED: f32 = LED_DOT * 1.9;
@@ -1393,24 +1555,6 @@ const MENU_W: f32 = 24.0;
 
 fn title_font() -> FontId {
     FontId::proportional(12.5)
-}
-
-fn chip_font() -> FontId {
-    FontId::monospace(10.0)
-}
-
-/// The widest word of the size switch plus its padding, so the header doesn't change as it cycles.
-fn chip_width(ui: &Ui, theme: &Theme) -> f32 {
-    let widest = [SizeMode::Auto, SizeMode::Min, SizeMode::Nom, SizeMode::Wide]
-        .iter()
-        .map(|m| {
-            ui.painter()
-                .layout_no_wrap(m.label().to_owned(), chip_font(), theme.text)
-                .size()
-                .x
-        })
-        .fold(0.0, f32::max);
-    widest + 10.0
 }
 
 /// The frame's own width around a body `body_width` wide (padding and border, no sides): what a layout adds to
@@ -1447,7 +1591,7 @@ struct Laid<R> {
 /// How the body is laid out in a rectangle.
 #[derive(Clone, Copy, Debug, PartialEq)]
 enum BodyPlan {
-    /// Exactly this size, clipped.
+    /// Exactly this size, clipped (a min height step).
     Exact(Vec2),
     /// At least this size, no wider than it; grows downward.
     AtLeast(Vec2),
@@ -1458,56 +1602,78 @@ enum BodyPlan {
 impl BodyPlan {
     fn new(
         hints: Option<&SizeHints>,
-        mode: SizeMode,
-        size: Size,
+        (mode, height_mode): (SizeMode, HeightMode),
+        (size, height): (Size, Height),
         fill: bool,
-        room_w: f32,
-        room_h: f32,
+        room: Vec2,
     ) -> Self {
         let Some(hints) = hints else {
             return if fill {
-                Self::AtLeast(vec2(room_w, room_h))
+                Self::AtLeast(room)
             } else {
                 Self::Natural
             };
         };
-        if size == Size::Min {
-            return Self::Exact(hints.min);
-        }
-        let hint = hints.of(size);
-        if fill {
-            return Self::AtLeast(vec2(room_w, room_h));
-        }
-        let width = match mode {
-            // a pinned nom is as wide as the widget asked; wide takes the row when that is more
-            SizeMode::Nom => hint.x,
-            SizeMode::Wide => room_w.max(hint.x),
-            // auto fills what it was given (0 = unbounded: the hint)
-            SizeMode::Auto | SizeMode::Min => {
-                if room_w > 0.0 {
-                    room_w
-                } else {
-                    hint.x
+        let hint = hints.body(size, height);
+        let width = if size == Size::Min {
+            // min is the widget's fixed form, whatever the room
+            hints.min.x
+        } else if fill {
+            room.x
+        } else {
+            match mode {
+                // a pinned nom is as wide as the widget asked; wide takes the row when that is more
+                SizeMode::Nom => hint.x,
+                SizeMode::Wide => room.x.max(hint.x),
+                // auto fills what it was given (0 = unbounded: the hint)
+                SizeMode::Auto | SizeMode::Min => {
+                    if room.x > 0.0 {
+                        room.x
+                    } else {
+                        hint.x
+                    }
                 }
             }
         };
-        Self::AtLeast(vec2(width, hint.y))
+        if height == Height::Min {
+            return Self::Exact(vec2(width, hints.min.y));
+        }
+        // a pinned height of the widget's own is at least its hint; tall takes the column when that is more
+        let pinned = hints.has_heights() && height_mode != HeightMode::Auto;
+        let height = if fill {
+            if pinned { room.y.max(hint.y) } else { room.y }
+        } else if pinned && height_mode == HeightMode::Tall {
+            room.y.max(hint.y)
+        } else {
+            hint.y
+        };
+        Self::AtLeast(vec2(width, height))
     }
 
     fn show<R>(
         self,
         ui: &mut Ui,
         spacing: Vec2,
-        size: Size,
+        (size, height): (Size, Height),
+        (scroll, room): (Vec2b, Vec2),
         body: impl FnOnce(&mut Ui, &BodyArea) -> R,
     ) -> (R, Rect) {
         let body = |ui: &mut Ui, rect: Rect| {
             let area = BodyArea {
                 size,
+                height,
                 rect,
                 wings: None,
             };
             body(ui, &area)
+        };
+        // the most the frame gives on a scrolled axis: the room, where it has a bound
+        let bound = |on: bool, room: f32| {
+            if on && room > 0.0 {
+                room
+            } else {
+                f32::INFINITY
+            }
         };
         let out = Frame::new().inner_margin(PAD).show(ui, |ui| {
             ui.spacing_mut().item_spacing = spacing;
@@ -1520,7 +1686,29 @@ impl BodyPlan {
                             .layout(Layout::top_down(Align::Min)),
                     );
                     child.shrink_clip_rect(rect);
-                    (body(&mut child, rect), rect)
+                    let inner = if scroll.any() {
+                        scrolled(&mut child, scroll, (exact, false), exact, |ui, origin| {
+                            body(ui, Rect::from_min_size(origin, exact))
+                        })
+                    } else {
+                        body(&mut child, rect)
+                    };
+                    (inner, rect)
+                }
+                Self::AtLeast(least) if scroll.any() => {
+                    let view = vec2(
+                        if scroll.x { least.x } else { f32::INFINITY },
+                        bound(scroll.y, room.y),
+                    );
+                    let shown = least.min(view);
+                    let r = ui.allocate_ui_with_layout(shown, Layout::top_down(Align::Min), |ui| {
+                        ui.set_min_size(shown);
+                        ui.set_max_width(least.x);
+                        scrolled(ui, scroll, (view, true), least, |ui, origin| {
+                            body(ui, Rect::from_min_size(origin, least))
+                        })
+                    });
+                    (r.inner, r.response.rect)
                 }
                 Self::AtLeast(least) => {
                     let r = ui.allocate_ui_with_layout(least, Layout::top_down(Align::Min), |ui| {
@@ -1528,6 +1716,16 @@ impl BodyPlan {
                         ui.set_max_width(least.x);
                         let rect = ui.max_rect();
                         body(ui, rect)
+                    });
+                    (r.inner, r.response.rect)
+                }
+                Self::Natural if scroll.any() => {
+                    let view = vec2(bound(scroll.x, room.x), bound(scroll.y, room.y));
+                    let r = ui.vertical(|ui| {
+                        scrolled(ui, scroll, (view, true), Vec2::ZERO, |ui, _| {
+                            let rect = ui.max_rect();
+                            body(ui, rect)
+                        })
                     });
                     (r.inner, r.response.rect)
                 }
@@ -1542,6 +1740,34 @@ impl BodyPlan {
         });
         out.inner
     }
+}
+
+/// The body in a scroll area on the axes of `scroll` (FRM-12), its view at most `view` (infinite: no bound on
+/// that axis) and its content at least `least`. With `shrink` the view shrinks to content smaller than it (a
+/// body that grows with its content), else it keeps its size (a body held to one). `add` gets the content's
+/// `Ui` and where the content starts.
+fn scrolled<R>(
+    ui: &mut Ui,
+    scroll: Vec2b,
+    (view, shrink): (Vec2, bool),
+    least: Vec2,
+    add: impl FnOnce(&mut Ui, Pos2) -> R,
+) -> R {
+    let mut area = egui::ScrollArea::new(scroll)
+        .id_salt("ve_frame::body")
+        .auto_shrink(shrink);
+    if view.x.is_finite() {
+        area = area.max_width(view.x);
+    }
+    if view.y.is_finite() {
+        area = area.max_height(view.y);
+    }
+    area.show(ui, |ui| {
+        ui.set_min_size(least);
+        let origin = ui.cursor().min;
+        add(ui, origin)
+    })
+    .inner
 }
 
 /// One side of a rectangle: a column, top to bottom.
@@ -1587,17 +1813,22 @@ mod tests {
         }
     }
 
+    /// The plan of a widget's body: `(mode, size)` for the width; the height follows unless given.
+    fn plan(hints: &SizeHints, mode: SizeMode, size: Size, fill: bool, room: [f32; 2]) -> BodyPlan {
+        let height = auto_height(None, f32::INFINITY, size, hints);
+        BodyPlan::new(
+            Some(hints),
+            (mode, HeightMode::Auto),
+            (size, height),
+            fill,
+            room.into(),
+        )
+    }
+
     #[test]
     fn min_is_exact_whatever_the_room() {
         for fill in [false, true] {
-            let plan = BodyPlan::new(
-                Some(&hints()),
-                SizeMode::Auto,
-                Size::Min,
-                fill,
-                900.0,
-                900.0,
-            );
+            let plan = plan(&hints(), SizeMode::Auto, Size::Min, fill, [900.0, 900.0]);
             assert_eq!(plan, BodyPlan::Exact(vec2(80.0, 40.0)));
         }
     }
@@ -1605,21 +1836,74 @@ mod tests {
     #[test]
     fn nom_and_wide_get_at_least_their_hint() {
         let h = hints();
-        let nom = BodyPlan::new(Some(&h), SizeMode::Nom, Size::Nom, false, 900.0, 0.0);
+        let nom = plan(&h, SizeMode::Nom, Size::Nom, false, [900.0, 0.0]);
         assert_eq!(nom, BodyPlan::AtLeast(vec2(200.0, 100.0)));
-        let wide = BodyPlan::new(Some(&h), SizeMode::Wide, Size::Wide, false, 900.0, 0.0);
+        let wide = plan(&h, SizeMode::Wide, Size::Wide, false, [900.0, 0.0]);
         assert_eq!(wide, BodyPlan::AtLeast(vec2(900.0, 120.0)));
-        let cramped = BodyPlan::new(Some(&h), SizeMode::Wide, Size::Wide, false, 100.0, 0.0);
+        let cramped = plan(&h, SizeMode::Wide, Size::Wide, false, [100.0, 0.0]);
         assert_eq!(cramped, BodyPlan::AtLeast(vec2(400.0, 120.0)));
-        let auto = BodyPlan::new(Some(&h), SizeMode::Auto, Size::Nom, false, 260.0, 0.0);
+        let auto = plan(&h, SizeMode::Auto, Size::Nom, false, [260.0, 0.0]);
         assert_eq!(auto, BodyPlan::AtLeast(vec2(260.0, 100.0)));
     }
 
     #[test]
     fn fill_takes_the_room_and_no_hints_take_the_content() {
-        let plan = BodyPlan::new(Some(&hints()), SizeMode::Nom, Size::Nom, true, 500.0, 300.0);
-        assert_eq!(plan, BodyPlan::AtLeast(vec2(500.0, 300.0)));
-        let plain = BodyPlan::new(None, SizeMode::Auto, Size::Nom, false, 500.0, 300.0);
+        let plan_ = plan(&hints(), SizeMode::Nom, Size::Nom, true, [500.0, 300.0]);
+        assert_eq!(plan_, BodyPlan::AtLeast(vec2(500.0, 300.0)));
+        let plain = BodyPlan::new(
+            None,
+            (SizeMode::Auto, HeightMode::Auto),
+            (Size::Nom, Height::Nom),
+            false,
+            vec2(500.0, 300.0),
+        );
         assert_eq!(plain, BodyPlan::Natural);
+    }
+
+    /// The height steps on their own axis: min is exact on y only, nom and tall at least their hint, a
+    /// pinned tall takes the column when that is more.
+    #[test]
+    fn height_steps_plan_the_height() {
+        let h = hints().tall(300.0);
+        let at = |mode: HeightMode, height: Height, room: [f32; 2]| {
+            BodyPlan::new(
+                Some(&h),
+                (SizeMode::Nom, mode),
+                (Size::Nom, height),
+                false,
+                room.into(),
+            )
+        };
+        let room = [900.0, 500.0];
+        assert_eq!(
+            at(HeightMode::Min, Height::Min, room),
+            BodyPlan::Exact(vec2(200.0, 40.0))
+        );
+        assert_eq!(
+            at(HeightMode::Nom, Height::Nom, room),
+            BodyPlan::AtLeast(vec2(200.0, 100.0))
+        );
+        assert_eq!(
+            at(HeightMode::Tall, Height::Tall, room),
+            BodyPlan::AtLeast(vec2(200.0, 500.0))
+        );
+        assert_eq!(
+            at(HeightMode::Tall, Height::Tall, [900.0, 0.0]),
+            BodyPlan::AtLeast(vec2(200.0, 300.0))
+        );
+        // auto shows the hint of its pick and grows with the content
+        assert_eq!(
+            at(HeightMode::Auto, Height::Tall, room),
+            BodyPlan::AtLeast(vec2(200.0, 300.0))
+        );
+        // min width keeps its width whatever the height
+        let min_w = BodyPlan::new(
+            Some(&h),
+            (SizeMode::Min, HeightMode::Tall),
+            (Size::Min, Height::Tall),
+            false,
+            room.into(),
+        );
+        assert_eq!(min_w, BodyPlan::AtLeast(vec2(80.0, 500.0)));
     }
 }

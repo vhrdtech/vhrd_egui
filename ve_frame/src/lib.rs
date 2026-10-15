@@ -52,6 +52,7 @@ mod menu;
 mod remote;
 mod size;
 mod state;
+mod switch;
 
 pub use dock::{Applied, Dock, Slot, SlotId};
 pub use frame::{
@@ -62,7 +63,9 @@ pub use ghost::ghost_slot;
 pub use hex::{HexFace, SideItem, Wing};
 pub use menu::{Moves, NO_REMOTE};
 pub use remote::{Machine, Parcel, Remote};
-pub use size::{AUTO_HYSTERESIS, Size, SizeHints, SizeMode, auto_size};
+pub use size::{
+    AUTO_HYSTERESIS, Height, HeightMode, Size, SizeHints, SizeMode, auto_height, auto_size,
+};
 pub use state::{
     AWAY_SECS, FOLD_SECS, FrameAction, FrameState, GLOW_SECS, LandMode, PLUCK_SECS, Placement,
     ViewportSlot, ViewportTarget,

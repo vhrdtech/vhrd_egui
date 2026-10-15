@@ -198,6 +198,7 @@ impl<W> Dock<W> {
             title,
             widget,
             size: slot.frame.size,
+            height: slot.frame.height,
         };
         remote.send(machine, parcel)?;
         self.remove(id);
@@ -291,7 +292,7 @@ impl<W> Dock<W> {
             let frame = &mut slot.frame;
             let mut at = shown.response.rect.min;
             if frame.anchor_due
-                && let (Some(anchor), Some(now)) = (frame.anchor.take(), frame.switch_at)
+                && let (Some(anchor), Some(now)) = (frame.anchor.take(), frame.anchored_switch())
             {
                 let wanted = at + (anchor - now);
                 let size = frame
@@ -593,6 +594,7 @@ mod tests {
         let mut dock = Dock::new();
         let a = dock.add(7_u32);
         dock.get_mut(a).unwrap().frame.size = crate::SizeMode::Wide;
+        dock.get_mut(a).unwrap().frame.height = crate::HeightMode::Tall;
         let mut wire = Wire {
             up: false,
             got: Vec::new(),
@@ -610,6 +612,11 @@ mod tests {
         assert_eq!(
             (parcel.title.as_str(), parcel.widget.as_str(), parcel.size),
             ("seven", "7", crate::SizeMode::Wide)
+        );
+        let arrived = parcel.frame_state();
+        assert_eq!(
+            (arrived.size, arrived.height),
+            (crate::SizeMode::Wide, crate::HeightMode::Tall)
         );
         assert_eq!(dock.apply(a, FrameAction::PopOut), Applied::Gone);
     }
