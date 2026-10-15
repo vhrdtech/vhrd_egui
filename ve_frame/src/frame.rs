@@ -1114,9 +1114,8 @@ impl<'a> WidgetFrame<'a> {
         if self.sizes.is_some() {
             width += switch::pair_width(ui, theme, PAIR_GAP) + GAP;
         }
-        if self.warned {
-            width += WARN + GAP;
-        }
+        // (not the overflow warning: it takes its room from the title, so it never changes the frame's size,
+        // which could make the content fit and the warning go, and so on)
         if self.has_menu() {
             width += MENU_W + GAP;
         }

@@ -543,9 +543,14 @@ fn a_folded_frame_is_a_body_as_small_as_its_header() {
             d.opts.hex == hex && d.title().starts_with("medium LISM")
         });
         let open = body_rect(&h, slot);
-        // a double click on the bare header, between the title and the controls
+        // a double click on the header's title, right of the LED: the title takes no clicks
         let header = h.state().screen_rect(open);
-        let at = pos2(header.center().x + 10.0, header.min.y + 13.0);
+        let face = if hex {
+            ve_frame::hex::slant(header.height())
+        } else {
+            0.0
+        };
+        let at = pos2(header.min.x + face + 40.0, header.min.y + 13.0);
         h.hover_at(at);
         watch.frame(&mut h);
         for _ in 0..2 {
