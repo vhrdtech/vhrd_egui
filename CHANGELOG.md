@@ -5,6 +5,8 @@ versions follow [Semantic Versioning](https://semver.org/). Feature IDs refer to
 
 ## [Unreleased]
 
+## [0.28.0] - 2026-10-15
+
 ### Added
 
 - `ve_dash`: `Blocks` (DASH-4) — how many blocks a `Meter` shows: `Ten` (default), `Twenty`, `TwentyFive`,
