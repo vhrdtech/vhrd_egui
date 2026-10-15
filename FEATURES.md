@@ -38,7 +38,7 @@ in tpm (P2605). Statuses were checked against the code.
 | `ve_app` | The application shell: menu bar, tiles of framed widgets that can float or move to other OS windows, About / Settings / Debug windows, persisted layout, quit dialog. |
 | `ve_dash` | btop-style dashboard building blocks: theme, sparkline, meter, status light, stat tile, titled panel. |
 | `ve_backdrop` | Animated app background: a grid of dots or squares reacting to the pointer and to widget frames; wgpu shader with a CPU-painted fallback. |
-| `ve_frame` | The frame every widget sits in: header (LED, title, ⓘ, size switch, menu), footer, sides, hexagon shape, moves between grid, window, OS window and machine. |
+| `ve_frame` | The frame every widget sits in: header (LED, title, ⓘ, width and height switches, menu), body scroll, footer, sides, hexagon shape, moves between grid, window, OS window and machine. |
 | `ve_settle` | Physics layout prototype: bodies that settle under gravity, home springs, walls and contacts; no dependencies. With the feature `frame`: `ve_frame` widgets on the bodies. |
 | `ve_template` | The app template as a command: `new`, `check-answers`, `compare`, `version` (`egui_app_skill/`). |
 
@@ -111,7 +111,8 @@ in tpm (P2605). Statuses were checked against the code.
 - ✅ **WID-1 `Widget` trait**: `init` (rebuild transient state after load), `base_title` / `widget_text`, `ui`,
   `is_closeable`, `logic` (runs before `ui` and on repaint while hidden), `seed` / `set_seed`. Serialized through
   `typetag` (`#[typetag::serde(tag = "type")]`). `ve_widget/src/lib.rs`. Since FRM-7 also `frame_spec` (LED,
-  ⓘ, sizes for the frame around it) and `ui_sized` (the body arranged for min / nom / wide), with defaults.
+  ⓘ, sizes for the frame around it) and `ui_sized` (the body arranged for min / nom / wide and, since FRM-11,
+  min / nom / tall), with defaults.
 - ✅ **WID-2 Widget registry**: `WidgetInfo` (title, group path for menus, tags, `spawn_fn`) collected with
   `inventory`. `ve_widget/src/lib.rs`.
 - ✅ **WID-3 Hosting widgets in tiles**: `ve_app::Shell` shows widgets as egui_tiles panes (tabs, splits,
@@ -383,7 +384,7 @@ switch (P2605#8oct-1205). ve_settle (SETL-5, SETL-7) later reads the same shapes
   The ☰ looks pressed while its menu is open (`menu_open_look`: filled with the accent, outlined;
   `FrameState::menu_open`); the size switch already fills while it is pressed. kittest
   `the_menu_button_shows_that_its_menu_is_open` (reads the rendered pixels).
-- ✅ **FRM-2 Sizes**: `SizeMode` (auto / min / nom / wide, the switch cycles them), `Size` (what the body is
+- ✅ **FRM-2 Sizes** (the width axis; the height axis is FRM-11): `SizeMode` (auto / min / nom / wide, the switch cycles them), `Size` (what the body is
   told), `SizeHints { min, nom, wide }` (body sizes; `width_for`, `outer_width` for layouts), `auto_size(prev,
   width, hints)`: the widest that fits, a step up needing `AUTO_HYSTERESIS` (24 pt) to spare. min is exactly
   `hints.min`, clipped; nom and wide get at least their hint and grow downward; on auto the body fills the room
@@ -538,6 +539,46 @@ switch (P2605#8oct-1205). ve_settle (SETL-5, SETL-7) later reads the same shapes
   kittest `an_apps_header_item_works`; the playground's `draw_hosted` / `Host` let a hosting app (the ve_settle
   sandbox) add its own. The layout hooks added for ve_settle (`set_auto_pick`, `body_rect`, `open_size`,
   `is_hex`, `set_layout_size`, `fold_in_grid`) are about laying frames out, not about settle, and stay.
+- ✅ **FRM-11 Height switch and painted switches** (user, 15 Oct 2026, P2605#15oct-1516): height has the model
+  width has. `HeightMode` (auto / min / nom / tall) beside `SizeMode` in `FrameState.height` (saved, auto in
+  older saves; it travels in a `Parcel` too, `Parcel::frame_state()`); the body is told `Height` beside `Size`
+  (`BodyArea::height`, `FrameResponse::height`, `FrameState::shown_height`; `show` keeps passing the `Size`
+  only). Hints per axis: widths `min.x`, `nom.x`, `wide.x`; heights `min.y`, the width form's own `y`, and
+  `SizeHints::tall(h)`, which turns the height switch on; without it the height switch is drawn faint,
+  disabled, its tooltip saying why, and the height follows the width (`SizeHints::follow`: min with min, else
+  nom), so existing widgets keep their layout. `auto_height(prev, room, size, hints)` picks the tallest that
+  fits the room's height with the same `AUTO_HYSTERESIS`; min height is exact (clipped), nom and tall are at
+  least their hint, a pinned tall takes the column when that is more, as wide takes the row. A layout's pick
+  per axis (`set_auto_pick`, `set_auto_pick_height`), floating windows (by their window's height) and
+  hexagons (by the room their window or layout gives, else by the outline, faces at 60°) all work per axis.
+  The switches (`ve_frame/src/switch.rs`) sit side by side in the header as a pair, width then height: each a
+  painted glyph, a small body whose length along its axis shows the step with a tick per step (min, nom,
+  wide / tall), the shown one lit in the accent, and the word under it; auto draws the outline dashed with a
+  double arrow on its axis and lights the tick of what auto shows. The height glyph is the width one turned
+  onto y (unit test). Theme colours (accent, muted text, border), both themes; tooltips say what the switch
+  does, what auto shows now, and what the next click gives. Each switch stays under the pointer when clicked
+  (`FrameState::height_switch_pos`; the anchor remembers which one). ve_widget's `ui_sized` gets the height,
+  ve_app passes it, `shell_demo`'s level widget has a tall form; ve_settle re-measures a frame whose height
+  changed. Playground toggle "tall forms". kittests `ve_frame/tests/axes.rs`:
+  `vertical_auto_follows_the_room_height_without_flipping`, `a_hexagon_picks_its_height_too`,
+  `pinned_tall_and_min_heights_hold`, `the_pair_of_switches_cycles_independently`,
+  `without_heights_the_height_switch_is_disabled_and_says_why`, snapshots `switch_pair_dark` / `_light`.
+- ✅ **FRM-12 Body scroll and overflow fallback** (user, 15 Oct 2026; fallback 15 Oct 2026 15:40):
+  `WidgetFrame::scroll(Vec2b)` (off on both axes by default) puts the body into an `egui::ScrollArea` on those
+  axes, held to what the frame gives (a tile, a sized window, the width of its size step, a min form, a
+  hexagon's body), so content bigger than its place stays reachable. With scroll off, an axis where the content
+  overflows what the frame gives scrolls anyway (`scroll_fallback(true)`, the default; `false` keeps the old
+  cut-off or push-out): it starts at `OVERFLOW_ON` (1 pt) too big and ends once the content fits, and a ⚠ in
+  the warning colour sits in the header left of the switches, its tooltip giving the overflow in points per axis
+  and what fixes it (a bigger size step, a larger window or place, larger hints). It takes its room from the
+  title, never from the frame's size (a warning that grew a hexagon made the content fit, so it went, and so
+  on). An axis where the frame grows with its content (a grid frame's height) never overflows. Exposed as
+  `FrameResponse::overflow` and `FrameState::overflow()` / `overflow_scroll()`; `ve_widget::FrameSpec::scroll`
+  for shell widgets. Found at once: the playground's big hexagon without size hints had its last line cut off
+  (it now scrolls and warns). Playground toggle "body scroll". kittests
+  `a_scrolled_body_reaches_content_past_the_edge`, `overflow_without_scroll_falls_back_to_scrolling_and_warns`,
+  `content_that_fits_shows_nothing`, `without_the_fallback_the_content_pushes_the_frame_out`,
+  `scroll_on_one_axis_leaves_the_other_alone`.
 - 💡 **FRM-9 Open ends of the frame**: a hexagon can't `fill` a tile; egui 0.36 has no reduced-motion flag of
   its own, so the glow, the hop and folding follow `animation_time`; in a wrapping grid the size switch can
   still move sideways when its cell changes row (only scrolling keeps it); the pointer fallback at a screen edge
@@ -545,7 +586,9 @@ switch (P2605#8oct-1205). ve_settle (SETL-5, SETL-7) later reads the same shapes
   edge; a third click soon after two counts as a triple click in egui and doesn't fold; several markers for
   widgets out of view can overlap; side bar controls have square corners; `ve_app` doesn't offer ghost slots,
   the land mode or the float look as settings yet; a second chrome in the style of `Panel` (title on the border
-  line) if the dash wants to keep that look. (ve_settle bodies taking `SizeHints` and `Shape`: done, SETL-7;
+  line) if the dash wants to keep that look. ve_settle picks widths only: it doesn't use `set_auto_pick_height`,
+  so a frame on auto height there chooses by the room of its body (FRM-11). The header grew by about 23 pt with
+  the switch pair (FRM-11): narrow headers cut their title sooner. (ve_settle bodies taking `SizeHints` and `Shape`: done, SETL-7;
   what is open between the two is SETL-18.) A control added to the playground's control row made 20 of its
   kittests fail (clicks no longer arrived), so the row's layout is something they depend on: not looked into.
 

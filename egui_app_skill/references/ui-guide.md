@@ -84,8 +84,10 @@ must be clearly distinct, and a unit test checks both in dark and light (`hue::i
 - Every widget sits in the frame (`ve_frame::WidgetFrame`): no home-made title bars, panel borders or size
   toggles. Its state goes on the LED (`.led(status, why)`), what it is and its stats into the ⓘ (`.about`,
   `.info`), its forms into the sizes (`.sizes(SizeHints::new(min, nom, wide))`: min is a fixed size, nom and
-  wide are arrangements the body picks from the `Size` it is given), extra controls on the sides or in the
-  footer. A `ve_app` widget returns these from `Widget::frame_spec` and draws by size in `Widget::ui_sized`;
+  wide are arrangements the body picks from the `Size` it is given; `.tall(h)` adds the height axis, read as
+  `area.height` in `show_area`), extra controls on the sides or in the footer. Content that can outgrow its
+  place scrolls (`.scroll(..)`; otherwise the frame scrolls it anyway and warns). A `ve_app` widget returns
+  these from `Widget::frame_spec` and draws by size and height in `Widget::ui_sized`;
   the shell adds the menu (pop out, other window, other machine). Try: `cargo run -p ve_frame --example playground`.
 - A widget or layout helper another app could use goes into vhrd_egui (ve_frame, ve_dash, ve_basics, ve_theme),
   not the app.

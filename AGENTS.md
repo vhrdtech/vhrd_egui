@@ -58,9 +58,10 @@ Cargo workspace, edition 2024, one shared version (`[workspace.package]`).
   math lives once in `field.rs` and the shader mirrors it, so change both together. Emulated transparency
   (`glass.rs`: blurred wallpaper from `wallpaper.rs`, window position from `position.rs` / `hyprland.rs`);
   whatever blocks runs on a thread. The playground example.
-- `ve_frame/` — the frame every widget sits in: `WidgetFrame` (header with LED, title, ⓘ, size switch, menu;
-  footer; sides; rectangle or hexagon), sizes (`SizeMode`, `SizeHints`, `auto_size`), `Dock` (moves between
-  grid, egui window, OS window), `Remote` (send to another machine), the playground example.
+- `ve_frame/` — the frame every widget sits in: `WidgetFrame` (header with LED, title, ⓘ, the width and height
+  switches drawn in `switch.rs`, menu; body scroll and its overflow fallback; footer; sides; rectangle or
+  hexagon), sizes per axis (`SizeMode` / `HeightMode`, `SizeHints`, `auto_size` / `auto_height`), `Dock`
+  (moves between grid, egui window, OS window), `Remote` (send to another machine), the playground example.
 - `ve_settle/` — the physics layout: `World` of bodies (rectangles, convex outlines) that settle under gravity,
   homes, walls and contacts, no dependencies (`world.rs`, `geom.rs`, `params.rs`; `nest.rs`: free cells for an
   outline, the honeycomb pack); with the feature `frame`, `frames.rs` draws `ve_frame` widgets on the bodies

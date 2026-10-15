@@ -1849,3 +1849,37 @@ fn an_apps_header_item_works() {
     click(&mut h, "unstar");
     assert!(!slot(&h).widget.starred);
 }
+
+/// The playground with tall forms on, zoomed in, dark and light: the pair of switches live in a real header.
+fn playground_pair(theme: egui::Theme, name: &str) {
+    let mut h = Harness::builder()
+        .with_size(vec2(560.0, 330.0))
+        .with_pixels_per_point(2.0)
+        .with_theme(theme)
+        .build_ui_state(|ui, pg: &mut Playground| pg.ui(ui), one(Scale::Medium));
+    ve_theme::setup(&h.ctx);
+    playground::Axes {
+        tall: true,
+        scroll: false,
+    }
+    .set(&h.ctx);
+    h.run();
+    // pin the height to tall, so both switches show a pinned step beside the auto ones of the next frame
+    click(&mut h, "height: auto");
+    click(&mut h, "height: min");
+    click(&mut h, "height: nom");
+    // the pointer off the header, so the pair shows as it rests
+    h.hover_at(egui::pos2(500.0, 300.0));
+    h.run();
+    h.snapshot_options(name, &tolerant());
+}
+
+#[test]
+fn snapshot_playground_pair_dark() {
+    playground_pair(egui::Theme::Dark, "playground_pair_dark");
+}
+
+#[test]
+fn snapshot_playground_pair_light() {
+    playground_pair(egui::Theme::Light, "playground_pair_light");
+}

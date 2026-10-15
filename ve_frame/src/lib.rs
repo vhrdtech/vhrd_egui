@@ -6,9 +6,13 @@
 //! - [`WidgetFrame`] draws it: a header with an optional LED, the title, an optional ⓘ (what the widget is,
 //!   plus its own stats), a size switch and a ☰ menu; the body; an optional footer; optional sides — two for
 //!   a rectangle, four for a hexagon ([`Shape::Hex`], items rotated along the slanted faces).
-//! - Sizes ([`SizeMode`], [`Size`], [`SizeHints`]): the switch cycles auto / min / nom / wide. *min* is a
-//!   fixed size the widget provides; *nom* and *wide* are layout hints its body reads; *auto* picks among the
-//!   three from the room given, with a hysteresis so nothing flips ([`auto_size`]).
+//! - Sizes on two axes ([`SizeMode`], [`Size`], [`HeightMode`], [`Height`], [`SizeHints`]): the width switch
+//!   cycles auto / min / nom / wide, the height switch beside it auto / min / nom / tall (live when the hints
+//!   have a tall form). *min* is a fixed size the widget provides; the others are layout hints its body reads;
+//!   *auto* picks from the room given on each axis, with a hysteresis so nothing flips ([`auto_size`],
+//!   [`auto_height`]). Both switches are painted glyphs that show the step.
+//! - Body scroll ([`WidgetFrame::scroll`]): off by default; a body that overflows what the frame gives scrolls
+//!   anyway and the header warns ([`WidgetFrame::scroll_fallback`], [`FrameResponse::overflow`]).
 //! - Moves ([`FrameState`], [`Placement`], [`FrameAction`], [`Dock`]): the menu pops a widget out as an egui
 //!   `Window` and back into the grid, or sends it to another OS window (egui multi-viewport) where it again
 //!   sits in the grid or floats. The widget value and its [`FrameState`] travel as they are.

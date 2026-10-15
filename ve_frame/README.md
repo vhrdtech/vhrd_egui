@@ -1,9 +1,40 @@
 # ve_frame
 
-The frame every vhrd egui widget sits in: a header (LED, title, ⓘ, size switch, ☰ menu), the body, an optional
-footer and sides, as a rectangle or a hexagon; sizes (auto / min / nom / wide); moves between the grid, a
+The frame every vhrd egui widget sits in: a header (LED, title, ⓘ, the width and height switches, ☰ menu), the
+body (optionally scrolled), an optional footer and sides, as a rectangle or a hexagon; sizes per axis (width
+auto / min / nom / wide, height auto / min / nom / tall); moves between the grid, a
 floating egui window, another OS window and another machine. The crate docs (`cargo doc -p ve_frame --open`)
 have the whole API; `cargo run -p ve_frame --example playground` shows every part.
+
+## Sizes on two axes
+
+`.sizes(SizeHints::new(min, nom, wide))` turns on the pair of switches in the header: width (auto / min / nom /
+wide) and height (auto / min / nom / tall). The height switch is live once the hints have a tall form,
+`.tall(h)`; without one it stays visible, disabled, and the height follows the width. Each switch is a small
+glyph: a body whose length shows the step, a tick per step, the shown one lit; auto is dashed with arrows.
+*Auto* picks on each axis from the room, the widest / tallest that fits, with a hysteresis so nothing flips.
+The body reads both from `show_area`'s `BodyArea { size, height, .. }`:
+
+```rust
+let hints = SizeHints::new([90.0, 30.0], [200.0, 80.0], [360.0, 80.0]).tall(200.0);
+WidgetFrame::new("log")
+    .sizes(hints)
+    .show_area(ui, &mut state, |ui, area| {
+        let rows = match area.height {
+            Height::Min => 1,
+            Height::Nom => 5,
+            Height::Tall => 15,
+        };
+        // ... `rows` lines, laid out for `area.size` ...
+    });
+```
+
+## Body scroll
+
+`.scroll(Vec2b)` (off by default) lets the body scroll on those axes when its place (a tile, a resized window, a
+min form, a hexagon) is smaller than its content. With it off the frame still never leaves content out of reach:
+an axis that overflows scrolls anyway and the header shows a ⚠ with the overflow in points and what fixes it
+(`.scroll_fallback(false)` turns that off). `FrameResponse::overflow` says how much, per axis.
 
 ## The app's own UI in the frame
 

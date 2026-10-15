@@ -5,6 +5,49 @@ versions follow [Semantic Versioning](https://semver.org/). Feature IDs refer to
 
 ## [Unreleased]
 
+### Added
+
+- `ve_frame` (FRM-11): a height switch beside the width switch, auto / min / nom / tall. `HeightMode` and
+  `Height` (the vertical twins of `SizeMode` and `Size`), `FrameState.height` (saved; auto in older saves),
+  `FrameState::shown_height`, `set_auto_pick_height`, `height_switch_pos`; `SizeHints::tall(h)` turns it on
+  (`has_heights`, `height`, `body`, `height_for`, `follow`); `auto_height` with the same hysteresis as
+  `auto_size`; `BodyArea::height`, `FrameResponse::height`. A widget without a tall form shows the height
+  switch disabled, with the reason, and keeps its layout.
+- `ve_frame` (FRM-11): both switches are drawn as a pair of painted glyphs with their word under them: a small
+  body whose length shows the step, a tick per step with the shown one lit in the accent; auto dashed with a
+  double arrow on its axis. Tooltips say what each does, what auto shows and what the next click gives.
+- `ve_frame` (FRM-12): `WidgetFrame::scroll(Vec2b)`, off by default: the body scrolls on those axes when its
+  place is smaller than its content. `WidgetFrame::scroll_fallback(bool)`, on by default: with scroll off, an
+  axis where the content overflows what the frame gives scrolls anyway and the header shows a ⚠ with the
+  overflow in points and what fixes it. `FrameResponse::overflow`, `FrameState::overflow()` /
+  `overflow_scroll()`, `OVERFLOW_ON`.
+- `ve_frame`: `Parcel.height` (serde default) and `Parcel::frame_state()`, the state a received widget
+  arrives with; `SizeMode::ALL`, `HeightMode::ALL`, `Size::index`, `Height::index`.
+- `ve_widget`: `FrameSpec::scroll` (FRM-12); `ve_app` passes it and the height to the widget.
+- Playground: "tall forms" and "body scroll" toggles; the demo widgets have a tall form (larger chart, a list
+  of samples) and a min-height form.
+
+### Changed
+
+- **Breaking:** `ve_frame::SizeHints` has a new public field `tall: Option<f32>`: a struct literal needs
+  `tall: None` (or use `SizeHints::new(..)`, unchanged). (FRM-11)
+- **Breaking:** `ve_frame::BodyArea` and `FrameResponse` have a new public field `height` (and `overflow` on
+  `FrameResponse`): code that builds them by hand must set it. (FRM-11, FRM-12)
+- **Breaking:** `ve_frame::Parcel` has a new field `height` (deserializes with a default; a struct literal
+  needs it). (FRM-11)
+- **Breaking:** `ve_widget::Widget::ui_sized(ui, cx, id, size)` is now `ui_sized(ui, cx, id, size, height)`;
+  `FrameSpec` has a new field `scroll` (`..FrameSpec::default()` covers it). (FRM-11, FRM-12)
+- `ve_frame`: the header is about 23 pt wider with the switch pair, so narrow headers cut their title sooner;
+  the AccessKit labels of the switches are now "width: auto" / "height: auto" (was "auto"). With the overflow
+  fallback on by default, a body that was cut off where the frame's size is held (a tile, a sized window, a
+  min form, a hexagon) now scrolls and warns instead. (FRM-11, FRM-12)
+- `ve_frame` playground: a row wraps by what each frame took last time, so a frame whose header needs more
+  than its cell no longer runs past the right edge.
+- Upgrading an app: widgets that want a height step add `.tall(h)` to their `SizeHints` and read `area.height` in
+  `show_area` (or the new `height` argument of `ui_sized`); `show(ui, state, |ui, size| ..)` is unchanged.
+  Code that finds the switch by its AccessKit label ("auto", "min", ...) looks for "width: auto" etc. A host
+  that wants the old cut-off behaviour sets `.scroll_fallback(false)`.
+
 ## [0.28.0] - 2026-10-15
 
 ### Added
