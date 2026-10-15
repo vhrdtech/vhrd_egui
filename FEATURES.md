@@ -553,8 +553,9 @@ switch (P2605#8oct-1205). ve_settle (SETL-5, SETL-7) later reads the same shapes
   hexagons (by the room their window or layout gives, else by the outline, faces at 60°) all work per axis.
   The switches (`ve_frame/src/switch.rs`) sit side by side in the header as a pair, width then height: each a
   painted icon (user, 16:13: no word under it; the word is in the tooltip and the label), a small body whose
-  length along its axis shows the step with a tick per step (min, nom, wide / tall), drawn grey like ⓘ and ☰ (`icon_ink`,
-  brighter on hover; user, 17:23) with only the shown step's tick lit in the accent; auto draws the outline dashed with a
+  length along its axis shows the step with a tick per step (min, nom, wide / tall), all grey at rest like ⓘ and ☰ (`icon_ink`;
+  user, 17:31) with the shown step's tick solid, longer and heavier, the whole glyph in the accent under
+  the pointer; auto draws the outline dashed with a
   double arrow on its axis and lights the tick of what auto shows. The height glyph is the width one turned
   onto y (unit test). Theme colours (accent, muted text, border), both themes; tooltips say what the switch
   does, what auto shows now, and what the next click gives. Each switch stays under the pointer when clicked

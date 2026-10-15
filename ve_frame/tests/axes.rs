@@ -388,8 +388,9 @@ fn scroll_on_one_axis_leaves_the_other_alone() {
 }
 
 /// The pair of switches as it looks, zoomed in, dark and light: auto on both; pinned min and nom; wide and
-/// tall; a widget without heights (height switch disabled).
-fn switch_pair_snapshot(theme: Theme, name: &str) {
+/// tall; a widget without heights (height switch disabled). At rest all grey; `hover` names a switch to put
+/// the pointer on (its glyph turns to the accent).
+fn switch_pair_snapshot(theme: Theme, name: &str, hover: Option<&str>) {
     let rows: [(SizeMode, HeightMode, bool); 4] = [
         (SizeMode::Auto, HeightMode::Auto, true),
         (SizeMode::Min, HeightMode::Nom, true),
@@ -433,17 +434,27 @@ fn switch_pair_snapshot(theme: Theme, name: &str) {
         });
     ve_theme::setup(&h.ctx);
     h.run();
+    if let Some(label) = hover {
+        let at = h.get_by_label(label).rect().right_bottom() - vec2(1.0, 1.0);
+        h.hover_at(at);
+        h.run();
+    }
     h.snapshot_options(name, &SnapshotOptions::new().max_failed_pixels(80));
 }
 
 #[test]
 fn snapshot_switch_pair_dark() {
-    switch_pair_snapshot(Theme::Dark, "switch_pair_dark");
+    switch_pair_snapshot(Theme::Dark, "switch_pair_dark", None);
 }
 
 #[test]
 fn snapshot_switch_pair_light() {
-    switch_pair_snapshot(Theme::Light, "switch_pair_light");
+    switch_pair_snapshot(Theme::Light, "switch_pair_light", None);
+}
+
+#[test]
+fn snapshot_switch_pair_hovered() {
+    switch_pair_snapshot(Theme::Dark, "switch_pair_hovered", Some("width: min"));
 }
 
 /// Every icon of the header (LED, ⓘ, both switches, ⚠, ☰, fold) is centred on the title text's optical

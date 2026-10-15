@@ -1297,7 +1297,7 @@ fn width_switch(ui: &mut Ui, theme: &Theme, state: &mut FrameState) {
     };
     let tip = format!(
         "width: {}, click for {next}\n\nWidget width, {what}. The box shows the step: the marks under it \
-         are min, nom and wide, the lit one is shown; dashed with arrows is auto. The switch beside it sets \
+         are min, nom and wide, the longer, solid one is shown; dashed with arrows is auto. The switch beside it sets \
          the height.",
         mode.label()
     );
@@ -1343,7 +1343,7 @@ fn height_switch(ui: &mut Ui, theme: &Theme, state: &mut FrameState, hints: &Siz
         };
         format!(
             "height: {}, click for {next}\n\nWidget height, {what}. The box shows the step: the marks \
-             right of it are min, nom and tall, the lit one is shown; dashed with arrows is auto. The switch \
+             right of it are min, nom and tall, the longer, solid one is shown; dashed with arrows is auto. The switch \
              beside it sets the width.",
             mode.label()
         )

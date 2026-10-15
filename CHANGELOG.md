@@ -37,8 +37,9 @@ versions follow [Semantic Versioning](https://semver.org/). Feature IDs refer to
 
 ### Changed
 
-- `ve_frame` (FRM-14): the size switch glyphs are grey at rest like ⓘ and ☰ (`icon_ink`, brighter on hover),
-  auto's dashed outline and arrows too; only the current step's tick is lit in the accent.
+- `ve_frame` (FRM-14): the size switch glyphs are all grey at rest like ⓘ and ☰ (`icon_ink`), so a grid of
+  frames stays quiet; the current step's tick is solid, longer and heavier than the others. Under the pointer
+  (and pressed) the glyph turns to the accent; a disabled switch stays faint, without accent.
 - **Breaking:** `ve_frame::SizeHints` has a new public field `tall: Option<f32>`: a struct literal needs
   `tall: None` (or use `SizeHints::new(..)`, unchanged). (FRM-11)
 - **Breaking:** `ve_frame::BodyArea` and `FrameResponse` have a new public field `height` (and `overflow` on

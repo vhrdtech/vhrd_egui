@@ -3,9 +3,10 @@
 //! word (auto, min, nom, wide, tall) is in the tooltip and the accessible label.
 //!
 //! The glyph is a tiny body whose length along the switch's axis shows the step, with a tick for each of the
-//! three steps (min, nom, wide or tall) on that axis. The glyph is in the muted ink of ⓘ and ☰ (brighter under
-//! the pointer); only the current step's tick is lit in the accent. On auto the outline is dashed and a
-//! double arrow runs along the axis; the tick of the step auto shows is lit, softer. The width
+//! three steps (min, nom, wide or tall) on that axis. At rest the whole glyph is in the muted ink of ⓘ and ☰, so
+//! a grid of frames stays quiet; the current step's tick is solid, longer and heavier than the others, so it
+//! reads without colour. Under the pointer (and pressed) the glyph turns to the accent. On auto the outline
+//! is dashed and a double arrow runs along the axis; the tick of the step auto shows is lit, softer. The width
 //! glyph lies along x with its ticks below, the height glyph is the same turned onto y with its ticks right.
 
 use egui::{Color32, Pos2, Rect, Response, Sense, Shape, Stroke, Ui, pos2, vec2};
@@ -112,20 +113,22 @@ fn paint(ui: &Ui, theme: &Theme, look: &Look<'_>, rect: Rect, response: &Respons
         }
     };
     let ink = faint(icon_ink(theme, lit));
-    let accent = faint(theme.accent);
+    // the accent only under the pointer: at rest everything is ink (user, 17:31)
+    let accent = if lit { theme.accent } else { ink };
     let size = match look.axis {
         Axis::Width => vec2(ALONG, ACROSS),
         Axis::Height => vec2(ACROSS, ALONG),
     };
     let glyph = Rect::from_center_size(icon_center(painter, rect), size);
-    for shape in glyph_shapes(look, glyph, ink, accent) {
+    for shape in glyph_shapes(look, glyph, ink, accent, lit) {
         painter.add(shape);
     }
 }
 
-/// The glyph's shapes in `g`, [`ALONG`] long on its axis and [`ACROSS`] deep. Kept apart from the painter for
-/// a test.
-fn glyph_shapes(look: &Look<'_>, g: Rect, ink: Color32, accent: Color32) -> Vec<Shape> {
+/// The glyph's shapes in `g`, [`ALONG`] long on its axis and [`ACROSS`] deep; `accent` is what the body,
+/// arrows and current tick are drawn in (the ink at rest), `hot` whether that is the accent. Kept apart from the
+/// painter for a test.
+fn glyph_shapes(look: &Look<'_>, g: Rect, ink: Color32, accent: Color32, hot: bool) -> Vec<Shape> {
     // Work in (along, across) coordinates of the axis and turn them into points at the end.
     let at = |along: f32, across: f32| -> Pos2 {
         match look.axis {
@@ -149,7 +152,7 @@ fn glyph_shapes(look: &Look<'_>, g: Rect, ink: Color32, accent: Color32) -> Vec<
         // the double arrow along the axis, over the whole length the body can take
         let mid = (c0 + c1) / 2.0;
         let (s, e) = (0.5, 0.5 + STEPS[2]);
-        let arrow = Stroke::new(ICON_STROKE, ink);
+        let arrow = Stroke::new(ICON_STROKE, accent);
         shapes.push(Shape::line_segment([at(s, mid), at(e, mid)], arrow));
         for (tip, back) in [(s, s + 2.2), (e, e - 2.2)] {
             shapes.push(Shape::line(
@@ -158,11 +161,11 @@ fn glyph_shapes(look: &Look<'_>, g: Rect, ink: Color32, accent: Color32) -> Vec<
             ));
         }
     } else {
-        shapes.push(Shape::rect_filled(body, 1.0, ink.gamma_multiply(0.3)));
+        shapes.push(Shape::rect_filled(body, 1.0, accent.gamma_multiply(0.35)));
         shapes.push(Shape::rect_stroke(
             body,
             1.0,
-            Stroke::new(ICON_STROKE, ink),
+            Stroke::new(ICON_STROKE, accent),
             egui::StrokeKind::Inside,
         ));
     }
@@ -170,7 +173,7 @@ fn glyph_shapes(look: &Look<'_>, g: Rect, ink: Color32, accent: Color32) -> Vec<
     for (i, step) in STEPS.iter().enumerate() {
         let x = 0.5 + step;
         let (color, width, from) = if i == shown {
-            let color = if look.auto {
+            let color = if look.auto && hot {
                 accent.gamma_multiply(0.7)
             } else {
                 accent
@@ -215,8 +218,13 @@ mod tests {
         for auto in [false, true] {
             for shown in 0..3 {
                 let bounds = |axis| {
-                    let shapes =
-                        glyph_shapes(&look(axis, auto, shown), g, Color32::WHITE, Color32::RED);
+                    let shapes = glyph_shapes(
+                        &look(axis, auto, shown),
+                        g,
+                        Color32::WHITE,
+                        Color32::RED,
+                        true,
+                    );
                     Shape::Vec(shapes).visual_bounding_rect()
                 };
                 let (w, h) = (bounds(Axis::Width), bounds(Axis::Height));
@@ -237,6 +245,7 @@ mod tests {
                 g,
                 Color32::WHITE,
                 Color32::RED,
+                true,
             );
             shapes[0].visual_bounding_rect().width()
         };
@@ -255,8 +264,13 @@ mod tests {
             let g = Rect::from_center_size(Pos2::ZERO, size);
             for auto in [false, true] {
                 for shown in 0..3 {
-                    let shapes =
-                        glyph_shapes(&look(axis, auto, shown), g, Color32::WHITE, Color32::RED);
+                    let shapes = glyph_shapes(
+                        &look(axis, auto, shown),
+                        g,
+                        Color32::WHITE,
+                        Color32::RED,
+                        true,
+                    );
                     let drawn = Shape::Vec(shapes).visual_bounding_rect();
                     let off = drawn.center() - g.center();
                     assert!(
