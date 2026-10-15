@@ -56,8 +56,8 @@ mod switch;
 
 pub use dock::{Applied, Dock, Slot, SlotId};
 pub use frame::{
-    BodyArea, FloatLook, FrameResponse, Shape, WidgetFrame, forward_scroll, header_fill,
-    menu_open_look, outer_width, quiet_fill,
+    BodyArea, FloatLook, FrameResponse, OVERFLOW_ON, Shape, WidgetFrame, forward_scroll,
+    header_fill, menu_open_look, outer_width, quiet_fill,
 };
 pub use ghost::ghost_slot;
 pub use hex::{HexFace, SideItem, Wing};

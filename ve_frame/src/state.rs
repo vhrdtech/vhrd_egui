@@ -151,6 +151,12 @@ pub struct FrameState {
     /// What a layout picked for the height on auto ([`FrameState::set_auto_pick_height`]).
     #[serde(skip)]
     pub(crate) auto_pick_height: Option<Height>,
+    /// How much the body's content wanted more than the frame gave it last frame, per axis
+    /// ([`crate::FrameResponse::overflow`]), and the axes it scrolls on as the fallback for that.
+    #[serde(skip)]
+    pub(crate) overflow: egui::Vec2,
+    #[serde(skip)]
+    pub(crate) overflow_scroll: egui::Vec2b,
     /// The size a layout gives a hexagon in a grid ([`FrameState::set_layout_size`]).
     #[serde(skip)]
     pub(crate) layout_size: Option<[f32; 2]>,
@@ -312,6 +318,18 @@ impl FrameState {
     /// The size a layout gave a hexagon in a grid, if it did.
     pub fn layout_size(&self) -> Option<[f32; 2]> {
         self.layout_size
+    }
+
+    /// How much the body's content wanted more than the frame gave it last frame, in points per axis; 0
+    /// where it fits ([`crate::FrameResponse::overflow`]).
+    pub fn overflow(&self) -> egui::Vec2 {
+        self.overflow
+    }
+
+    /// The axes the body scrolls on as the fallback for content that overflowed
+    /// ([`crate::WidgetFrame::scroll_fallback`]); the header shows the warning while one is on.
+    pub fn overflow_scroll(&self) -> egui::Vec2b {
+        self.overflow_scroll
     }
 
     /// Whether the ☰ menu was open when the frame was drawn last; its button is drawn pressed then.

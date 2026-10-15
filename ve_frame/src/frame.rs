@@ -82,6 +82,10 @@ pub struct FrameResponse<R> {
     pub size: Size,
     /// The height step the body was given.
     pub height: Height,
+    /// How much the body's content wanted more than the frame gave it, in points per axis (0 where it fits,
+    /// and where the frame grows with its content). Where it is more than 0 the body scrolls: asked for
+    /// ([`WidgetFrame::scroll`]) or as the fallback ([`WidgetFrame::scroll_fallback`]).
+    pub overflow: Vec2,
     /// What the user picked in the menu this frame, for the widget's owner to carry out.
     pub action: Option<FrameAction>,
     /// The whole frame.
@@ -155,6 +159,7 @@ pub struct WidgetFrame<'a> {
     hex_bar: f32,
     fold_in_grid: bool,
     scroll: Vec2b,
+    scroll_fallback: bool,
     float_look: FloatLook,
     land_mode: LandMode,
     /// Worked out when the frame is drawn: its border, its shadow, and whether the header has the fold
@@ -162,6 +167,10 @@ pub struct WidgetFrame<'a> {
     edge: Stroke,
     shadow: Option<egui::Shadow>,
     foldable: bool,
+    /// Worked out when the frame is drawn: the axes the body scrolls on (asked for, or the fallback for a
+    /// body that overflowed), and whether the header shows the overflow warning.
+    body_scroll: Vec2b,
+    warned: bool,
 }
 
 impl<'a> WidgetFrame<'a> {
@@ -189,11 +198,14 @@ impl<'a> WidgetFrame<'a> {
             hex_bar: hex::BAR_THICKNESS,
             fold_in_grid: false,
             scroll: Vec2b::FALSE,
+            scroll_fallback: true,
             float_look: FloatLook::default(),
             land_mode: LandMode::default(),
             edge: Stroke::NONE,
             shadow: None,
             foldable: false,
+            body_scroll: Vec2b::FALSE,
+            warned: false,
         }
     }
 
@@ -345,9 +357,20 @@ impl<'a> WidgetFrame<'a> {
     /// Let the body scroll on these axes, as an `egui::Window` does (off on both by default). When the content
     /// wants more than the frame gives on such an axis (a floating window smaller than its content, a tile, a
     /// cell of a layout, a pinned min form), the body sits in an `egui::ScrollArea` on that axis so nothing is
-    /// pushed out of view. Off, the body grows the frame (or is cut off where its place is fixed).
+    /// pushed out of view. Off, the body grows the frame where it can; where the frame's size is held (the
+    /// width of its size step, a tile, a sized window, a min form, a hexagon) see [`Self::scroll_fallback`].
     pub fn scroll(mut self, scroll: impl Into<Vec2b>) -> Self {
         self.scroll = scroll.into();
+        self
+    }
+
+    /// Whether a body that overflows the frame on an axis whose [`Self::scroll`] is off scrolls there anyway
+    /// (on by default), so no content is ever out of reach. The header then shows a ⚠ in the warning colour
+    /// whose tooltip says by how much the content is too big and what fixes it, and
+    /// [`FrameResponse::overflow`] says it too. It starts when the content is a point too big and ends once it
+    /// fits again, so it doesn't flicker. Off: the content is cut off or pushes the frame out, as before.
+    pub fn scroll_fallback(mut self, fallback: bool) -> Self {
+        self.scroll_fallback = fallback;
         self
     }
 
@@ -410,6 +433,14 @@ impl<'a> WidgetFrame<'a> {
         };
         state.switch_at = None;
         state.height_switch_at = None;
+        // the fallback scroll stays on where the body overflowed, until it fits again (`note_overflow`)
+        let fallback = if self.scroll_fallback {
+            state.overflow_scroll
+        } else {
+            Vec2b::FALSE
+        };
+        self.body_scroll = Vec2b::new(self.scroll.x || fallback.x, self.scroll.y || fallback.y);
+        self.warned = (fallback.x && !self.scroll.x) || (fallback.y && !self.scroll.y);
         state.settling = false;
         state.anchor_due = std::mem::take(&mut state.anchor_fresh);
         let border = if self.bare { 0.0 } else { 1.0 };
@@ -677,7 +708,7 @@ impl<'a> WidgetFrame<'a> {
             self.fill,
             room,
         );
-        let scroll = self.scroll;
+        let scroll = self.body_scroll;
 
         let mut frame = Frame::new();
         if !self.bare {
@@ -717,8 +748,8 @@ impl<'a> WidgetFrame<'a> {
                     sides_w += r.width();
                     dividers.push(r.right());
                 }
-                let (inner, body_rect) =
-                    plan.show(ui, spacing, (size, height), (scroll, room), body);
+                let shown = plan.show(ui, spacing, (size, height), (scroll, room, fill), body);
+                let body_rect = shown.rect;
                 let spare = least_w - body_rect.width();
                 if spare > 0.0 {
                     ui.add_space(spare);
@@ -728,7 +759,7 @@ impl<'a> WidgetFrame<'a> {
                     sides_w += r.width();
                     dividers.push(r.left());
                 }
-                (inner, body_rect)
+                (shown.inner, body_rect, shown.overflow)
             });
             let mut footer_top = None;
             if let Some(add) = footer {
@@ -741,10 +772,11 @@ impl<'a> WidgetFrame<'a> {
                     });
             }
             let footer_h = footer_top.map_or(0.0, |y| ui.cursor().min.y - y);
-            let (inner, body_rect) = mid.inner;
+            let (inner, body_rect, overflow) = mid.inner;
             Laid {
                 inner,
                 body_rect,
+                overflow,
                 top,
                 mid: mid.response.rect,
                 dividers,
@@ -835,11 +867,13 @@ impl<'a> WidgetFrame<'a> {
                 line,
             );
         }
+        self.note_overflow(ui, state, laid.overflow);
         let action = self.header(ui, theme, state, header_rect);
         FrameResponse {
             inner: laid.inner,
             size,
             height,
+            overflow: laid.overflow,
             action,
             response: out.response,
             body_rect: laid.body_rect,
@@ -976,14 +1010,20 @@ impl<'a> WidgetFrame<'a> {
             rect: body_rect,
             wings,
         };
-        let inner = if self.scroll.any() {
+        let (inner, content) = if self.body_scroll.any() {
             let view = (body_rect.size(), false);
-            scrolled(&mut child, self.scroll, view, body_rect.size(), |ui, _| {
-                body(ui, &area)
-            })
+            scrolled(
+                &mut child,
+                self.body_scroll,
+                view,
+                body_rect.size(),
+                |ui, _| body(ui, &area),
+            )
         } else {
-            body(&mut child, &area)
+            let inner = body(&mut child, &area);
+            (inner, child.min_rect().size())
         };
+        let overflow = overflow_of(content, body_rect.size());
 
         if let Some(add) = self.footer.take() {
             ui.painter()
@@ -1000,15 +1040,51 @@ impl<'a> WidgetFrame<'a> {
             child.shrink_clip_rect(footer_rect);
             add(&mut child);
         }
+        self.note_overflow(ui, state, overflow);
         let action = self.header(ui, theme, state, header_rect);
         FrameResponse {
             inner,
             size,
             height,
+            overflow,
             action,
             response,
             body_rect,
             side_clicks,
+        }
+    }
+
+    /// Keep the overflow of this pass in `state` and turn the fallback scroll on or off per axis: on when the
+    /// content is more than [`OVERFLOW_ON`] too big on an axis that doesn't scroll by request, off once it
+    /// fits again. A change lays the pass out again, so the frame never shows a pass in the old way.
+    fn note_overflow(&mut self, ui: &Ui, state: &mut FrameState, overflow: Vec2) {
+        state.overflow = overflow;
+        if !self.scroll_fallback {
+            state.overflow_scroll = Vec2b::FALSE;
+            return;
+        }
+        let before = state.overflow_scroll;
+        let step = |on: bool, asked: bool, over: f32| {
+            if asked {
+                false
+            } else if over > OVERFLOW_ON {
+                true
+            } else if over <= 0.0 {
+                false
+            } else {
+                on
+            }
+        };
+        state.overflow_scroll = Vec2b::new(
+            step(before.x, self.scroll.x, overflow.x),
+            step(before.y, self.scroll.y, overflow.y),
+        );
+        // the warning stays for the axes that scroll as the fallback
+        let fallback = state.overflow_scroll;
+        self.warned = (fallback.x && !self.scroll.x) || (fallback.y && !self.scroll.y);
+        if state.overflow_scroll != before {
+            ui.ctx()
+                .request_discard("ve_frame: the body overflows, scroll it");
         }
     }
 
@@ -1038,6 +1114,9 @@ impl<'a> WidgetFrame<'a> {
         if self.sizes.is_some() {
             width += switch::pair_width(ui, theme, PAIR_GAP) + GAP;
         }
+        if self.warned {
+            width += WARN + GAP;
+        }
         if self.has_menu() {
             width += MENU_W + GAP;
         }
@@ -1061,6 +1140,7 @@ impl<'a> WidgetFrame<'a> {
         let mut action = None;
         let has_info = self.has_info();
         let has_menu = self.has_menu();
+        let warned = self.warned;
         let mut h = ui.new_child(
             UiBuilder::new()
                 .max_rect(rect.shrink2(vec2(PAD, 0.0)))
@@ -1136,6 +1216,9 @@ impl<'a> WidgetFrame<'a> {
                 r.response.on_hover_text(
                     "Widget menu: pop it out as a window, send it to another window or machine",
                 );
+            }
+            if warned {
+                overflow_warning(h, theme, state.overflow);
             }
             if let Some(hints) = sizes {
                 // right to left: the height switch first, so the pair reads width, height
@@ -1268,6 +1351,65 @@ fn height_switch(ui: &mut Ui, theme: &Theme, state: &mut FrameState, hints: &Siz
         state.anchor_height = true;
         state.anchor_fresh = true;
     }
+}
+
+/// How much bigger than the frame the content must be on an axis, points, before the fallback scroll starts
+/// there ([`WidgetFrame::scroll_fallback`]); it ends once the content fits.
+pub const OVERFLOW_ON: f32 = 1.0;
+
+/// Size of the overflow warning in the header.
+const WARN: f32 = 13.0;
+
+/// The ⚠ in the header of a frame whose body overflows and scrolls as the fallback: a small triangle in the
+/// theme's warning colour; its tooltip says by how much and what fixes it.
+fn overflow_warning(ui: &mut Ui, theme: &Theme, overflow: Vec2) {
+    let (rect, response) = ui.allocate_exact_size(vec2(WARN, WARN), Sense::hover());
+    let mut parts = Vec::new();
+    if overflow.x > 0.0 {
+        parts.push(format!(
+            "{:.0} pt wider than the frame gives it, so it scrolls sideways",
+            overflow.x
+        ));
+    }
+    if overflow.y > 0.0 {
+        parts.push(format!(
+            "{:.0} pt taller than the frame gives it, so it scrolls up and down",
+            overflow.y
+        ));
+    }
+    let what = if parts.is_empty() {
+        "The content no longer overflows".to_owned()
+    } else {
+        format!("The content is {}", parts.join(", and "))
+    };
+    let tip = format!(
+        "{what}. A bigger size step (the switches beside), a larger window or place, or larger size hints \
+         from the widget make it fit."
+    );
+    response.widget_info(|| {
+        egui::WidgetInfo::labeled(egui::WidgetType::Label, true, "overflow warning")
+    });
+    if ui.is_rect_visible(rect) {
+        let c = rect.center();
+        let r = WARN * 0.5;
+        let points = vec![
+            c + vec2(0.0, -r),
+            c + vec2(r, r * 0.8),
+            c + vec2(-r, r * 0.8),
+        ];
+        let painter = ui.painter();
+        painter.add(egui::Shape::convex_polygon(
+            points,
+            theme.warn.gamma_multiply(0.25),
+            Stroke::new(1.2, theme.warn),
+        ));
+        painter.line_segment(
+            [c + vec2(0.0, -r * 0.35), c + vec2(0.0, r * 0.3)],
+            Stroke::new(1.4, theme.warn),
+        );
+        painter.circle_filled(c + vec2(0.0, r * 0.58), 0.8, theme.warn);
+    }
+    response.on_hover_text(tip);
 }
 
 /// Size of the fold control in a floating frame's header.
@@ -1579,6 +1721,7 @@ struct Learned {
 struct Laid<R> {
     inner: R,
     body_rect: Rect,
+    overflow: Vec2,
     top: Pos2,
     mid: Rect,
     dividers: Vec<f32>,
@@ -1650,14 +1793,18 @@ impl BodyPlan {
         Self::AtLeast(vec2(width, height))
     }
 
+    /// Lay the body out. Returns what it returned, its rectangle, and the size its content wanted beside the
+    /// size the frame gave it on each axis (infinite where the frame grows with it): their difference is the
+    /// overflow ([`FrameResponse::overflow`]). `held` says whether the frame's place is fixed (a tile, a
+    /// sized window): then its height is given too.
     fn show<R>(
         self,
         ui: &mut Ui,
         spacing: Vec2,
         (size, height): (Size, Height),
-        (scroll, room): (Vec2b, Vec2),
+        (scroll, room, held): (Vec2b, Vec2, bool),
         body: impl FnOnce(&mut Ui, &BodyArea) -> R,
-    ) -> (R, Rect) {
+    ) -> Laid2<R> {
         let body = |ui: &mut Ui, rect: Rect| {
             let area = BodyArea {
                 size,
@@ -1686,38 +1833,45 @@ impl BodyPlan {
                             .layout(Layout::top_down(Align::Min)),
                     );
                     child.shrink_clip_rect(rect);
-                    let inner = if scroll.any() {
+                    let (inner, content) = if scroll.any() {
                         scrolled(&mut child, scroll, (exact, false), exact, |ui, origin| {
                             body(ui, Rect::from_min_size(origin, exact))
                         })
                     } else {
-                        body(&mut child, rect)
+                        let inner = body(&mut child, rect);
+                        (inner, child.min_rect().size())
                     };
-                    (inner, rect)
-                }
-                Self::AtLeast(least) if scroll.any() => {
-                    let view = vec2(
-                        if scroll.x { least.x } else { f32::INFINITY },
-                        bound(scroll.y, room.y),
-                    );
-                    let shown = least.min(view);
-                    let r = ui.allocate_ui_with_layout(shown, Layout::top_down(Align::Min), |ui| {
-                        ui.set_min_size(shown);
-                        ui.set_max_width(least.x);
-                        scrolled(ui, scroll, (view, true), least, |ui, origin| {
-                            body(ui, Rect::from_min_size(origin, least))
-                        })
-                    });
-                    (r.inner, r.response.rect)
+                    (inner, rect, content, exact)
                 }
                 Self::AtLeast(least) => {
-                    let r = ui.allocate_ui_with_layout(least, Layout::top_down(Align::Min), |ui| {
-                        ui.set_min_size(least);
-                        ui.set_max_width(least.x);
-                        let rect = ui.max_rect();
-                        body(ui, rect)
-                    });
-                    (r.inner, r.response.rect)
+                    let given = vec2(least.x, if held { least.y } else { f32::INFINITY });
+                    if scroll.any() {
+                        let view = vec2(
+                            if scroll.x { least.x } else { f32::INFINITY },
+                            bound(scroll.y, if held { least.y } else { room.y }),
+                        );
+                        let shown = least.min(view);
+                        let r =
+                            ui.allocate_ui_with_layout(shown, Layout::top_down(Align::Min), |ui| {
+                                ui.set_min_size(shown);
+                                ui.set_max_width(least.x);
+                                scrolled(ui, scroll, (view, true), least, |ui, origin| {
+                                    body(ui, Rect::from_min_size(origin, least))
+                                })
+                            });
+                        let (inner, content) = r.inner;
+                        (inner, r.response.rect, content, given)
+                    } else {
+                        let r =
+                            ui.allocate_ui_with_layout(least, Layout::top_down(Align::Min), |ui| {
+                                ui.set_min_size(least);
+                                ui.set_max_width(least.x);
+                                let rect = ui.max_rect();
+                                body(ui, rect)
+                            });
+                        let rect = r.response.rect;
+                        (r.inner, rect, rect.size(), given)
+                    }
                 }
                 Self::Natural if scroll.any() => {
                     let view = vec2(bound(scroll.x, room.x), bound(scroll.y, room.y));
@@ -1727,32 +1881,56 @@ impl BodyPlan {
                             body(ui, rect)
                         })
                     });
-                    (r.inner, r.response.rect)
+                    let (inner, content) = r.inner;
+                    (inner, r.response.rect, content, Vec2::INFINITY)
                 }
                 Self::Natural => {
                     let r = ui.vertical(|ui| {
                         let rect = ui.max_rect();
                         body(ui, rect)
                     });
-                    (r.inner, r.response.rect)
+                    let rect = r.response.rect;
+                    (r.inner, rect, rect.size(), Vec2::INFINITY)
                 }
             }
         });
-        out.inner
+        let (inner, rect, content, given) = out.inner;
+        Laid2 {
+            inner,
+            rect,
+            overflow: overflow_of(content, given),
+        }
     }
+}
+
+/// What a laid-out body hands back: what it returned, its rectangle, and how much its content wanted more
+/// than the frame gave it on each axis.
+struct Laid2<R> {
+    inner: R,
+    rect: Rect,
+    overflow: Vec2,
+}
+
+/// How much `content` is bigger than `given` on each axis, 0 where it fits or where nothing was given
+/// (infinite).
+fn overflow_of(content: Vec2, given: Vec2) -> Vec2 {
+    let over = |c: f32, g: f32| {
+        if g.is_finite() { (c - g).max(0.0) } else { 0.0 }
+    };
+    vec2(over(content.x, given.x), over(content.y, given.y))
 }
 
 /// The body in a scroll area on the axes of `scroll` (FRM-12), its view at most `view` (infinite: no bound on
 /// that axis) and its content at least `least`. With `shrink` the view shrinks to content smaller than it (a
 /// body that grows with its content), else it keeps its size (a body held to one). `add` gets the content's
-/// `Ui` and where the content starts.
+/// `Ui` and where the content starts. Returns what `add` returned and the size of the content.
 fn scrolled<R>(
     ui: &mut Ui,
     scroll: Vec2b,
     (view, shrink): (Vec2, bool),
     least: Vec2,
     add: impl FnOnce(&mut Ui, Pos2) -> R,
-) -> R {
+) -> (R, Vec2) {
     let mut area = egui::ScrollArea::new(scroll)
         .id_salt("ve_frame::body")
         .auto_shrink(shrink);
@@ -1762,12 +1940,12 @@ fn scrolled<R>(
     if view.y.is_finite() {
         area = area.max_height(view.y);
     }
-    area.show(ui, |ui| {
+    let out = area.show(ui, |ui| {
         ui.set_min_size(least);
         let origin = ui.cursor().min;
         add(ui, origin)
-    })
-    .inner
+    });
+    (out.inner, out.content_size)
 }
 
 /// One side of a rectangle: a column, top to bottom.

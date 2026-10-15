@@ -22,9 +22,9 @@ use serde::{Deserialize, Serialize};
 use ve_backdrop::{Backdrop, Lit};
 use ve_dash::{Blocks, Meter, Sparkline, StatusLight, Theme};
 use ve_frame::{
-    Applied, Dock, FloatLook, FrameAction, HexFace, LandMode, Machine, Moves, Parcel, Remote,
-    Shape, SideItem, Size, SizeHints, Slot, SlotId, Status, ViewportSlot, WidgetFrame, Wing,
-    outer_width,
+    Applied, Dock, FloatLook, FrameAction, Height, HexFace, LandMode, Machine, Moves, Parcel,
+    Remote, Shape, SideItem, Size, SizeHints, Slot, SlotId, Status, ViewportSlot, WidgetFrame,
+    Wing, outer_width,
 };
 
 #[allow(dead_code)] // the UI tests include this file as a module and start their own harness
@@ -59,6 +59,34 @@ fn main() -> eframe::Result {
 /// `ve_dash::Blocks` into the per-widget `body()` without threading it through every demo widget.
 fn meter_blocks_id() -> egui::Id {
     egui::Id::new("ve_frame_playground_meter_blocks")
+}
+
+/// Egui memory id for the two size-axis toggles (FRM-11, FRM-12): whether the demo widgets offer a tall form
+/// (the height switch is live) and whether their bodies scroll. Read by `draw_hosted` the same way as
+/// [`meter_blocks_id`]; both off by default.
+fn axes_id() -> egui::Id {
+    egui::Id::new("ve_frame_playground_axes")
+}
+
+/// The two toggles behind [`axes_id`].
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct Axes {
+    /// The demo widgets offer a tall form: the height switch beside the width one is live.
+    pub tall: bool,
+    /// The bodies scroll on both axes when their place is smaller than their content.
+    pub scroll: bool,
+}
+
+impl Axes {
+    /// What the playground in `ctx` is set to.
+    pub fn of(ctx: &egui::Context) -> Self {
+        ctx.data(|d| d.get_temp(axes_id())).unwrap_or_default()
+    }
+
+    /// Set the playground in `ctx` to this.
+    pub fn set(self, ctx: &egui::Context) {
+        ctx.data_mut(|d| d.insert_temp(axes_id(), self));
+    }
 }
 
 struct App(Playground);
@@ -149,6 +177,16 @@ impl Scale {
             Self::Medium => SizeHints::new([90.0, 40.0], [200.0, 90.0], [380.0, 90.0]),
             Self::Big => SizeHints::new([140.0, 60.0], [320.0, 170.0], [560.0, 170.0]),
         }
+    }
+
+    /// [`Self::hints`] with a tall form: the chart grows and a list of samples comes in.
+    pub fn tall_hints(self) -> SizeHints {
+        let tall = match self {
+            Self::Tiny => 120.0,
+            Self::Medium => 220.0,
+            Self::Big => 320.0,
+        };
+        self.hints().tall(tall)
     }
 }
 
@@ -334,8 +372,8 @@ impl Demo {
             });
     }
 
-    /// The body, arranged for `size`.
-    fn body(&mut self, ui: &mut Ui, size: Size) {
+    /// The body, arranged for the width step `size` and the height step `height`.
+    fn body(&mut self, ui: &mut Ui, size: Size, height: Height) {
         let theme = Theme::from_tokens(&ve_theme::Tokens::of_ui(ui));
         let blocks = ui
             .data(|d| d.get_temp::<Blocks>(meter_blocks_id()))
@@ -350,6 +388,16 @@ impl Demo {
                 *clicks += step;
             }
         };
+        if height == Height::Min && size != Size::Min && Axes::of(ui.ctx()).tall {
+            // the lowest form: one row, whatever the width
+            ui.horizontal(|ui| {
+                self.count(ui);
+                add(ui, &mut self.clicks);
+                ui.weak("min height");
+            });
+            return;
+        }
+        let chart = if height == Height::Tall { 90.0 } else { 36.0 };
         match size {
             Size::Min => {
                 ui.horizontal(|ui| {
@@ -365,7 +413,7 @@ impl Demo {
                 });
                 if self.scale != Scale::Tiny {
                     let wave = self.wave();
-                    ui.add(Sparkline::new(&wave).height(36.0).color(theme.accent));
+                    ui.add(Sparkline::new(&wave).height(chart).color(theme.accent));
                 }
                 if self.scale == Scale::Big {
                     ui.add(
@@ -387,13 +435,20 @@ impl Demo {
                 });
                 if self.scale != Scale::Tiny {
                     let wave = self.wave();
-                    ui.add(Sparkline::new(&wave).height(36.0).color(theme.accent_alt));
+                    ui.add(Sparkline::new(&wave).height(chart).color(theme.accent_alt));
                 }
                 if self.scale == Scale::Big {
                     ui.weak(
                         "Wide form: the meter moved up beside the count, the chart spans the row.",
                     );
                 }
+            }
+        }
+        if height == Height::Tall {
+            // the tall form: the chart grew, and the samples come in below it
+            ui.weak("tall form: the last samples");
+            for i in 0..8 {
+                ui.monospace(format!("sample {i:>2}  {:>5.2}", (i as f32 * 0.7).sin()));
             }
         }
     }
@@ -512,8 +567,17 @@ pub fn draw_hosted(
     if opts.info {
         f = f.about(widget.what()).info(move |ui| explained.explain(ui));
     }
+    let axes = Axes::of(ui.ctx());
     if opts.sizes {
-        f = f.sizes(widget.scale.hints());
+        let hints = if axes.tall {
+            widget.scale.tall_hints()
+        } else {
+            widget.scale.hints()
+        };
+        f = f.sizes(hints);
+    }
+    if axes.scroll {
+        f = f.scroll(true);
     }
     if opts.menu {
         f = f.moves(moves).menu(|ui| {
@@ -619,7 +683,7 @@ pub fn draw_hosted(
             if let Some(wings) = &area.wings {
                 widget.wings(ui, wings);
             }
-            widget.body(ui, area.size);
+            widget.body(ui, area.size, area.height);
         });
     if reset {
         widget.clicks = 0;
@@ -838,6 +902,18 @@ impl Playground {
                     }
                 });
             ui.data_mut(|d| d.insert_temp(id, blocks));
+            ui.separator();
+            let mut axes = Axes::of(ui.ctx());
+            ui.checkbox(&mut axes.tall, "tall forms").on_hover_text(
+                "The demo widgets offer a tall form: the height switch beside the width one is live \
+                 (auto / min / nom / tall). Off: it stays visible, disabled, and says why",
+            );
+            ui.checkbox(&mut axes.scroll, "body scroll").on_hover_text(
+                "The bodies scroll, on both axes, when their place is smaller than their content: drag a \
+                 floating window smaller, or pin a tall form in a small window. Off (the default): the \
+                 content pushes the frame out or is cut off",
+            );
+            axes.set(ui.ctx());
         });
         ui.separator();
         let remote = self.transport.then_some(&self.loopback as &dyn Remote);
@@ -1083,7 +1159,10 @@ fn grid(
             // so a large Auto room can't push a frame past the right edge
             let sides = if slot.widget.opts.sides { 64.0 } else { 0.0 };
             let cell = (outer_width(body) + sides).min(row);
-            let size = egui::vec2(cell, 10.0);
+            // the row wraps by what the frame took last time: a header, or a hexagon's outline that grows with
+            // its header, can need more than the cell; the frame's room stays the cell
+            let took = slot.frame.drawn_rect().map_or(0.0, |r| r.width());
+            let size = egui::vec2(cell.max(took).min(row), 10.0);
             let (action, rect) = ui
                 .allocate_ui_with_layout(size, Layout::top_down(Align::Min), |ui| {
                     ui.set_max_width(cell);

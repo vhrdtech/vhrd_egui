@@ -30,17 +30,18 @@ pub(crate) struct Look<'a> {
     pub enabled: bool,
 }
 
-/// The side of the glyph's square.
-const GLYPH: f32 = 13.0;
+/// The glyph's length along its axis and its depth across it (the body, then the ticks).
+const ALONG: f32 = 12.0;
+const ACROSS: f32 = 9.0;
 /// The body's length along the axis for min, nom and the large step.
-const STEPS: [f32; 3] = [4.0, 8.0, 12.0];
-/// Padding left and right of the switch, and between glyph and word.
-const PAD_X: f32 = 4.0;
-const GAP: f32 = 3.0;
-const HEIGHT: f32 = 18.0;
+const STEPS: [f32; 3] = [4.0, 7.5, 11.0];
+/// Padding left and right of the switch, and between glyph and word (the word sits under the glyph).
+const PAD_X: f32 = 3.0;
+const GAP: f32 = 1.0;
+const HEIGHT: f32 = 24.0;
 
 fn word_font() -> FontId {
-    FontId::monospace(9.5)
+    FontId::monospace(8.5)
 }
 
 /// The widest word on either switch, so the header doesn't change as they cycle.
@@ -61,7 +62,7 @@ fn widest_word(ui: &Ui, theme: &Theme) -> f32 {
 
 /// The width of one switch.
 pub(crate) fn switch_width(ui: &Ui, theme: &Theme) -> f32 {
-    2.0 * PAD_X + GLYPH + GAP + widest_word(ui, theme)
+    2.0 * PAD_X + ALONG.max(widest_word(ui, theme))
 }
 
 /// The width of the pair, with the gap between them.
@@ -133,21 +134,27 @@ fn paint(ui: &Ui, theme: &Theme, look: &Look<'_>, rect: Rect, response: &Respons
     };
     let ink = faint(if lit { theme.text } else { theme.text_muted });
     let accent = faint(theme.accent);
-    let glyph = Rect::from_min_size(
-        pos2(rect.left() + PAD_X, rect.center().y - GLYPH / 2.0),
-        Vec2::splat(GLYPH),
-    );
-    glyph_shapes(look, glyph, ink, accent)
-        .into_iter()
-        .for_each(|s| {
-            painter.add(s);
-        });
+    // the glyph centred in a square as high as its length, so the words of the pair line up; the word under it
     let galley = painter.layout_no_wrap(look.word.to_owned(), word_font(), ink);
-    let pos = pos2(glyph.right() + GAP, rect.center().y - galley.size().y / 2.0);
+    let top = rect.center().y - (ALONG + GAP + galley.size().y) / 2.0;
+    let square = Rect::from_min_size(pos2(rect.center().x - ALONG / 2.0, top), Vec2::splat(ALONG));
+    let size = match look.axis {
+        Axis::Width => vec2(ALONG, ACROSS),
+        Axis::Height => vec2(ACROSS, ALONG),
+    };
+    let glyph = Rect::from_center_size(square.center(), size);
+    for shape in glyph_shapes(look, glyph, ink, accent) {
+        painter.add(shape);
+    }
+    let pos = pos2(
+        rect.center().x - galley.size().x / 2.0,
+        square.bottom() + GAP,
+    );
     painter.galley(pos, galley, ink);
 }
 
-/// The glyph's shapes in `g`, a square [`GLYPH`] wide. Kept apart from the painter for a test.
+/// The glyph's shapes in `g`, [`ALONG`] long on its axis and [`ACROSS`] deep. Kept apart from the painter for
+/// a test.
 fn glyph_shapes(look: &Look<'_>, g: Rect, ink: Color32, accent: Color32) -> Vec<Shape> {
     // Work in (along, across) coordinates of the axis and turn them into points at the end.
     let at = |along: f32, across: f32| -> Pos2 {
@@ -159,24 +166,24 @@ fn glyph_shapes(look: &Look<'_>, g: Rect, ink: Color32, accent: Color32) -> Vec<
     let mut shapes = Vec::new();
     let shown = look.shown.min(2);
     let len = STEPS[shown];
-    // the body: from the start of the axis to the step, across 1..9
+    // the body: from the start of the axis to the step, the first part of the depth
     let (a0, a1) = (0.5, 0.5 + len);
-    let (c0, c1) = (1.0, 9.0);
+    let (c0, c1) = (0.5, 5.5);
     let corners = [at(a0, c0), at(a1, c0), at(a1, c1), at(a0, c1)];
     let body = Rect::from_two_pos(corners[0], corners[2]);
     if look.auto {
         let outline = Stroke::new(1.0, ink);
         let mut path = corners.to_vec();
         path.push(corners[0]);
-        shapes.extend(Shape::dashed_line(&path, outline, 2.0, 1.5));
+        shapes.extend(Shape::dashed_line(&path, outline, 1.5, 1.5));
         // the double arrow along the axis, over the whole length the body can take
         let mid = (c0 + c1) / 2.0;
         let (s, e) = (0.5, 0.5 + STEPS[2]);
         let arrow = Stroke::new(1.2, accent);
         shapes.push(Shape::line_segment([at(s, mid), at(e, mid)], arrow));
-        for (tip, back) in [(s, s + 2.5), (e, e - 2.5)] {
+        for (tip, back) in [(s, s + 2.2), (e, e - 2.2)] {
             shapes.push(Shape::line(
-                vec![at(back, mid - 2.2), at(tip, mid), at(back, mid + 2.2)],
+                vec![at(back, mid - 2.0), at(tip, mid), at(back, mid + 2.0)],
                 arrow,
             ));
         }
@@ -189,7 +196,7 @@ fn glyph_shapes(look: &Look<'_>, g: Rect, ink: Color32, accent: Color32) -> Vec<
             egui::StrokeKind::Inside,
         ));
     }
-    // the ticks: one per step where its body would end, across 10.5..13
+    // the ticks: one per step where its body would end, in the rest of the depth
     for (i, step) in STEPS.iter().enumerate() {
         let x = 0.5 + step;
         let (color, width, from) = if i == shown {
@@ -198,12 +205,12 @@ fn glyph_shapes(look: &Look<'_>, g: Rect, ink: Color32, accent: Color32) -> Vec<
             } else {
                 accent
             };
-            (color, 1.6, 9.8)
+            (color, 1.6, 6.0)
         } else {
-            (ink.gamma_multiply(0.6), 1.0, 10.8)
+            (ink.gamma_multiply(0.6), 1.0, 7.0)
         };
         shapes.push(Shape::line_segment(
-            [at(x, from), at(x, GLYPH)],
+            [at(x, from), at(x, ACROSS)],
             Stroke::new(width, color),
         ));
     }
@@ -228,7 +235,7 @@ mod tests {
     /// and y swapped.
     #[test]
     fn height_glyph_mirrors_the_width_glyph() {
-        let g = Rect::from_min_size(Pos2::ZERO, Vec2::splat(GLYPH));
+        let g = Rect::from_min_size(Pos2::ZERO, vec2(ALONG, ACROSS));
         for auto in [false, true] {
             for shown in 0..3 {
                 let bounds = |axis| {
@@ -247,7 +254,7 @@ mod tests {
     /// The body grows with the step along its axis.
     #[test]
     fn the_body_shows_the_step() {
-        let g = Rect::from_min_size(Pos2::ZERO, Vec2::splat(GLYPH));
+        let g = Rect::from_min_size(Pos2::ZERO, vec2(ALONG, ACROSS));
         let body_len = |shown| {
             let shapes = glyph_shapes(
                 &look(Axis::Width, false, shown),

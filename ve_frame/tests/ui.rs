@@ -87,9 +87,9 @@ fn size_switch_cycles_and_the_body_follows() {
     let mut h = harness(one(Scale::Medium), vec2(900.0, 400.0));
     assert_eq!(slot(&h).frame.size, SizeMode::Auto);
     for (word, mode, shown) in [
-        ("auto", SizeMode::Min, Size::Min),
-        ("min", SizeMode::Nom, Size::Nom),
-        ("nom", SizeMode::Wide, Size::Wide),
+        ("width: auto", SizeMode::Min, Size::Min),
+        ("width: min", SizeMode::Nom, Size::Nom),
+        ("width: nom", SizeMode::Wide, Size::Wide),
     ] {
         click(&mut h, word);
         h.run();
@@ -101,7 +101,7 @@ fn size_switch_cycles_and_the_body_follows() {
             assert_eq!(h.query_by_label(label).is_some(), shown == form, "{label}");
         }
     }
-    click(&mut h, "wide");
+    click(&mut h, "width: wide");
     assert_eq!(slot(&h).frame.size, SizeMode::Auto);
 }
 
@@ -188,7 +188,7 @@ fn goes_to_another_os_window_and_back() {
 fn goes_to_another_machine_and_arrives_with_its_state() {
     let mut h = harness(one(Scale::Medium), vec2(900.0, 500.0));
     click(&mut h, "+1");
-    click(&mut h, "auto"); // the switch is on min now
+    click(&mut h, "width: auto"); // the switch is on min now
     click(&mut h, "☰");
     click(&mut h, "Send to another machine ⏵");
     assert!(
@@ -370,7 +370,8 @@ fn nothing_goes_past_the_right_edge() {
         let (frames, edge) = right_edges(&h);
         assert!(
             frames <= edge + 0.5,
-            "auto room {room}: a frame ends at {frames}, the room at {edge}"
+            "auto room {room}: a frame ends at {frames}, the room at {edge}: {:?}",
+            h.state().drawn
         );
     }
 }
@@ -893,7 +894,7 @@ fn the_size_switch_stays_under_the_pointer() {
         let at = switch_at(&h);
         let mut widths = Vec::new();
         for word in ["auto", "min", "nom", "wide"] {
-            click(&mut h, word);
+            click(&mut h, &format!("width: {word}"));
             h.run();
             let now = switch_at(&h);
             assert!(
@@ -901,7 +902,12 @@ fn the_size_switch_stays_under_the_pointer() {
                 "{opts:?} after {word}: {at:?} -> {now:?}"
             );
             assert!(
-                (h.get_by_label(slot(&h).frame.size.label()).rect().center() - at).length() < 1.0
+                (h.get_by_label(&format!("width: {}", slot(&h).frame.size.label()))
+                    .rect()
+                    .center()
+                    - at)
+                    .length()
+                    < 1.0
             );
             widths.push(slot(&h).frame.drawn_rect().expect("drawn").width());
         }
@@ -926,7 +932,7 @@ fn the_size_switch_anchor_keeps_the_window_on_screen() {
         .for_each(|s| s.frame.window_pos = Some([4.0, 200.0]));
     h.run();
     for word in ["auto", "min", "nom"] {
-        click(&mut h, word);
+        click(&mut h, &format!("width: {word}"));
         h.run();
         let rect = slot(&h).frame.drawn_rect().expect("drawn");
         assert!(
@@ -957,8 +963,9 @@ fn the_size_switch_stays_put_in_a_scrolled_grid() {
     let at = frame(&h).switch_pos().expect("a switch");
     assert!(at.y > 100.0 && at.y < 400.0, "in view: {at:?}");
     for _ in 0..3 {
+        let word = format!("width: {}", frame(&h).size.label());
         let chip = h
-            .query_all_by_label(frame(&h).size.label())
+            .query_all_by_label(&word)
             .min_by(|a, b| {
                 let d = |n: &egui_kittest::Node<'_>| (n.rect().center() - at).length();
                 d(a).total_cmp(&d(b))
@@ -1065,8 +1072,8 @@ fn a_short_side_bar_says_what_it_left_out() {
     );
     h.state(); // big on auto shows its smallest form here; make it nom
     let mut h = h;
-    click(&mut h, "auto");
-    click(&mut h, "min");
+    click(&mut h, "width: auto");
+    click(&mut h, "width: min");
     h.get_by_label("24 °C");
     assert!(h.query_by_label("1 more").is_none());
 }
@@ -1309,11 +1316,11 @@ fn a_floating_window_folds_down_to_its_header() {
         h.get_by_label("Back into the grid");
         h.key_press(egui::Key::Escape);
         h.run();
-        click(&mut h, "auto");
+        click(&mut h, "width: auto");
         assert_eq!(slot(&h).frame.size, SizeMode::Min, "the size switch works");
-        click(&mut h, "min");
-        click(&mut h, "nom");
-        click(&mut h, "wide");
+        click(&mut h, "width: min");
+        click(&mut h, "width: nom");
+        click(&mut h, "width: wide");
         assert_eq!(slot(&h).frame.size, SizeMode::Auto);
         // folded is saved with the layout
         let saved = serde_json::to_string(&slot(&h).frame).expect("serializable");
