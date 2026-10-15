@@ -1,14 +1,14 @@
-//! The two size switches in the header (FRM-11): width and height, each a small painted glyph with its word.
+//! The two size switches in the header (FRM-11): width and height, each a small painted glyph, icon only,
+//! in the family of ve_dash's ⓘ and ☰ (`ve_dash::ICON` box, `ICON_STROKE` lines, `icon_ink` colours). The
+//! word (auto, min, nom, wide, tall) is in the tooltip and the accessible label.
 //!
 //! The glyph is a tiny body whose length along the switch's axis shows the step, with a tick for each of the
 //! three steps (min, nom, wide or tall) on that axis, the current one lit in the accent. On auto the outline
 //! is dashed and a double arrow runs along the axis; the tick of the step auto shows is lit, softer. The width
 //! glyph lies along x with its ticks below, the height glyph is the same turned onto y with its ticks right.
 
-use egui::{Color32, FontId, Pos2, Rect, Response, Sense, Shape, Stroke, Ui, Vec2, pos2, vec2};
-use ve_dash::Theme;
-
-use crate::size::{HeightMode, SizeMode};
+use egui::{Color32, Pos2, Rect, Response, Sense, Shape, Stroke, Ui, pos2, vec2};
+use ve_dash::{ICON, ICON_STROKE, Theme, icon_center, icon_ink};
 
 /// Which axis a switch sets.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -20,7 +20,7 @@ pub(crate) enum Axis {
 /// What a switch shows.
 pub(crate) struct Look<'a> {
     pub axis: Axis,
-    /// The word: the mode it is set to.
+    /// The word: the mode it is set to (in the accessible label, not drawn).
     pub word: &'a str,
     /// Set to auto: dashed outline, arrows.
     pub auto: bool,
@@ -30,55 +30,33 @@ pub(crate) struct Look<'a> {
     pub enabled: bool,
 }
 
-/// The glyph's length along its axis and its depth across it (the body, then the ticks).
+/// The glyph's length along its axis and its depth across it (the body, then the ticks): it fits the
+/// family's [`ICON`] box.
 const ALONG: f32 = 12.0;
 const ACROSS: f32 = 9.0;
 /// The body's length along the axis for min, nom and the large step.
 const STEPS: [f32; 3] = [4.0, 7.5, 11.0];
-/// Padding left and right of the switch, and between glyph and word (the word sits under the glyph).
-const PAD_X: f32 = 3.0;
-const GAP: f32 = 1.0;
-const HEIGHT: f32 = 24.0;
+/// Padding around the icon inside the switch's box, as the ☰ button has.
+const PAD: f32 = 3.0;
 
-fn word_font() -> FontId {
-    FontId::monospace(8.5)
-}
-
-/// The widest word on either switch, so the header doesn't change as they cycle.
-fn widest_word(ui: &Ui, theme: &Theme) -> f32 {
-    let words = SizeMode::ALL
-        .iter()
-        .map(|m| m.label())
-        .chain(HeightMode::ALL.iter().map(|m| m.label()));
-    words
-        .map(|w| {
-            ui.painter()
-                .layout_no_wrap(w.to_owned(), word_font(), theme.text)
-                .size()
-                .x
-        })
-        .fold(0.0, f32::max)
-}
-
-/// The width of one switch.
-pub(crate) fn switch_width(ui: &Ui, theme: &Theme) -> f32 {
-    2.0 * PAD_X + ALONG.max(widest_word(ui, theme))
+/// The size of one switch: the icon box and its padding.
+pub(crate) fn switch_size() -> egui::Vec2 {
+    vec2(ICON + 2.0 * PAD, ICON + 2.0 * PAD)
 }
 
 /// The width of the pair, with the gap between them.
-pub(crate) fn pair_width(ui: &Ui, theme: &Theme, gap: f32) -> f32 {
-    2.0 * switch_width(ui, theme) + gap
+pub(crate) fn pair_width(gap: f32) -> f32 {
+    2.0 * switch_size().x + gap
 }
 
 /// Draw one switch; `tip` is its tooltip (what it does, what the next click gives, or why it is disabled).
 pub(crate) fn show(ui: &mut Ui, theme: &Theme, look: &Look<'_>, tip: &str) -> Response {
-    let width = switch_width(ui, theme);
     let sense = if look.enabled {
         Sense::click()
     } else {
         Sense::hover()
     };
-    let (rect, response) = ui.allocate_exact_size(vec2(width, HEIGHT), sense);
+    let (rect, response) = ui.allocate_exact_size(switch_size(), sense);
     let axis = match look.axis {
         Axis::Width => "width",
         Axis::Height => "height",
@@ -132,25 +110,16 @@ fn paint(ui: &Ui, theme: &Theme, look: &Look<'_>, rect: Rect, response: &Respons
             c.gamma_multiply(0.45)
         }
     };
-    let ink = faint(if lit { theme.text } else { theme.text_muted });
+    let ink = faint(icon_ink(theme, lit));
     let accent = faint(theme.accent);
-    // the glyph centred in a square as high as its length, so the words of the pair line up; the word under it
-    let galley = painter.layout_no_wrap(look.word.to_owned(), word_font(), ink);
-    let top = rect.center().y - (ALONG + GAP + galley.size().y) / 2.0;
-    let square = Rect::from_min_size(pos2(rect.center().x - ALONG / 2.0, top), Vec2::splat(ALONG));
     let size = match look.axis {
         Axis::Width => vec2(ALONG, ACROSS),
         Axis::Height => vec2(ACROSS, ALONG),
     };
-    let glyph = Rect::from_center_size(square.center(), size);
+    let glyph = Rect::from_center_size(icon_center(painter, rect), size);
     for shape in glyph_shapes(look, glyph, ink, accent) {
         painter.add(shape);
     }
-    let pos = pos2(
-        rect.center().x - galley.size().x / 2.0,
-        square.bottom() + GAP,
-    );
-    painter.galley(pos, galley, ink);
 }
 
 /// The glyph's shapes in `g`, [`ALONG`] long on its axis and [`ACROSS`] deep. Kept apart from the painter for
@@ -172,14 +141,14 @@ fn glyph_shapes(look: &Look<'_>, g: Rect, ink: Color32, accent: Color32) -> Vec<
     let corners = [at(a0, c0), at(a1, c0), at(a1, c1), at(a0, c1)];
     let body = Rect::from_two_pos(corners[0], corners[2]);
     if look.auto {
-        let outline = Stroke::new(1.0, ink);
+        let outline = Stroke::new(ICON_STROKE, ink);
         let mut path = corners.to_vec();
         path.push(corners[0]);
         shapes.extend(Shape::dashed_line(&path, outline, 1.5, 1.5));
         // the double arrow along the axis, over the whole length the body can take
         let mid = (c0 + c1) / 2.0;
         let (s, e) = (0.5, 0.5 + STEPS[2]);
-        let arrow = Stroke::new(1.2, accent);
+        let arrow = Stroke::new(ICON_STROKE, accent);
         shapes.push(Shape::line_segment([at(s, mid), at(e, mid)], arrow));
         for (tip, back) in [(s, s + 2.2), (e, e - 2.2)] {
             shapes.push(Shape::line(
@@ -192,7 +161,7 @@ fn glyph_shapes(look: &Look<'_>, g: Rect, ink: Color32, accent: Color32) -> Vec<
         shapes.push(Shape::rect_stroke(
             body,
             1.0,
-            Stroke::new(1.0, accent),
+            Stroke::new(ICON_STROKE, accent),
             egui::StrokeKind::Inside,
         ));
     }
@@ -205,14 +174,20 @@ fn glyph_shapes(look: &Look<'_>, g: Rect, ink: Color32, accent: Color32) -> Vec<
             } else {
                 accent
             };
-            (color, 1.6, 6.0)
+            (color, ICON_STROKE + 0.4, 6.0)
         } else {
-            (ink.gamma_multiply(0.6), 1.0, 7.0)
+            (ink.gamma_multiply(0.6), ICON_STROKE * 0.85, 7.0)
         };
         shapes.push(Shape::line_segment(
             [at(x, from), at(x, ACROSS)],
             Stroke::new(width, color),
         ));
+    }
+    // centred on what is drawn, not on the box: the ticks and strokes make it lopsided by up to a point
+    let drawn = Shape::Vec(shapes.clone()).visual_bounding_rect();
+    let off = g.center() - drawn.center();
+    for shape in &mut shapes {
+        shape.translate(off);
     }
     shapes
 }
@@ -265,5 +240,30 @@ mod tests {
             shapes[0].visual_bounding_rect().width()
         };
         assert!(body_len(0) < body_len(1) && body_len(1) < body_len(2));
+    }
+
+    /// The glyph's drawing is centred in its box within half a point on both axes, in every state, so the
+    /// switch's centre is the icon's centre (the header lines up icon centres).
+    #[test]
+    fn the_glyph_is_centred_in_its_box() {
+        for axis in [Axis::Width, Axis::Height] {
+            let size = match axis {
+                Axis::Width => vec2(ALONG, ACROSS),
+                Axis::Height => vec2(ACROSS, ALONG),
+            };
+            let g = Rect::from_center_size(Pos2::ZERO, size);
+            for auto in [false, true] {
+                for shown in 0..3 {
+                    let shapes =
+                        glyph_shapes(&look(axis, auto, shown), g, Color32::WHITE, Color32::RED);
+                    let drawn = Shape::Vec(shapes).visual_bounding_rect();
+                    let off = drawn.center() - g.center();
+                    assert!(
+                        off.x.abs() <= 0.5 && off.y.abs() <= 0.5,
+                        "{axis:?} auto {auto} step {shown}: off by {off:?}"
+                    );
+                }
+            }
+        }
     }
 }

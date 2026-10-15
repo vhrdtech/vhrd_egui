@@ -405,7 +405,7 @@ fn switch_pair_snapshot(theme: Theme, name: &str) {
         })
         .collect();
     let mut h = Harness::builder()
-        .with_size(vec2(250.0, 200.0))
+        .with_size(vec2(300.0, 200.0))
         .with_pixels_per_point(3.0)
         .with_theme(theme)
         .build_ui(move |ui| {
@@ -418,10 +418,15 @@ fn switch_pair_snapshot(theme: Theme, name: &str) {
                 } else {
                     SizeHints::new([40.0, 0.0], [60.0, 0.0], [120.0, 0.0])
                 };
-                ui.allocate_ui(vec2(240.0, 30.0), |ui| {
+                ui.allocate_ui(vec2(290.0, 30.0), |ui| {
                     WidgetFrame::new(format!("frame {}", i + 1))
                         .id_salt(i)
+                        .led(ve_frame::Status::Good, "ok")
+                        .about("One of the zoomed frames: the whole set of header icons.")
                         .sizes(hints)
+                        .menu(|ui| {
+                            ui.label("entry");
+                        })
                         .show(ui, frame, |_, _| {});
                 });
             }
@@ -439,4 +444,102 @@ fn snapshot_switch_pair_dark() {
 #[test]
 fn snapshot_switch_pair_light() {
     switch_pair_snapshot(Theme::Light, "switch_pair_light");
+}
+
+/// Every icon of the header (LED, ⓘ, both switches, ⚠, ☰, fold) is centred on the title text's optical
+/// centre, within half a point, at 1× and at 1.5× (where the pixel grid falls elsewhere).
+#[test]
+fn header_icons_line_up_with_the_title_text() {
+    for ppp in [1.0, 1.5] {
+        let mut frame = FrameState::default();
+        let mut h = Harness::builder()
+            .with_size(vec2(520.0, 260.0))
+            .with_pixels_per_point(ppp)
+            .build_ui(move |ui| {
+                ui.allocate_ui(vec2(500.0, 200.0), |ui| {
+                    let r = WidgetFrame::new("supply Hx")
+                        .led(ve_frame::Status::Good, "ok")
+                        .about("a widget")
+                        .sizes(hints())
+                        .fill(true)
+                        .fold_in_grid(true)
+                        .menu(|ui| {
+                            ui.label("entry");
+                        })
+                        .show(ui, &mut frame, |ui, _| {
+                            ui.allocate_exact_size(vec2(900.0, 40.0), egui::Sense::hover());
+                        });
+                    ui.data_mut(|d| d.insert_temp(egui::Id::new("line"), frame.header_line()));
+                    let _ = r;
+                });
+            });
+        ve_theme::setup(&h.ctx);
+        h.run();
+        let line: Option<f32> = h.ctx.data(|d| d.get_temp(egui::Id::new("line"))).flatten();
+        let line = line.expect("a header line");
+        for label in [
+            "status: ok",
+            "info",
+            "width: auto",
+            "height: auto",
+            "overflow warning",
+            "☰",
+            "collapse",
+        ] {
+            let y = h.get_by_label(label).rect().center().y;
+            assert!(
+                (y - line).abs() <= 0.5,
+                "{label} at {ppp}×: centre {y}, the title's line {line}"
+            );
+        }
+    }
+}
+
+/// The ⓘ's tooltip as it looks, zoomed: the title as a heading, the about text muted, the stats under a rule.
+fn info_tip_snapshot(theme: Theme, name: &str) {
+    let mut frame = FrameState::default();
+    let mut h = Harness::builder()
+        .with_size(vec2(380.0, 230.0))
+        .with_pixels_per_point(2.0)
+        .with_theme(theme)
+        .build_ui(move |ui| {
+            let bg = ve_theme::Tokens::of(ui.ctx(), theme).colors.bg;
+            ui.painter().rect_filled(ui.ctx().viewport_rect(), 0.0, bg);
+            ui.allocate_ui(vec2(360.0, 60.0), |ui| {
+                WidgetFrame::new("bench supply")
+                    .led(ve_frame::Status::Good, "connected")
+                    .about("Output voltage and current of the bench supply, sampled every 100 ms.")
+                    .info(|ui| {
+                        egui::Grid::new("stats").num_columns(2).show(ui, |ui| {
+                            for (k, v) in
+                                [("samples", "1204"), ("latency", "12 ms"), ("link", "USB")]
+                            {
+                                ui.weak(k);
+                                ui.label(v);
+                                ui.end_row();
+                            }
+                        });
+                    })
+                    .sizes(hints())
+                    .show(ui, &mut frame, |_, _| {});
+            });
+        });
+    ve_theme::setup(&h.ctx);
+    h.run();
+    let at = h.get_by_label("info").rect().center();
+    h.hover_at(at);
+    for _ in 0..8 {
+        h.step();
+    }
+    h.snapshot_options(name, &SnapshotOptions::new().max_failed_pixels(80));
+}
+
+#[test]
+fn snapshot_info_tip_dark() {
+    info_tip_snapshot(Theme::Dark, "info_tip_dark");
+}
+
+#[test]
+fn snapshot_info_tip_light() {
+    info_tip_snapshot(Theme::Light, "info_tip_light");
 }

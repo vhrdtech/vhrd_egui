@@ -552,8 +552,9 @@ switch (P2605#8oct-1205). ve_settle (SETL-5, SETL-7) later reads the same shapes
   per axis (`set_auto_pick`, `set_auto_pick_height`), floating windows (by their window's height) and
   hexagons (by the room their window or layout gives, else by the outline, faces at 60°) all work per axis.
   The switches (`ve_frame/src/switch.rs`) sit side by side in the header as a pair, width then height: each a
-  painted glyph, a small body whose length along its axis shows the step with a tick per step (min, nom,
-  wide / tall), the shown one lit in the accent, and the word under it; auto draws the outline dashed with a
+  painted icon (user, 16:13: no word under it; the word is in the tooltip and the label), a small body whose
+  length along its axis shows the step with a tick per step (min, nom, wide / tall), the shown one lit in the
+  accent; auto draws the outline dashed with a
   double arrow on its axis and lights the tick of what auto shows. The height glyph is the width one turned
   onto y (unit test). Theme colours (accent, muted text, border), both themes; tooltips say what the switch
   does, what auto shows now, and what the next click gives. Each switch stays under the pointer when clicked
@@ -563,6 +564,17 @@ switch (P2605#8oct-1205). ve_settle (SETL-5, SETL-7) later reads the same shapes
   `vertical_auto_follows_the_room_height_without_flipping`, `a_hexagon_picks_its_height_too`,
   `pinned_tall_and_min_heights_hold`, `the_pair_of_switches_cycles_independently`,
   `without_heights_the_height_switch_is_disabled_and_says_why`, snapshots `switch_pair_dark` / `_light`.
+- ✅ **FRM-14 One row of header icons** (user, 15 Oct 2026 16:13 and 16:14): the header's icons are one family
+  (`ve_dash::ICON` 13 pt box, `ICON_STROKE` 1.2 pt, `icon_ink` muted / lit, `icon_center` pixel-snapped): the ⓘ
+  is painted geometry (`paint_info`: circle, round dot, stem with rounded ends; `info_icon` keeps its API and
+  its "info" label), the ☰ too (`paint_menu`, over the menu button, label "☰"), the switches, the ⚠ and the fold
+  ▾ have their drawing centred in their box. All sit on one line, the title text's optical centre (halfway
+  between the middle of a capital and of a lower-case letter, measured from the glyphs, `text_centre`): the
+  title is moved onto the line the icons are centred on. `FrameState::header_line()` for an app's header item.
+  The ⓘ tooltip (`info_tip`): title in the theme's title step, about text muted, the stats under a rule, theme
+  spacing, at most 320 pt wide. kittest `header_icons_line_up_with_the_title_text` (every icon's centre within
+  0.5 pt of the title's, at 1× and 1.5×), unit test `the_glyph_is_centred_in_its_box`, snapshots
+  `switch_pair_*` (the whole icon set, zoomed), `info_tip_*`, `playground_pair_*`, dark and light.
 - ✅ **FRM-12 Body scroll and overflow fallback** (user, 15 Oct 2026; fallback 15 Oct 2026 15:40):
   `WidgetFrame::scroll(Vec2b)` (off on both axes by default) puts the body into an `egui::ScrollArea` on those
   axes, held to what the frame gives (a tile, a sized window, the width of its size step, a min form, a
@@ -587,8 +599,8 @@ switch (P2605#8oct-1205). ve_settle (SETL-5, SETL-7) later reads the same shapes
   widgets out of view can overlap; side bar controls have square corners; `ve_app` doesn't offer ghost slots,
   the land mode or the float look as settings yet; a second chrome in the style of `Panel` (title on the border
   line) if the dash wants to keep that look. ve_settle picks widths only: it doesn't use `set_auto_pick_height`,
-  so a frame on auto height there chooses by the room of its body (FRM-11). The header grew by about 23 pt with
-  the switch pair (FRM-11): narrow headers cut their title sooner. (ve_settle bodies taking `SizeHints` and `Shape`: done, SETL-7;
+  so a frame on auto height there chooses by the room of its body (FRM-11). The header grew by about 6 pt with
+  the switch pair (FRM-11): narrow headers cut their title a little sooner. (ve_settle bodies taking `SizeHints` and `Shape`: done, SETL-7;
   what is open between the two is SETL-18.) A control added to the playground's control row made 20 of its
   kittests fail (clicks no longer arrived), so the row's layout is something they depend on: not looked into.
 

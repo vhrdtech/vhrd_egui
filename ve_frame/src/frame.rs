@@ -4,7 +4,9 @@ use egui::{
     Align, Color32, CornerRadius, FontId, Frame, Id, Label, Layout, Margin, Pos2, Rect, Response,
     RichText, Sense, Stroke, Ui, UiBuilder, Vec2, Vec2b, pos2, vec2,
 };
-use ve_dash::{Status, StatusLight, Theme, info_icon};
+use ve_dash::{
+    ICON, ICON_STROKE, Status, StatusLight, Theme, icon_center, icon_ink, info_icon, paint_menu,
+};
 use ve_theme::Tokens;
 
 use crate::hex::{self, HexFace, SideItem, Wing};
@@ -21,8 +23,8 @@ pub(crate) const HEX_FOOTER_H: f32 = 24.0;
 pub(crate) const PAD: f32 = 8.0;
 /// The part of a long title the frame always makes room for; the rest is cut with an ellipsis.
 const TITLE_KEEP: f32 = 64.0;
-/// Size of the ⓘ.
-const INFO: f32 = 13.0;
+/// Size of the ⓘ: the family's icon box.
+const INFO: f32 = ICON;
 /// Body of a hexagon whose widget gave no [`SizeHints`].
 const HEX_BODY: Vec2 = vec2(160.0, 90.0);
 
@@ -1112,7 +1114,7 @@ impl<'a> WidgetFrame<'a> {
             width += INFO + GAP;
         }
         if self.sizes.is_some() {
-            width += switch::pair_width(ui, theme, PAIR_GAP) + GAP;
+            width += switch::pair_width(PAIR_GAP) + GAP;
         }
         // (not the overflow warning: it takes its room from the title, so it never changes the frame's size,
         // which could make the content fit and the warning go, and so on)
@@ -1140,6 +1142,8 @@ impl<'a> WidgetFrame<'a> {
         let has_info = self.has_info();
         let has_menu = self.has_menu();
         let warned = self.warned;
+        // the line every icon of the header is centred on, and the title's text: the header's middle
+        state.header_line = Some(icon_center(ui.painter(), rect).y);
         let mut h = ui.new_child(
             UiBuilder::new()
                 .max_rect(rect.shrink2(vec2(PAD, 0.0)))
@@ -1179,7 +1183,8 @@ impl<'a> WidgetFrame<'a> {
                 let r = h
                     .scope(|h| {
                         blend_button(h, theme);
-                        let mut icon = RichText::new("☰").color(theme.text_muted).size(12.0);
+                        // the ☰ is painted over the button, in the family of the ⓘ and the switches
+                        let icon = egui::Atom::custom(h.id().with("menu_icon"), Vec2::splat(ICON));
                         if state.menu_open {
                             // pressed in while its menu is open, like a toggle that is on; also under the
                             // pointer, which is where it is right after the click
@@ -1192,7 +1197,6 @@ impl<'a> WidgetFrame<'a> {
                                 look.bg_fill = fill;
                                 look.bg_stroke = stroke;
                             }
-                            icon = icon.color(theme.text);
                         }
                         h.menu_button(icon, |ui| {
                             let mut picked = None;
@@ -1209,6 +1213,14 @@ impl<'a> WidgetFrame<'a> {
                         })
                     })
                     .inner;
+                let lit = r.inner.is_some() || r.response.hovered() || r.response.has_focus();
+                paint_menu(
+                    h.painter(),
+                    Rect::from_center_size(r.response.rect.center(), Vec2::splat(ICON)),
+                    icon_ink(theme, lit),
+                );
+                r.response
+                    .widget_info(|| egui::WidgetInfo::labeled(egui::WidgetType::Button, true, "☰"));
                 state.menu_open = r.inner.is_some();
                 state.menu_at = Some(r.response.rect);
                 action = r.inner.flatten();
@@ -1228,16 +1240,8 @@ impl<'a> WidgetFrame<'a> {
                 });
             }
             if has_info {
-                info_icon(h, theme, INFO).on_hover_ui(|ui| {
-                    ui.strong(&title);
-                    if !about.is_empty() {
-                        ui.label(&about);
-                    }
-                    if let Some(add) = info {
-                        ui.separator();
-                        add(ui);
-                    }
-                });
+                info_icon(h, theme, INFO)
+                    .on_hover_ui(|ui| info_tip(ui, theme, &title, &about, info));
             }
             // right to left: the last one added first, so they read in the order they were added
             for (width, add) in items.into_iter().rev() {
@@ -1250,11 +1254,22 @@ impl<'a> WidgetFrame<'a> {
                 if !title_shown {
                     return;
                 }
-                h.add(
+                // The icons are centred on the header's middle; the title is moved so that its text's
+                // optical centre, not its line box, sits on that middle too (`text_centre`).
+                let (centre, row) = text_centre(h, theme);
+                let shift = row * 0.5 - centre;
+                let place = h.available_rect_before_wrap().translate(vec2(0.0, shift));
+                let mut t = h.new_child(
+                    UiBuilder::new()
+                        .max_rect(place)
+                        .layout(Layout::left_to_right(Align::Center)),
+                );
+                let r = t.add(
                     Label::new(RichText::new(&title).font(title_font()).color(theme.text))
                         .selectable(false)
                         .truncate(),
                 );
+                state.header_line = Some(r.rect.top() + centre);
             });
         });
         action
@@ -1281,8 +1296,10 @@ fn width_switch(ui: &mut Ui, theme: &Theme, state: &mut FrameState) {
         SizeMode::Wide => "wide",
     };
     let tip = format!(
-        "Widget width: {what}.\nClick for {next}. The marks under the box are min, nom and wide; the lit \
-         one is shown. The switch beside it sets the height."
+        "width: {}, click for {next}\n\nWidget width, {what}. The box shows the step: the marks under it \
+         are min, nom and wide, the lit one is shown; dashed with arrows is auto. The switch beside it sets \
+         the height.",
+        mode.label()
     );
     let look = switch::Look {
         axis: Axis::Width,
@@ -1325,13 +1342,15 @@ fn height_switch(ui: &mut Ui, theme: &Theme, state: &mut FrameState, hints: &Siz
             HeightMode::Tall => "tall",
         };
         format!(
-            "Widget height: {what}.\nClick for {next}. The marks right of the box are min, nom and tall; \
-             the lit one is shown. The switch beside it sets the width."
+            "height: {}, click for {next}\n\nWidget height, {what}. The box shows the step: the marks \
+             right of it are min, nom and tall, the lit one is shown; dashed with arrows is auto. The switch \
+             beside it sets the width.",
+            mode.label()
         )
     } else {
         format!(
-            "Widget height: not adjustable, this widget has one height for each width (no tall form). It \
-             follows the width switch: {} now.",
+            "height: {} (not adjustable)\n\nThis widget has one height for each width (no tall form), so \
+             its height follows the width switch.",
             shown.label()
         )
     };
@@ -1352,12 +1371,65 @@ fn height_switch(ui: &mut Ui, theme: &Theme, state: &mut FrameState, hints: &Siz
     }
 }
 
+/// Where the title's text has its optical centre, points below the top of its line, and the line's height.
+/// The centre is halfway between the middle of a capital and the middle of a lower-case letter, so a title in
+/// either case (mostly lower case, with names in capitals) reads as centred on the icons beside it.
+fn text_centre(ui: &Ui, theme: &Theme) -> (f32, f32) {
+    let middle = |s: &str| {
+        let g = ui
+            .painter()
+            .layout_no_wrap(s.to_owned(), title_font(), theme.text);
+        let row = g.size().y;
+        // no glyphs drawn (no fonts yet): the middle of the line
+        let centre = g.mesh_bounds.center().y;
+        (
+            if centre.is_finite() {
+                centre
+            } else {
+                row * 0.5
+            },
+            row,
+        )
+    };
+    let (cap, row) = middle("H");
+    let (x, _) = middle("x");
+    ((cap + x) * 0.5, row)
+}
+
+/// The ⓘ's tooltip: the title as a heading, what the widget is in muted text, then the widget's own stats
+/// under a rule, spaced by the theme's scale.
+fn info_tip(ui: &mut Ui, theme: &Theme, title: &str, about: &str, info: Option<UiFn<'_>>) {
+    let tokens = Tokens::of_ui(ui);
+    let space = tokens.space;
+    ui.set_max_width(320.0);
+    ui.spacing_mut().item_spacing.y = space.s;
+    ui.add(
+        Label::new(
+            RichText::new(title)
+                .font(tokens.type_scale.title.font_id())
+                .strong()
+                .color(theme.text),
+        )
+        .selectable(false),
+    );
+    if !about.is_empty() {
+        ui.add(Label::new(RichText::new(about).color(theme.text_muted)).selectable(false));
+    }
+    if let Some(add) = info {
+        ui.add_space(space.xs);
+        ui.separator();
+        ui.add_space(space.xs);
+        ui.spacing_mut().item_spacing = vec2(space.m, space.xs);
+        add(ui);
+    }
+}
+
 /// How much bigger than the frame the content must be on an axis, points, before the fallback scroll starts
 /// there ([`WidgetFrame::scroll_fallback`]); it ends once the content fits.
 pub const OVERFLOW_ON: f32 = 1.0;
 
-/// Size of the overflow warning in the header.
-const WARN: f32 = 13.0;
+/// Size of the overflow warning in the header: the family's icon box.
+const WARN: f32 = ICON;
 
 /// The ⚠ in the header of a frame whose body overflows and scrolls as the fallback: a small triangle in the
 /// theme's warning colour; its tooltip says by how much and what fixes it.
@@ -1389,30 +1461,26 @@ fn overflow_warning(ui: &mut Ui, theme: &Theme, overflow: Vec2) {
         egui::WidgetInfo::labeled(egui::WidgetType::Label, true, "overflow warning")
     });
     if ui.is_rect_visible(rect) {
-        let c = rect.center();
-        let r = WARN * 0.5;
-        let points = vec![
-            c + vec2(0.0, -r),
-            c + vec2(r, r * 0.8),
-            c + vec2(-r, r * 0.8),
-        ];
+        // its box centred on the icon's centre, as the other header icons are
         let painter = ui.painter();
+        let c = icon_center(painter, rect);
+        let (r, v) = (WARN * 0.5 - ICON_STROKE * 0.5, WARN * 0.42);
+        let points = vec![c + vec2(0.0, -v), c + vec2(r, v), c + vec2(-r, v)];
         painter.add(egui::Shape::convex_polygon(
             points,
             theme.warn.gamma_multiply(0.25),
-            Stroke::new(1.2, theme.warn),
+            Stroke::new(ICON_STROKE, theme.warn),
         ));
-        painter.line_segment(
-            [c + vec2(0.0, -r * 0.35), c + vec2(0.0, r * 0.3)],
-            Stroke::new(1.4, theme.warn),
-        );
-        painter.circle_filled(c + vec2(0.0, r * 0.58), 0.8, theme.warn);
+        let w = 1.4;
+        let stem = Rect::from_min_max(c + vec2(-w * 0.5, -v * 0.4), c + vec2(w * 0.5, v * 0.35));
+        painter.rect_filled(stem, w * 0.5, theme.warn);
+        painter.circle_filled(c + vec2(0.0, v * 0.68), 0.8, theme.warn);
     }
     response.on_hover_text(tip);
 }
 
-/// Size of the fold control in a floating frame's header.
-const FOLD: f32 = 12.0;
+/// Size of the fold control in a floating frame's header: the family's icon box.
+const FOLD: f32 = ICON;
 
 /// The fold control: a small triangle, pointing down while the frame is open and right while it is folded.
 fn fold_chevron(ui: &mut Ui, theme: &Theme, collapsed: bool) -> Response {
@@ -1425,19 +1493,13 @@ fn fold_chevron(ui: &mut Ui, theme: &Theme, collapsed: bool) -> Response {
         } else {
             theme.text_muted
         };
-        let (c, r) = (rect.center(), FOLD * 0.3);
+        // a triangle whose box is centred on the icon's centre, as the other header icons are
+        let (c, r) = (icon_center(ui.painter(), rect), FOLD * 0.3);
+        let a = r * 0.8;
         let points = if collapsed {
-            vec![
-                c + vec2(-r * 0.7, -r),
-                c + vec2(r, 0.0),
-                c + vec2(-r * 0.7, r),
-            ]
+            vec![c + vec2(-a, -r), c + vec2(a, 0.0), c + vec2(-a, r)]
         } else {
-            vec![
-                c + vec2(-r, -r * 0.7),
-                c + vec2(r, -r * 0.7),
-                c + vec2(0.0, r),
-            ]
+            vec![c + vec2(-r, -a), c + vec2(r, -a), c + vec2(0.0, a)]
         };
         ui.painter()
             .add(egui::Shape::convex_polygon(points, color, Stroke::NONE));

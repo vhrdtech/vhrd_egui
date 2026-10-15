@@ -33,7 +33,7 @@ pub use chip::ActionChip;
 pub use column::SteadyColumn;
 pub use decay::Decay;
 pub use history::History;
-pub use info::info_icon;
+pub use info::{ICON, ICON_STROKE, icon_center, icon_ink, info_icon, paint_info, paint_menu};
 pub use meter::{Blocks, Meter};
 #[allow(deprecated)]
 pub use segbar::{SegBar, Segments, lit_segments};

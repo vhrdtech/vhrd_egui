@@ -13,9 +13,17 @@ versions follow [Semantic Versioning](https://semver.org/). Feature IDs refer to
   (`has_heights`, `height`, `body`, `height_for`, `follow`); `auto_height` with the same hysteresis as
   `auto_size`; `BodyArea::height`, `FrameResponse::height`. A widget without a tall form shows the height
   switch disabled, with the reason, and keeps its layout.
-- `ve_frame` (FRM-11): both switches are drawn as a pair of painted glyphs with their word under them: a small
-  body whose length shows the step, a tick per step with the shown one lit in the accent; auto dashed with a
-  double arrow on its axis. Tooltips say what each does, what auto shows and what the next click gives.
+- `ve_frame` (FRM-11): both switches are drawn as a pair of painted icons, no word: a small body whose length
+  shows the step, a tick per step with the shown one lit in the accent; auto dashed with a double arrow on its
+  axis. The word is in the tooltip (`width: nom, click for wide`, then what the switch does) and the accessible
+  label (`width: nom`).
+- `ve_frame` (FRM-14): the header reads as one row: the LED, the ⓘ, the switches, the ⚠, the ☰ and the fold ▾
+  are centred on the title text's optical centre (between the middle of a capital and of a lower-case letter),
+  the ☰ is painted, and `FrameState::header_line()` gives that line so an app's header item can centre on it.
+  The ⓘ tooltip has the title as a heading, the about text muted and the stats under a rule, spaced by the
+  theme.
+- `ve_dash` (FRM-14): `ICON`, `ICON_STROKE`, `icon_ink`, `icon_center`, `paint_info`, `paint_menu`: the header
+  icon family (one box, one stroke, muted at rest, the text colour lit).
 - `ve_frame` (FRM-12): `WidgetFrame::scroll(Vec2b)`, off by default: the body scrolls on those axes when its
   place is smaller than its content. `WidgetFrame::scroll_fallback(bool)`, on by default: with scroll off, an
   axis where the content overflows what the frame gives scrolls anyway and the header shows a ⚠ with the
@@ -37,7 +45,9 @@ versions follow [Semantic Versioning](https://semver.org/). Feature IDs refer to
   needs it). (FRM-11)
 - **Breaking:** `ve_widget::Widget::ui_sized(ui, cx, id, size)` is now `ui_sized(ui, cx, id, size, height)`;
   `FrameSpec` has a new field `scroll` (`..FrameSpec::default()` covers it). (FRM-11, FRM-12)
-- `ve_frame`: the header is about 23 pt wider with the switch pair, so narrow headers cut their title sooner;
+- `ve_dash::info_icon` (FRM-14): drawn as geometry (circle, round dot, stem with rounded ends, pixel-snapped,
+  the family's stroke) instead of a font's "i"; same API and "info" label.
+- `ve_frame`: the header is about 6 pt wider with the switch pair (two icons, 40 pt, for the 34 pt chip);
   the AccessKit labels of the switches are now "width: auto" / "height: auto" (was "auto"). With the overflow
   fallback on by default, a body that was cut off where the frame's size is held (a tile, a sized window, a
   min form, a hexagon) now scrolls and warns instead. (FRM-11, FRM-12)

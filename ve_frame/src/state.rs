@@ -131,6 +131,9 @@ pub struct FrameState {
     /// Which of the two switches the anchor belongs to: the height switch when true.
     #[serde(skip)]
     pub(crate) anchor_height: bool,
+    /// The header's alignment line, screen y: the icons' centres and the title text's optical centre.
+    #[serde(skip)]
+    pub(crate) header_line: Option<f32>,
     /// Whether the ☰ menu was open when the frame was drawn last, and where its button is.
     #[serde(skip)]
     pub(crate) menu_open: bool,
@@ -330,6 +333,13 @@ impl FrameState {
     /// ([`crate::WidgetFrame::scroll_fallback`]); the header shows the warning while one is on.
     pub fn overflow_scroll(&self) -> egui::Vec2b {
         self.overflow_scroll
+    }
+
+    /// The line, screen y, the header was drawn on last frame: the centre of its icons (LED, ⓘ, switches, ☰,
+    /// fold) and the optical centre of its title text. An app's own header item
+    /// ([`crate::WidgetFrame::header_item`]) centres its icon on it to read as one row.
+    pub fn header_line(&self) -> Option<f32> {
+        self.header_line
     }
 
     /// Whether the ☰ menu was open when the frame was drawn last; its button is drawn pressed then.
