@@ -43,6 +43,8 @@ versions follow [Semantic Versioning](https://semver.org/). Feature IDs refer to
 
 ### Fixed
 
+- `ve_theme`: the copy of vhrd_brand's palette export follows vhrd_brand 0.9.0 (adds the neutral `charcoal`), so
+  `palette_copy_matches_the_sibling_export` passes again.
 - `ve_frame`: a floating window opened low on the screen no longer jumps up on its first frame (egui sized it at
   its 400 points default before it knew its size): `Dock::show_windows` gives it the size it has, and its shadow
   is drawn whole on every side (it was cut at the top and left before).

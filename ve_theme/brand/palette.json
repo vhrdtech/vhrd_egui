@@ -4,7 +4,8 @@
     "black": "#1a1a1a",
     "grey": "#6e6e6e",
     "light": "#e6e6e6",
-    "paper": "#f6f6f6"
+    "paper": "#f6f6f6",
+    "charcoal": "#2b2b2b"
   },
   "signal": {
     "power": "#e8710a",
