@@ -18,3 +18,6 @@ Tasks 1-3 (settle on demand, push neighbours, resize) done here in both repos; 4
 - Kittest clicks below the harness window never land: `a_pinned_panel_stays_when_its_neighbour_grows` uses a 1400 pt tall window because dash-forms' framed head panels push the page down to ~y 587.
 - Snapshot failures in tpm_mesh_dash right now come from dash-forms' wip (they committed failing *.new.png); regenerate only after their final commits.
 - ve_theme `palette_copy_matches_the_sibling_export` fails because ../vhrd_brand moved ahead (also on main); not this branch's to fix.
+
+## Update from dash-forms
+Final feature commit 333a426 on s/18oct2026-dash-forms (on top of 6a0430b): git-rms the stray pngs, adds .gitignore for them, holds gossip rates from the first frame in page_with, widens a_pinned_panel's harness to 1100 (mine is 1400: keep one). Cherry-pick 6a0430b..333a426 into tpm_mesh_dash, then regenerate snapshots.
