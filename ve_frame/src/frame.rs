@@ -444,9 +444,12 @@ impl<'a> WidgetFrame<'a> {
             ui.available_size()
         };
         // in a grid, the height the user gave it with a layout's resize handle (SETL-39): the frame takes it
-        let held_height = state
-            .grid_height
-            .filter(|h| !floating && h.is_finite() && *h > 0.0);
+        let capped = state.layout_height.filter(|_| self.shape == Shape::Rect);
+        let held_height = match (state.grid_height, capped) {
+            (Some(a), Some(b)) => Some(a.min(b)),
+            (a, b) => a.or(b),
+        }
+        .filter(|h| !floating && h.is_finite() && *h > 0.0);
         if let Some(h) = held_height {
             avail.y = h;
         }

@@ -16,7 +16,10 @@ versions follow [Semantic Versioning](https://semver.org/). Feature IDs refer to
   (`Resized`), `frames::room_from`.
 - `ve_frame` (SETL-38, SETL-39, SETL-40): `FrameState::push` and `FrameState::grid_height` (saved, off / `None` in
   older saves), `WidgetFrame::layout_menu` ("Push neighbours" and "Tidy up" in the ☰ menu), a frame in a grid with
-  `grid_height` takes that height.
+  `grid_height` takes that height; `FrameState::set_layout_height` / `layout_height`, a layout's cap on a
+  rectangle's height (not saved).
+- `ve_settle::frames` (SETL-40): a frame that does not push and has no room to grow is drawn as tall as its body,
+  which scrolls, instead of being cut off; it grows to its content once there is room.
 - Sandbox: "Settle all the time", "Tidy up", "New widgets push their neighbours"; the playground's `Host::layout`.
 
 ### Changed

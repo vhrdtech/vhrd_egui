@@ -1245,6 +1245,14 @@ impl<W> Frames<W> {
             .filter(|n| (rect.size() - *n).abs().max_elem() <= stretch + 1.0)
             .map(|_| [rect.width(), rect.height()]);
         slot.frame.set_layout_size(given);
+        // A frame that does not push and has no room to grow is drawn as tall as its body, and its body scrolls
+        // (SETL-40), instead of being cut off at its neighbour's edge.
+        let capped = world
+            .body(body_id)
+            .filter(|b| !hex && !b.pushes && !b.lifted && !b.dragged)
+            .filter(|b| b.want.y > b.rect.size().y + 0.5)
+            .map(|b| b.rect.size().y);
+        slot.frame.set_layout_height(capped);
         if let Some(action) = draw(&mut child, slot) {
             shown.picked.push((id, action));
         }
@@ -1351,6 +1359,18 @@ impl<W> Frames<W> {
                     }
                 }
             }
+        };
+        // capped: what it wants is its content's height, which the world gives it once there is room
+        let limits = match capped {
+            Some(_) => {
+                let full = (drawn.y + frame.overflow().y.max(0.0)).max(limits.want.y);
+                Limits {
+                    want: Vec2::new(limits.want.x, full),
+                    min: Vec2::new(limits.min.x, full),
+                    max: Vec2::new(limits.max.x, full.max(limits.max.y)),
+                }
+            }
+            None => limits,
         };
         world.set_limits(body_id, limits.min, limits.max);
         world.set_want(body_id, limits.want);

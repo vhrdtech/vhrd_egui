@@ -171,6 +171,9 @@ pub struct FrameState {
     /// The size a layout gives a hexagon in a grid ([`FrameState::set_layout_size`]).
     #[serde(skip)]
     pub(crate) layout_size: Option<[f32; 2]>,
+    /// The most height a layout has for a rectangle in a grid ([`FrameState::set_layout_height`]).
+    #[serde(skip)]
+    pub(crate) layout_height: Option<f32>,
     /// Where the body was laid out last, in screen points.
     #[serde(skip)]
     pub(crate) body: Option<egui::Rect>,
@@ -324,6 +327,19 @@ impl FrameState {
     /// given and ignores this. Not saved.
     pub fn set_layout_size(&mut self, size: Option<[f32; 2]>) {
         self.layout_size = size;
+    }
+
+    /// A layout that has less height for a rectangle in a grid than its content wants (a physics layout whose
+    /// frame does not push its neighbours, ve_settle SETL-40) says how much: the frame takes that height, and its
+    /// body scrolls or warns as for [`Self::grid_height`]. `None` gives it its own height back. Not saved; a
+    /// hexagon ignores it.
+    pub fn set_layout_height(&mut self, height: Option<f32>) {
+        self.layout_height = height;
+    }
+
+    /// The height a layout capped a rectangle at, if it did.
+    pub fn layout_height(&self) -> Option<f32> {
+        self.layout_height
     }
 
     /// The size a layout gave a hexagon in a grid, if it did.

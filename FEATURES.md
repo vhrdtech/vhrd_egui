@@ -1078,7 +1078,9 @@ up and Packery's "others flow around the dragged one". No app uses it yet.
   (`BodyDesc::pushes`, `World::set_pushes`; on by default in the core). A body that does not push floats over the
   others while dragged (they stay), and dropped on them or growing into them it takes the whole contact
   (`moves_alone`): it is put out of them as a place, not speed, and stops at their edge; it grows only into the
-  room it has (walls and the full gap kept). `FrameState::push` (saved, off by default) is the frame's setting,
+  room it has (walls and the full gap kept). Such a frame with no room to grow is drawn as tall as its body, which scrolls
+  (`FrameState::set_layout_height`), and grows to its content once there is room (kittest
+  `a_frame_that_cannot_grow_scrolls_and_its_neighbour_stays`). `FrameState::push` (saved, off by default) is the frame's setting,
   the ☰ "Push neighbours" toggle (`WidgetFrame::layout_menu`); `Frames` gives each body its frame's. Sandbox: "New
   widgets push their neighbours" (on there).
 - ✅ **SETL-37 A seat put back gave speed** (found by the width sweep, SETL-36's test, 15 Oct 2026): contacts

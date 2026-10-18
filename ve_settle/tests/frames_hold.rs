@@ -24,6 +24,8 @@ struct Host {
     resized: Vec<ve_settle::frames::Resized>,
     /// Where the world's origin is on the screen.
     offset: egui::Vec2,
+    /// How tall each panel's content is.
+    heights: Vec<f32>,
 }
 
 impl Host {
@@ -48,6 +50,7 @@ impl Host {
             shown: Shown::default(),
             resized: Vec::new(),
             offset: egui::Vec2::ZERO,
+            heights: vec![60.0; 3],
         }
     }
 
@@ -57,13 +60,15 @@ impl Host {
             clip: ui.clip_rect(),
         };
         self.offset = view.offset;
+        let heights = self.heights.clone();
         let mut draw = |ui: &mut egui::Ui, slot: &mut Slot<usize>| -> Option<FrameAction> {
             let i = slot.widget;
+            let h = heights[i];
             WidgetFrame::new(format!("panel {i}"))
                 .sizes(hints())
                 .layout_menu(true)
                 .show(ui, &mut slot.frame, |ui, _| {
-                    ui.allocate_space(vec2(ui.available_width(), 60.0));
+                    ui.allocate_space(vec2(ui.available_width(), h));
                 })
                 .action
         };
@@ -253,4 +258,58 @@ fn the_resize_handle_snaps_the_width_and_frees_the_height() {
     until_still(&mut h);
     let f = h.state().frame(2);
     assert_eq!((f.size, f.grid_height), (SizeMode::Auto, None));
+}
+
+#[test]
+fn a_frame_that_cannot_grow_scrolls_and_its_neighbour_stays() {
+    let mut h = host();
+    until_still(&mut h);
+    // panel 1 right under panel 0
+    let (r0, id1) = (h.state().rect(0), h.state().slots[1]);
+    let size = h.state().rect(1).size();
+    let gap = h.state().world.params().gap;
+    let at = Vec2::new(r0.min.x + size.x / 2.0, r0.max.y + gap + 4.0 + size.y / 2.0);
+    {
+        let host = h.state_mut();
+        host.frames.place(&mut host.world, id1, at);
+    }
+    until_still(&mut h);
+    let under = h.state().rect(1);
+    // panel 0's content wants 150 more
+    h.state_mut().heights[0] = 210.0;
+    for _ in 0..120 {
+        h.step();
+    }
+    until_still(&mut h);
+    assert!(
+        moved(under, h.state().rect(1)) < 0.5,
+        "pushed: {:?}",
+        h.state().rect(1)
+    );
+    let r = h.state().rect(0);
+    assert!(r.max.y <= under.min.y - gap + 0.5, "in it: {r:?} {under:?}");
+    let f = h.state().frame(0);
+    assert!(f.layout_height().is_some(), "capped by the layout");
+    let drawn = f.drawn_rect().expect("drawn");
+    assert!(
+        drawn.height() <= r.size().y + 0.5,
+        "drawn as tall as its body: {drawn:?} {r:?}"
+    );
+    assert!(f.overflow_scroll().y, "its body scrolls");
+    // moved out of the way, it grows to its content
+    let far = Vec2::new(at.x, at.y + 400.0);
+    {
+        let host = h.state_mut();
+        host.frames.place(&mut host.world, id1, far);
+    }
+    for _ in 0..120 {
+        h.step();
+    }
+    until_still(&mut h);
+    assert!(h.state().frame(0).layout_height().is_none(), "room again");
+    assert!(
+        h.state().rect(0).size().y > r.size().y + 100.0,
+        "{:?}",
+        h.state().rect(0)
+    );
 }
