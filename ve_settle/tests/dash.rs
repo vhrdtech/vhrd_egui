@@ -47,7 +47,7 @@ impl Dash {
             .map(|i| {
                 let seat = Seat::new(format!("panel {i}")).hints(h);
                 let id = frames.add(&mut world, i, seat, Vec2::new(350.0, 60.0));
-                // these scenes are about what a panel pushes (SETL-38: off by default)
+                // these scenes are about what a panel pushes (SETL-40: off by default)
                 if let Some(slot) = frames.dock.get_mut(id) {
                     slot.frame.push = true;
                 }

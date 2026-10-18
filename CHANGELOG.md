@@ -5,6 +5,29 @@ versions follow [Semantic Versioning](https://semver.org/). Feature IDs refer to
 
 ## [Unreleased]
 
+### Added
+
+- `ve_settle` (SETL-38): `Settling` (`Hold`, `Once`, `Always`), `World::settling`, `set_settling`, `with_settling`,
+  `settle_once`, `Params::held`; `Frames::tidy_up`. A world settles only when asked ("Tidy up"), then holds again.
+- `ve_settle` (SETL-40): `Body::pushes`, `BodyDesc::pushes`, `World::set_pushes`: a body that does not push floats
+  over its neighbours while dragged and stops at their edge when dropped or growing.
+- `ve_settle` (SETL-39): a resize handle in the corner of every frame `Frames` draws (`RESIZE_GRIP`): the width
+  snaps to min / nom / wide, the height to the height steps or to where it is let go; `Shown::resized`
+  (`Resized`), `frames::room_from`.
+- `ve_frame` (SETL-38, SETL-39, SETL-40): `FrameState::push` and `FrameState::grid_height` (saved, off / `None` in
+  older saves), `WidgetFrame::layout_menu` ("Push neighbours" and "Tidy up" in the ☰ menu), a frame in a grid with
+  `grid_height` takes that height.
+- Sandbox: "Settle all the time", "Tidy up", "New widgets push their neighbours"; the playground's `Host::layout`.
+
+### Changed
+
+- **Breaking:** `ve_settle::World` holds by default: no gravity, corner snap, vertex attraction or grid pull until
+  `settle_once` (or `with_settling(Settling::Always)` for the old behaviour). (SETL-38)
+- **Breaking:** `ve_frame::FrameAction` has a new variant `Tidy` and `Applied` a new variant `Tidy`: exhaustive
+  matches need an arm. (SETL-38)
+- `ve_settle::frames`: frames do not push their neighbours unless their `FrameState::push` is on (off by
+  default). (SETL-40)
+
 ## [0.29.0] - 2026-10-15
 
 ### Added

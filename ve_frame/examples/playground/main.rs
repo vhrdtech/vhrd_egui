@@ -518,7 +518,7 @@ impl Demo {
 pub struct Host<'h> {
     pub header: Option<(f32, HostUi<'h>)>,
     pub menu: Option<HostUi<'h>>,
-    /// The ☰ entries of a frame in a physics layout: "Push neighbours" and "Tidy up" (ve_settle SETL-38).
+    /// The ☰ entries of a frame in a physics layout: "Push neighbours" and "Tidy up" (ve_settle SETL-38, SETL-40).
     pub layout: bool,
 }
 

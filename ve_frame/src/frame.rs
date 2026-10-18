@@ -252,7 +252,7 @@ impl<'a> WidgetFrame<'a> {
         self
     }
 
-    /// The ☰ menu's entries for a frame in a physics layout (ve_settle SETL-38): "Push neighbours", a toggle on
+    /// The ☰ menu's entries for a frame in a physics layout (ve_settle SETL-38, SETL-40): "Push neighbours", a toggle on
     /// [`FrameState::push`] the frame flips itself, and "Tidy up", reported as [`FrameAction::Tidy`]. Off by
     /// default.
     pub fn layout_menu(mut self, on: bool) -> Self {

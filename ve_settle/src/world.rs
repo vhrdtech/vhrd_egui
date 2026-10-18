@@ -211,7 +211,7 @@ pub struct Body {
     /// Pinned in place ([`World::set_pinned`], SETL-27): it never moves,
     /// gives or stretches; the others rest against it as against a wall.
     pub pinned: bool,
-    /// Whether it pushes its neighbours (SETL-38, [`World::set_pushes`]):
+    /// Whether it pushes its neighbours (SETL-40, [`World::set_pushes`]):
     /// dragged over them they glide out from under it, dropped or grown into
     /// them they are pushed aside. Off, nothing moves for it: held, it
     /// floats over the others; let go or growing where they are, it is the
@@ -1111,7 +1111,7 @@ impl World {
         });
     }
 
-    /// Let a body push its neighbours, or not ([`Body::pushes`], SETL-38).
+    /// Let a body push its neighbours, or not ([`Body::pushes`], SETL-40).
     pub fn set_pushes(&mut self, id: BodyId, pushes: bool) {
         self.change(id, |b| {
             let changed = b.pushes != pushes;
@@ -2327,7 +2327,7 @@ impl World {
                 {
                     continue;
                 }
-                // one that does not push floats over the others (SETL-38)
+                // one that does not push floats over the others (SETL-40)
                 if !(if a.dragged { a.pushes } else { b.pushes }) {
                     continue;
                 }
@@ -2515,7 +2515,7 @@ impl World {
                     let (ab, bb) = pair_bulges(a, b);
                     let push = along * ((ab[axis] + bb[axis]) * SLIDE_STIFFNESS);
                     // (what a body that does not push lands on or grows into
-                    // stays as a wall: no push along it, SETL-38)
+                    // stays as a wall: no push along it, SETL-40)
                     if !moves_alone(b, a) {
                         a.slide_pull -= push;
                     }
@@ -2659,11 +2659,18 @@ impl World {
                 }
                 // A pinned body is a wall: the other one takes it all. So is
                 // one that a body which does not push lands on or grows
-                // into (SETL-38).
+                // into (SETL-40).
                 if a.pinned || moves_alone(b, a) {
                     (da, db) = (Vec2::ZERO, db - da);
+                    // (put out of it is a place, not speed: it stops at the edge)
+                    if !a.pinned {
+                        b.shoved += db;
+                    }
                 } else if b.pinned || moves_alone(a, b) {
                     (da, db) = (da - db, Vec2::ZERO);
+                    if !b.pinned {
+                        a.shoved += da;
+                    }
                 }
                 // Put back onto the slope it sits on is a place, not speed: kept
                 // as speed (up to a seat's), a seat that had been pressed
@@ -2831,7 +2838,7 @@ impl World {
             let a = &self.bodies[i];
             let mut room = Vec2::splat(f32::INFINITY);
             // One that does not push grows only into the room it has, walls
-            // included (SETL-38).
+            // included (SETL-40).
             let holds = !a.pushes && !a.lifted && !a.dragged;
             if holds {
                 for axis in Axis::BOTH {
@@ -2918,7 +2925,7 @@ impl World {
     }
 }
 
-/// Whether `a` takes the whole of its contact with `b` (SETL-38): it does
+/// Whether `a` takes the whole of its contact with `b` (SETL-40): it does
 /// not push, and it is the one that came onto `b` (lifted: just added or
 /// let go there) or grew into it this step, while `b` did neither.
 fn moves_alone(a: &Body, b: &Body) -> bool {

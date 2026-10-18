@@ -1248,7 +1248,7 @@ impl<W> Frames<W> {
         if let Some(action) = draw(&mut child, slot) {
             shown.picked.push((id, action));
         }
-        // whether it pushes its neighbours is the frame's setting (its ☰ "Push neighbours", SETL-38)
+        // whether it pushes its neighbours is the frame's setting (its ☰ "Push neighbours", SETL-40)
         if world
             .body(body_id)
             .is_some_and(|b| b.pushes != slot.frame.push)

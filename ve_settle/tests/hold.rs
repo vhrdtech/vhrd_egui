@@ -1,4 +1,4 @@
-//! A world that holds (SETL-38): bodies stay where they are put until the user asks it to tidy up, and a
+//! A world that holds (SETL-38, SETL-40): bodies stay where they are put until the user asks it to tidy up, and a
 //! body that does not push its neighbours stops at their edge instead.
 
 use ve_settle::{BodyDesc, BodyId, Params, Rect, Settling, Vec2, World};
@@ -136,9 +136,8 @@ fn a_body_that_does_not_push_floats_over_its_neighbour_and_stops_at_its_edge() {
         || mover.max.y <= after.min.y - gap + 0.5;
     assert!(apart, "not in it: {mover:?} {after:?}");
     // it went out the short way, down, and rests by its edge
-    // TODO(SETL-38): it parts at a glide and overshoots by ~26 points; should stop at the edge
     assert!(
-        (mover.min.y - (after.max.y + gap)).abs() < 30.0,
+        (mover.min.y - (after.max.y + gap)).abs() < 1.0,
         "at its edge: {mover:?} {after:?}"
     );
 }

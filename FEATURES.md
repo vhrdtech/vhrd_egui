@@ -1057,6 +1057,30 @@ up and Packery's "others flow around the dragged one". No app uses it yet.
   blocked). A honeycomb under gravity needs attraction as a force that can hold a body off the wall, as the
   rectangles' corner snap (1500) holds against gravity (600); open question for the user. Answered by SETL-28:
   the honeycomb is laid out cell by cell, and the solver holds it.
+- ✅ **SETL-38 Settle on demand** (user, P2605#18oct-1205, 18 Oct 2026: "gravity is on by default and panels
+  jump all over the place"): a `World` holds by default (`Settling::Hold`): no gravity, corner snap, vertex
+  attraction or grid pull (`Params::held`); bodies stay where they are put (drag, resize, add) and contacts only
+  keep them apart. Settling is an action: `World::settle_once` (a "Tidy up") runs every force of the `Params` until
+  the world rests, then holds again; `Settling::Always` is the physics toy of before (`with_settling`,
+  `set_settling`). `ve_frame`: `FrameAction::Tidy` / `Applied::Tidy`, `WidgetFrame::layout_menu(true)` puts "Tidy
+  up" (and "Push neighbours", SETL-40) in the ☰ menu; `ve_settle::frames::Frames::tidy_up` for a page's own
+  entry, `Frames::apply` carries the ☰ one out. Sandbox: "Settle all the time" (on there), "Tidy up". Tests
+  `tests/hold.rs`, `tests/frames_hold.rs`; the older tests settle all the time (`Settling::Always`).
+- ✅ **SETL-39 Resize handle on frames in a world** (user, P2605#18oct-1205c): every frame `Frames` draws has a
+  handle in its bottom right corner (`RESIZE_GRIP`): dragged, a preview follows the pointer (up to the
+  neighbours' edge for a frame that does not push them, `room_from`); let go, the width snaps to the nearest of
+  its min / nom / wide (a frame without a size switch takes it as its room), the height to its height steps
+  (FRM-11) or, without them, the frame is given that height (`FrameState::grid_height`, saved; the body scrolls
+  or warns where its content wants more), back to its own within 8 points. Double click: auto again.
+  `Shown::resized` reports it for hosts that keep the frame states themselves. A hexagon keeps its shape (width
+  form only). Kittest `the_resize_handle_snaps_the_width_and_frees_the_height`.
+- ✅ **SETL-40 Push neighbours, per frame, off by default** (user, P2605#18oct-1205b): `Body::pushes`
+  (`BodyDesc::pushes`, `World::set_pushes`; on by default in the core). A body that does not push floats over the
+  others while dragged (they stay), and dropped on them or growing into them it takes the whole contact
+  (`moves_alone`): it is put out of them as a place, not speed, and stops at their edge; it grows only into the
+  room it has (walls and the full gap kept). `FrameState::push` (saved, off by default) is the frame's setting,
+  the ☰ "Push neighbours" toggle (`WidgetFrame::layout_menu`); `Frames` gives each body its frame's. Sandbox: "New
+  widgets push their neighbours" (on there).
 - ✅ **SETL-37 A seat put back gave speed** (found by the width sweep, SETL-36's test, 15 Oct 2026): contacts
   that put an outline back onto a slope it sits on (SETL-15) gave it the speed of that move, up to a seat's
   (`SEAT_SPEED`, 60 points/s). A seat pressed deeper by a neighbour (one rising under gravity into it) was let

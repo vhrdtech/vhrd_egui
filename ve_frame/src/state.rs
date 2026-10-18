@@ -82,7 +82,7 @@ pub struct FrameState {
     /// The size of the place in the grid the widget floated out of, for a ghost of it there
     /// ([`crate::ghost_slot`]); `None` while it sits in a grid.
     pub left_slot: Option<[f32; 2]>,
-    /// Whether the frame pushes its neighbours out of its way in a physics layout (ve_settle SETL-38): when it is
+    /// Whether the frame pushes its neighbours out of its way in a physics layout (ve_settle SETL-40): when it is
     /// dragged onto them, dropped there or grows. Off (the default), it stops at their edge and nothing else
     /// moves. The ☰ menu's "Push neighbours" ([`crate::WidgetFrame::layout_menu`]).
     pub push: bool,
