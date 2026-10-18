@@ -19,7 +19,7 @@ serde = ["dep:serde"]
 
 [dependencies]
 egui.workspace = true
-ve_theme = { path = "../ve_theme", version = "0.30", default-features = false }
+ve_theme = { path = "../ve_theme", version = "0.31", default-features = false }
 egui-wgpu = { workspace = true, optional = true }
 bytemuck = { version = "1.25", features = ["derive"], optional = true }
 serde = { workspace = true, optional = true }
@@ -39,6 +39,6 @@ wgpu = { version = "30", default-features = false, features = [
 [dev-dependencies]
 eframe = { workspace = true, features = ["wgpu"] }
 egui_kittest = { workspace = true, features = ["snapshot", "wgpu"] }
-ve_theme = { path = "../ve_theme", version = "0.30" }
+ve_theme = { path = "../ve_theme", version = "0.31" }
 egui-wgpu.workspace = true
 image = { version = "0.25", default-features = false, features = ["png"] }

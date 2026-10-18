@@ -5,6 +5,8 @@ versions follow [Semantic Versioning](https://semver.org/). Feature IDs refer to
 
 ## [Unreleased]
 
+## [0.31.0] - 2026-10-18
+
 ### Added
 
 - `ve_backdrop` (BACK-4): notices. `Notice`, `Severity`, `notify`, `notices`, `go_to`, `take_go_to`: a widget

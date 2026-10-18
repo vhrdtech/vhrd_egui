@@ -11,9 +11,9 @@ repository.workspace = true
 egui.workspace = true
 serde.workspace = true
 # notices: a red frame out of view sends rings across the backdrop (FRM-16); the CPU side only, no wgpu
-ve_backdrop = { path = "../ve_backdrop", version = "0.30", default-features = false }
-ve_dash = { path = "../ve_dash", version = "0.30", default-features = false }
-ve_theme = { path = "../ve_theme", version = "0.30", default-features = false }
+ve_backdrop = { path = "../ve_backdrop", version = "0.31", default-features = false }
+ve_dash = { path = "../ve_dash", version = "0.31", default-features = false }
+ve_theme = { path = "../ve_theme", version = "0.31", default-features = false }
 
 [dev-dependencies]
 eframe = { workspace = true, features = ["wgpu"] }
@@ -21,5 +21,5 @@ egui_kittest = { workspace = true, features = ["snapshot", "wgpu"] }
 image = { version = "0.25", default-features = false }
 serde_json = "1"
 # the background of the playground example, with the shader
-ve_backdrop = { path = "../ve_backdrop", version = "0.30" }
-ve_theme = { path = "../ve_theme", version = "0.30" }
+ve_backdrop = { path = "../ve_backdrop", version = "0.31" }
+ve_theme = { path = "../ve_theme", version = "0.31" }

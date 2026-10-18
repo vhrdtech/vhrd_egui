@@ -14,11 +14,11 @@ fonts = ["ve_theme/fonts"]
 
 [dependencies]
 egui.workspace = true
-ve_theme = { path = "../ve_theme", version = "0.30", default-features = false }
+ve_theme = { path = "../ve_theme", version = "0.31", default-features = false }
 web-time.workspace = true
 
 [dev-dependencies]
 eframe = { workspace = true, features = ["wgpu"] }
 # the frame the demo and the snapshot put the blocks in; ve_frame depends on ve_dash, a dev-dependency cycle is fine
-ve_frame = { path = "../ve_frame", version = "0.30" }
+ve_frame = { path = "../ve_frame", version = "0.31" }
 egui_kittest = { workspace = true, features = ["snapshot", "wgpu"] }
