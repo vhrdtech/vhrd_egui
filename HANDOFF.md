@@ -1,17 +1,12 @@
-# Handoff: dash-frames (paused at soft stop, 18 Oct 2026)
+# Handoff: dash-frames (18 Oct 2026)
 
-Tasks 1-3 (ve_settle settle-on-demand, push toggle, resize) here; 4-6 in child session dash-forms, 7-8 in child app-menu.
+Tasks 1-3 (settle on demand, push neighbours, resize) done here in both repos; 4-6 in child dash-forms (running), 7-8 in child app-menu (ready).
 
-## Done (WIP commit, vhrd_egui only, tpm_mesh_dash untouched so far)
-- `ve_settle::Settling { Hold (default), Once, Always }`, `World::settling/set_settling/with_settling/settle_once`, `Params::held()` (gravity, snap, attract, grid off). Step swaps in held params when holding; Once -> Hold at rest.
-- `Body::pushes` / `BodyDesc::pushes` (core default true), `World::set_pushes`; `moves_alone()` in pairs_pass/hard_pass: a non-pusher that is lifted/landing/growing takes the whole contact; drag_pass skips non-pushing dragged bodies; non-pushers grow only into measured room (gap kept); landing non-pusher re-homes.
-- ve_frame: `FrameState.push`, `FrameState.grid_height`, `FrameAction::Tidy`, `Applied::Tidy`, `WidgetFrame::layout_menu(true)` (☰: "Push neighbours" checkbox, "Tidy up").
-- ve_settle::frames: Tidy via apply -> `Frames::tidy_up(world)`; body pushes follow `slot.frame.push`; resize handle (`resize_handle`, `RESIZE_GRIP`, `Shown::resized: Vec<Resized>`, `room_from`): width snaps to min/nom/wide, height to height steps or free `grid_height`, double click -> auto.
-- Sandbox: "Settle all the time" (on), "Tidy up", "New widgets push their neighbours" (on); playground `Host.layout`.
-- Tests: all existing ve_settle tests passed after hold+push (tests set `Settling::Always`; tests/dash.rs frames push on). New tests/hold.rs (6 tests, pass).
+## Done
+- vhrd_egui (commits aa80936..6806101): SETL-38 hold by default + settle_once / Tidy; SETL-39 resize handle (`Shown::resized`, `FrameState::grid_height`); SETL-40 `Body::pushes` / `FrameState::push`, non-pushers stop at the edge, refuse a drop with no room (glide back), capped frames scroll (`set_layout_height`); ve_frame window default_size fix. Tests: tests/hold.rs, tests/frames_hold.rs; all workspace tests pass except ve_theme palette_copy (vhrd_brand moved ahead; not ours, also on main).
+- tpm_mesh_dash (f4c19e5, on top of cherry-picked dash-forms wip 2af1cab..6a0430b): APP-120 page holds, ☰ Push neighbours / Tidy up (i18n en+ru), top bar ⇡ tidy chip, seats from Block::forms().hints, resizes saved (FrameSaved push, grid_height), opening window on egui time. Behaviour tests adapted and new ones pass.
 
 ## Next
-1. Tighten: a dropped non-pusher overshoots the edge by ~26 pt (TODO in tests/hold.rs).
-2. Kittest for the resize handle (snap to min/nom/wide, free height) and for push off by default in Frames; run full `cargo test --workspace`, clippy, fmt, `just check-wasm`.
-3. FEATURES.md ids (tpm work claim SETL -> SETL-38/39 used provisionally in code, verify), CHANGELOG [Unreleased] (Breaking: FrameAction/Applied new variants, World holds by default).
-4. tpm_mesh_dash: use Settle; `.layout_menu(true)` via frames::Hooks; page menu "Tidy up"; dash's own gravity/push (layout.rs fall_up, make_room, keep_tops push_under) only on tidy or for frames with push; apply `shown.resized` to dash's frames store; save push/grid_height in FrameSaved; tests; just test/lint; screenshots; review children's work.
+1. When dash-forms is ready: rebase/cherry-pick its final commits, drop the committed *.new.png / *.diff.png, regenerate snapshots (`UPDATE_SNAPSHOTS=1 cargo nextest run`), just test + just lint in both repos.
+2. Review app-menu (ready): /tmp/app-menu-shots/dash_app_menu.png.
+3. Run the dash on this PC, screenshots of panels min/nom/wide + resize, `tpm work say parent`, git rm HANDOFF.md, tpm work ready.
