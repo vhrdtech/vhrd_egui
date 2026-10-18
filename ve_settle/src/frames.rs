@@ -89,8 +89,6 @@ const GLOW_ROOM: f32 = 10.0;
 pub const RESIZE_GRIP: f32 = 14.0;
 /// The least size a resize leaves a frame, points: its header and a little of its body.
 const RESIZE_LEAST: egui::Vec2 = vec2(60.0, 40.0);
-/// A height resized to within this of the frame's own (points) is its own again: as tall as its content.
-const RESIZE_BACK: f32 = 8.0;
 
 /// Where the world lies on the screen.
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -230,13 +228,15 @@ pub struct Shown {
     pub resized: Vec<Resized>,
 }
 
-/// What a resize with the handle in a frame's corner set (SETL-39): the width form it snapped to, the height
-/// step (a frame with heights of its own) or the height it was given (one without), as on its frame state.
+/// What a resize with the handle in a frame's corner set (SETL-39, SETL-42), as on its frame state: a rectangle
+/// the size it was dragged to (`grid_width`, `grid_height`) with both switches on auto; a hexagon the width form
+/// it snapped to.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct Resized {
     pub slot: SlotId,
     pub size: SizeMode,
     pub height: HeightMode,
+    pub grid_width: Option<f32>,
     pub grid_height: Option<f32>,
 }
 
@@ -285,10 +285,10 @@ struct Cell {
     outlined: Option<[f32; 4]>,
     /// How many looks of the size pick in a row found it pressed along its row.
     pressed: u8,
-    /// Where the resize handle has dragged the frame to so far (screen), while it is held (SETL-39).
+    /// Where the resize handle has dragged the frame to so far (screen), while it is held (SETL-39), and how far
+    /// from the frame's corner the pointer took the handle.
     resize: Option<egui::Rect>,
-    /// The frame's height as its content makes it, the last time it was not given one by a resize.
-    own_height: Option<f32>,
+    resize_grab: egui::Vec2,
 }
 
 impl Cell {
@@ -312,7 +312,7 @@ impl Cell {
             outlined: None,
             pressed: 0,
             resize: None,
-            own_height: None,
+            resize_grab: egui::Vec2::ZERO,
         }
     }
 
@@ -1231,7 +1231,10 @@ impl<W> Frames<W> {
         );
         let clip = if fits { rect.expand(GLOW_ROOM) } else { rect };
         child.set_clip_rect(clip.intersect(view.clip));
-        slot.frame.set_auto_pick(Some(cell.pick));
+        // a frame the user gave a size of its own (SETL-42) shows on auto the form that fits that size: its own
+        // pick by its room, not the layout's
+        let sized = !hex && (slot.frame.grid_width.is_some() || slot.frame.grid_height.is_some());
+        slot.frame.set_auto_pick((!sized).then_some(cell.pick));
         // A hexagon is drawn at the size of its body once that is near the size its hints give it (vertex
         // attraction stretches it by up to its range, SETL-20); the size its hints give stays what it wants.
         let stretch = if self.stretch_hexagons {
@@ -1249,7 +1252,7 @@ impl<W> Frames<W> {
         // (SETL-40), instead of being cut off at its neighbour's edge.
         let capped = world
             .body(body_id)
-            .filter(|b| !hex && !b.pushes && !b.lifted && !b.dragged)
+            .filter(|b| !hex && !sized && !b.pushes && !b.lifted && !b.dragged)
             .filter(|b| b.want.y > b.rect.size().y + 0.5)
             .map(|b| b.rect.size().y);
         slot.frame.set_layout_height(capped);
@@ -1262,13 +1265,6 @@ impl<W> Frames<W> {
             .is_some_and(|b| b.pushes != slot.frame.push)
         {
             world.set_pushes(body_id, slot.frame.push);
-        }
-        if slot.frame.grid_height.is_none()
-            && let Some(drawn) = slot.frame.drawn_rect()
-            && !slot.frame.collapsed
-            && slot.frame.openness() >= 1.0
-        {
-            cell.own_height = Some(drawn.height());
         }
         let can_resize = grab
             && !slot.frame.collapsed
@@ -1359,6 +1355,15 @@ impl<W> Frames<W> {
                     }
                 }
             }
+        };
+        // a size of its own (SETL-42): the body is exactly that, whatever its content wants (its body scrolls)
+        let limits = if sized && open {
+            Limits::rigid(vec2(
+                frame.grid_width.unwrap_or(drawn.x),
+                frame.grid_height.unwrap_or(drawn.y),
+            ))
+        } else {
+            limits
         };
         // capped: what it wants is its content's height, which the world gives it once there is room
         let limits = match capped {
@@ -1498,12 +1503,12 @@ impl<W> Frames<W> {
     }
 }
 
-/// The resize handle in the bottom right corner of a frame in the world (SETL-39): dragged, a preview of the
-/// new size follows the pointer (up to the neighbours' edge for a frame that does not push them); let go, the
-/// width snaps to the nearest of the frame's min / nom / wide (a frame without a size switch takes it as its
-/// room), the height to the nearest of its height steps, or, without them, the frame is given that height (back
-/// to its content's own within [`RESIZE_BACK`]). A hexagon keeps its shape: only its width form changes. A
-/// double click gives the frame back to auto, as tall as its content. Returns what it set.
+/// The resize handle in the bottom right corner of a frame in the world (SETL-39, SETL-42): dragged, a preview of
+/// the new size follows the pointer (up to the neighbours' edge for a frame that does not push them); let go, a
+/// rectangle keeps exactly that size (`FrameState::grid_width`, `grid_height`) with both switches on auto, so it
+/// shows the forms that fit it and its body scrolls where its content wants more. A hexagon keeps its shape: its
+/// width snaps to the nearest of its min / nom / wide. A double click gives the frame back to auto and its own
+/// size. Returns what it set.
 fn resize_handle<W>(
     ui: &mut Ui,
     world: &mut World,
@@ -1530,9 +1535,9 @@ fn resize_handle<W>(
             "Drag to resize: the width snaps to the frame's min, nom or wide form; a hexagon keeps its shape. \
              Double click: back to auto."
         } else {
-            "Drag to resize: the width snaps to the frame's min, nom or wide form, the height to its height \
-             steps or to where you let go (the body scrolls when its content wants more). Double click: back \
-             to auto, as tall as its content."
+            "Drag to resize: the frame keeps the size you let go at, and its switches go to auto, so it shows \
+             the forms that fit that size (the body scrolls where its content wants more). Double click: back \
+             to its own size."
         });
     r.widget_info(|| egui::WidgetInfo::labeled(egui::WidgetType::Button, true, "resize"));
     let lit = r.hovered() || r.dragged();
@@ -1554,16 +1559,21 @@ fn resize_handle<W>(
         cell.resize = None;
         slot.frame.size = SizeMode::Auto;
         slot.frame.height = HeightMode::Auto;
+        slot.frame.grid_width = None;
         slot.frame.grid_height = None;
         return Some(resized(id, &slot.frame));
     }
     let body = world.body(body_id)?;
     let pushes = body.pushes;
+    let pointer = r.interact_pointer_pos();
     if r.drag_started() {
         cell.resize = Some(rect);
+        // the corner follows the pointer from where it took the handle
+        let pressed = ui.input(|i| i.pointer.press_origin()).or(pointer);
+        cell.resize_grab = pressed.map_or(egui::Vec2::ZERO, |p| rect.max - p);
     }
-    let pointer = r.interact_pointer_pos();
     if let (true, Some(_), Some(p)) = (r.dragged(), cell.resize, pointer) {
+        let p = p + cell.resize_grab;
         let mut to = egui::Rect::from_min_max(rect.min, p.max(rect.min + RESIZE_LEAST));
         if !pushes {
             // it does not push: it stops at what lies right of it and under it
@@ -1584,69 +1594,54 @@ fn resize_handle<W>(
             egui::Stroke::new(1.5, accent),
             egui::StrokeKind::Inside,
         );
-        if let Some(size) = snap_width(cell, slot, to.width()) {
-            painter.text(
-                to.right_bottom() - vec2(RESIZE_GRIP + 4.0, RESIZE_GRIP),
-                egui::Align2::RIGHT_BOTTOM,
-                size.label(),
-                egui::FontId::proportional(12.0),
-                accent,
-            );
-        }
+        let label = match snap_width(cell, slot, to.width()).filter(|_| hex) {
+            Some(size) => size.label().to_owned(),
+            None => format!("{:.0} × {:.0}", to.width(), to.height()),
+        };
+        painter.text(
+            to.right_bottom() - vec2(RESIZE_GRIP + 4.0, RESIZE_GRIP),
+            egui::Align2::RIGHT_BOTTOM,
+            label,
+            egui::FontId::proportional(12.0),
+            accent,
+        );
     }
     if !r.drag_stopped() {
         return None;
     }
     let to = cell.resize.take()?;
-    match snap_width(cell, slot, to.width()) {
-        Some(size) => {
-            slot.frame.size = match size {
+    let size = if hex {
+        // a hexagon keeps its shape: its width form, at that form's own size
+        if let Some(form) = snap_width(cell, slot, to.width()) {
+            slot.frame.size = match form {
                 Size::Min => SizeMode::Min,
                 Size::Nom => SizeMode::Nom,
                 Size::Wide => SizeMode::Wide,
-            }
+            };
         }
-        // no size switch: the width is the room it lays its content out in
-        None => cell.seat.room = to.width().max(RESIZE_LEAST.x),
-    }
-    if !hex {
-        match cell.seat.hints.filter(SizeHints::has_heights) {
-            Some(hints) => {
-                let size = slot.frame.size.fixed().unwrap_or(cell.pick);
-                let chrome = cell.chrome.map_or(CHROME_GUESS.y, |c| c.y);
-                let steps = [Height::Min, Height::Nom, Height::Tall];
-                let near = |h: &Height| (hints.height(size, *h) + chrome - to.height()).abs();
-                let step = steps
-                    .into_iter()
-                    .min_by(|a, b| near(a).total_cmp(&near(b)))
-                    .unwrap_or(Height::Nom);
-                slot.frame.height = match step {
-                    Height::Min => HeightMode::Min,
-                    Height::Nom => HeightMode::Nom,
-                    Height::Tall => HeightMode::Tall,
-                };
-            }
-            None => {
-                let own = cell.own_height.unwrap_or(rect.height());
-                slot.frame.grid_height = if (to.height() - own).abs() <= RESIZE_BACK {
-                    None
-                } else {
-                    Some(to.height())
-                };
-            }
+        let width = match (cell.seat.hints, slot.frame.size.fixed()) {
+            (Some(_), Some(s)) => cell.outer_of(s, (cell.pick, rect.size())).x,
+            _ => to.width(),
+        };
+        Vec2::new(width, rect.height())
+    } else {
+        // exactly where it was let go; the forms on auto fit it
+        slot.frame.grid_width = Some(to.width());
+        slot.frame.grid_height = Some(to.height());
+        slot.frame.size = SizeMode::Auto;
+        slot.frame.height = HeightMode::Auto;
+        if cell.seat.hints.is_none() {
+            cell.seat.room = to.width().max(RESIZE_LEAST.x);
         }
-    }
-    // the top left corner stays where it is while the body takes the new size
-    let want = Vec2::new(to.width(), to.height());
-    let size = match (cell.seat.hints, slot.frame.size.fixed()) {
-        (Some(_), Some(s)) => cell.outer_of(s, (cell.pick, rect.size())).x,
-        _ => want.x,
+        Vec2::new(to.width(), to.height())
     };
-    let height = slot.frame.grid_height.unwrap_or(rect.height());
-    let size = Vec2::new(size, height);
+    // the top left corner stays where it is while the body takes the new size
     let at = Vec2::new(rect.min.x - view.offset.x, rect.min.y - view.offset.y) + size * 0.5;
+    world.set_limits(body_id, size, size);
     world.put(body_id, at, size);
     cell.anchor = None;
+    // (the switches did not change by a click: no corner to hold)
+    cell.mode = (slot.frame.size, slot.frame.height);
     Some(resized(id, &slot.frame))
 }
 
@@ -1655,6 +1650,7 @@ fn resized(slot: SlotId, frame: &ve_frame::FrameState) -> Resized {
         slot,
         size: frame.size,
         height: frame.height,
+        grid_width: frame.grid_width,
         grid_height: frame.grid_height,
     }
 }

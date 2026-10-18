@@ -1,6 +1,6 @@
 //! Frames in a world that holds (SETL-38, SETL-39, SETL-40): a frame does not push its neighbours unless its ☰ says so,
-//! "Tidy up" settles the world once, and the handle in a frame's corner resizes it: the width snaps to its min /
-//! nom / wide form, the height is free.
+//! "Tidy up" settles the world once, and the handle in a frame's corner resizes it: the frame keeps the size it is
+//! let go at (SETL-42).
 
 use egui::{Pos2, pos2, vec2};
 use egui_kittest::Harness;
@@ -192,61 +192,98 @@ fn tidy_up_from_a_frame_menu_settles_once() {
     }
 }
 
+/// SETL-42 (user, P2605#18oct-1407b: "the handle snaps to other modes and hardly lets anything be resized"): a
+/// frame keeps exactly the size it was let go at, its switches on auto pick the forms that fit it, its body
+/// scrolls where its content wants more, and a neighbour that is not pushed stays.
 #[test]
-fn the_resize_handle_snaps_the_width_and_frees_the_height() {
+fn the_resize_handle_keeps_the_size_it_was_let_go_at() {
+    use ve_frame::Size;
     let mut h = host();
     until_still(&mut h);
-    assert_eq!(h.state().frame(0).size, SizeMode::Auto);
-    // narrower than nom: it snaps to min
+    let o = h.state().offset;
+    let others = |h: &App| [1, 2].map(|i| h.state().rect(i));
+    let before = others(&h);
+    // narrower than its nom form, and 40 taller: that size, the min form shows
     let r = h.state().rect(0);
     let from = grip(&h, 0);
-    let to = pos2(r.min.x + h.state().offset.x + 120.0, from.y);
+    let to = pos2(r.min.x + 130.0, r.max.y + 40.0) + o;
     mouse_drag(&mut h, from, to);
     until_still(&mut h);
-    assert_eq!(h.state().frame(0).size, SizeMode::Min);
+    for _ in 0..300 {
+        h.step();
+    }
+    let f = *h.state().frame(0);
+    assert_eq!((f.size, f.height), (SizeMode::Auto, HeightMode::Auto));
+    let (w, t) = (
+        f.grid_width.expect("a width of its own"),
+        f.grid_height.expect("a height of its own"),
+    );
+    let now = h.state().rect(0);
     assert!(
-        h.state().rect(0).size().x < 160.0,
-        "{:?}",
+        (now.size().x - w).abs() < 0.5 && (now.size().y - t).abs() < 0.5,
+        "the body is the size it was given: {now:?} {w} × {t}"
+    );
+    // (the corner follows the pointer from where it took the handle)
+    let by = to - from;
+    assert!(
+        (w - (r.size().x + by.x)).abs() < 1.0,
+        "no snap to a form's width: {w}"
+    );
+    assert!((t - (r.size().y + by.y)).abs() < 1.0, "{t} for {r:?}");
+    assert_eq!(f.shown_size(), Some(Size::Min), "auto shows what fits");
+    assert!(
+        (now.min - r.min).max_abs() < 0.5,
+        "its top left corner stays: {r:?} {now:?}"
+    );
+    for (i, (a, b)) in before.iter().zip(others(&h)).enumerate() {
+        assert!(moved(*a, b) < 0.5, "panel {} moved: {a:?} {b:?}", i + 1);
+    }
+    // its content wants far more: the size stays, the body scrolls
+    h.state_mut().heights[0] = 400.0;
+    for _ in 0..120 {
+        h.step();
+    }
+    until_still(&mut h);
+    let f = *h.state().frame(0);
+    assert!(
+        moved(now, h.state().rect(0)) < 0.5,
+        "it grew: {:?}",
         h.state().rect(0)
     );
-    // panel 1 pulled far right: it does not push, so it stops at panel 2, and nom is the nearest that fits
-    let (r, r2, o) = (h.state().rect(1), h.state().rect(2), h.state().offset);
+    assert!(f.overflow_scroll().y, "its body scrolls");
+    // a fixed form picked on its switch keeps the size too
+    {
+        let host = h.state_mut();
+        let id = host.slots[0];
+        host.frames.dock.get_mut(id).expect("slot").frame.size = SizeMode::Wide;
+    }
+    for _ in 0..120 {
+        h.step();
+    }
+    until_still(&mut h);
+    assert!(
+        moved(now, h.state().rect(0)) < 0.5,
+        "a fixed form changed the size: {:?}",
+        h.state().rect(0)
+    );
+    // panel 1 pulled far right: it does not push, so it stops at panel 2, which stays
+    let r2 = h.state().rect(2);
     let from = grip(&h, 1);
     mouse_drag(&mut h, from, pos2(r2.max.x, from.y - o.y) + o);
     until_still(&mut h);
-    assert_eq!(h.state().frame(1).size, SizeMode::Nom, "stopped at panel 2");
     assert!(moved(r2, h.state().rect(2)) < 0.5, "panel 2 was pushed");
     assert!(
         h.state().rect(1).max.x <= r2.min.x,
         "{:?} {r2:?}",
         h.state().rect(1)
     );
-    let _ = r;
-    // panel 2 has the room to its right: wide, and taller
-    let r = h.state().rect(2);
-    let from = grip(&h, 2);
-    mouse_drag(&mut h, from, pos2(r.min.x + 420.0, r.max.y + 120.0) + o);
-    until_still(&mut h);
-    let f = h.state().frame(2);
-    assert_eq!(f.size, SizeMode::Wide, "snapped to wide");
-    assert_eq!(f.height, HeightMode::Auto);
-    let tall = f.grid_height.expect("a height of its own");
     assert!(
-        (tall - (r.size().y + 120.0)).abs() < 2.0,
-        "{tall} for {r:?}"
-    );
-    assert!(
-        (h.state().rect(2).size().y - tall).abs() < 1.0,
-        "{:?}",
-        h.state().rect(2)
-    );
-    assert!(
-        h.state().resized.len() >= 3,
+        h.state().resized.len() >= 2,
         "reported: {:?}",
         h.state().resized
     );
-    // a double click gives it back to auto, as tall as its content
-    let at = grip(&h, 2);
+    // a double click gives it back to auto and its own size
+    let at = grip(&h, 1);
     h.hover_at(at);
     h.step();
     for _ in 0..2 {
@@ -256,8 +293,11 @@ fn the_resize_handle_snaps_the_width_and_frees_the_height() {
         h.step();
     }
     until_still(&mut h);
-    let f = h.state().frame(2);
-    assert_eq!((f.size, f.grid_height), (SizeMode::Auto, None));
+    let f = h.state().frame(1);
+    assert_eq!(
+        (f.size, f.grid_width, f.grid_height),
+        (SizeMode::Auto, None, None)
+    );
 }
 
 #[test]

@@ -453,6 +453,13 @@ impl<'a> WidgetFrame<'a> {
         if let Some(h) = held_height {
             avail.y = h;
         }
+        // and the width it was given there: the frame is that wide, whatever its layout's room
+        let held_width = state
+            .grid_width
+            .filter(|w| !floating && w.is_finite() && *w > 0.0 && self.shape == Shape::Rect);
+        if let Some(w) = held_width {
+            avail.x = w;
+        }
         state.switch_at = None;
         state.height_switch_at = None;
         // the fallback scroll stays on where the body overflowed, until it fits again (`note_overflow`)
@@ -472,7 +479,9 @@ impl<'a> WidgetFrame<'a> {
             finite(avail.y - 2.0 * border - HEADER_H - learned.footer_h - 2.0 * PAD),
         );
         let shape = self.shape;
-        let sized = (floating && state.window_size.is_some()) || held_height.is_some();
+        let sized = (floating && state.window_size.is_some())
+            || held_height.is_some()
+            || held_width.is_some();
         self.fill |= sized && shape == Shape::Rect;
         state.resizable = true;
         state.hex = shape == Shape::Hex;

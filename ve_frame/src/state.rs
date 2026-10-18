@@ -90,6 +90,11 @@ pub struct FrameState {
     /// of the frame; `None` (the default): as tall as its content. The body scrolls, or warns, where its
     /// content wants more. A floating frame has its own size in `window_size`.
     pub grid_height: Option<f32>,
+    /// The width the user gave the frame in a grid with its resize handle (FRM-15, ve_settle SETL-42), in points, all of
+    /// the frame; `None` (the default): the width its layout gives it. With [`FrameState::grid_height`] it is
+    /// the size the user dragged the frame to, which it keeps: on auto the switches pick the forms that fit it,
+    /// and the body scrolls where its content wants more.
+    pub grid_width: Option<f32>,
     /// The size shown last frame: auto's memory for its hysteresis. Not saved.
     #[serde(skip)]
     pub(crate) last_size: Option<Size>,

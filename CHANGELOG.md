@@ -5,6 +5,14 @@ versions follow [Semantic Versioning](https://semver.org/). Feature IDs refer to
 
 ## [Unreleased]
 
+### Added
+
+- `ve_frame` (FRM-15): `FrameState::grid_width`, saved: the width the user gave a frame in a grid; with `grid_height` the frame keeps that size. `ve_settle::frames::Resized::grid_width`.
+
+### Changed
+
+- `ve_settle` (SETL-42): the resize handle no longer snaps: a rectangle keeps exactly the size it is let go at (`grid_width`, `grid_height`), both switches go to auto so the forms that fit that size show, and the body scrolls where its content wants more; a fixed form picked afterwards keeps the size. Auto rather than a fixed form with a scroll area, because after a drag the user sees the panel at its best in the size they chose, not one form cut off. A double click gives the frame its own size back; a hexagon still snaps its width form. **Breaking:** `Resized` has a new field `grid_width`.
+
 ### Fixed
 
 - `ve_settle` (SETL-41): a world that holds moves nothing by itself: after a drop or a resize no other body slides, is squeezed or keeps speed (before, contacts did all three, and the panels under a dashboard's full-width strip crept up for seconds). A body nobody moves is a wall to the solver (`Body::still`), `Params::held` squeezes nothing, and a dropped body stays where it was let go, or is put out of what it landed on alone, or goes back.
