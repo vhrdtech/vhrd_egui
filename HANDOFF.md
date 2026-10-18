@@ -10,3 +10,11 @@ Tasks 1-3 (settle on demand, push neighbours, resize) done here in both repos; 4
 1. When dash-forms is ready: rebase/cherry-pick its final commits, drop the committed *.new.png / *.diff.png, regenerate snapshots (`UPDATE_SNAPSHOTS=1 cargo nextest run`), just test + just lint in both repos.
 2. Review app-menu (ready): /tmp/app-menu-shots/dash_app_menu.png.
 3. Run the dash on this PC, screenshots of panels min/nom/wide + resize, `tpm work say parent`, git rm HANDOFF.md, tpm work ready.
+
+## Decisions and gotchas
+- Core `BodyDesc::pushes` defaults to true (physics core); frames/dash default off via `FrameState::push`. Old ve_settle tests use `with_settling(Settling::Always)`; the sandbox defaults to Always + push on (recordings predate the toggle).
+- Dash: growth while the page opens (OPENING_S, egui time) still pushes (feed filling in, not the user); after that non-pushers are capped. The dash draws its own translated ☰ entries (Hook::Push/Tidy) instead of ve_frame's English `layout_menu`.
+- Pushers push only by what their own free room under them does not take (`keep_tops`, `short`).
+- Kittest clicks below the harness window never land: `a_pinned_panel_stays_when_its_neighbour_grows` uses a 1400 pt tall window because dash-forms' framed head panels push the page down to ~y 587.
+- Snapshot failures in tpm_mesh_dash right now come from dash-forms' wip (they committed failing *.new.png); regenerate only after their final commits.
+- ve_theme `palette_copy_matches_the_sibling_export` fails because ../vhrd_brand moved ahead (also on main); not this branch's to fix.
