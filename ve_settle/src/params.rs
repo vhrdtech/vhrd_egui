@@ -182,6 +182,9 @@ impl Params {
     /// a world that holds ([`crate::Settling::Hold`], SETL-38) steps with.
     pub fn held(mut self) -> Self {
         self.gravity_side = None;
+        // nothing is squeezed to make room: a body that does not fit is put
+        // out of what it lies in, or goes back (SETL-41)
+        self.tension = 0.0;
         self.snap_range = 0.0;
         self.attract_range = 0.0;
         self.grid_stiffness = 0.0;

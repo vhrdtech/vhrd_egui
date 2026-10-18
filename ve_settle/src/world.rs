@@ -221,6 +221,12 @@ pub struct Body {
     /// floats over the others; let go or growing where they are, it is the
     /// one that gives way, and stops at their edge.
     pub pushes: bool,
+    /// While the world holds ([`Settling::Hold`], SETL-41): nobody moves it
+    /// this step (it is not held, let go, landing, gliding into a cell or
+    /// pushed by a body that pushes), so to the solver it is a wall, as a
+    /// pinned one: it is not moved, squeezed or given speed by its
+    /// neighbours. Always `false` while the world settles.
+    pub still: bool,
     /// Gravity's pull in the last step, points/s² (debug overlay).
     pub gravity_pull: Vec2,
     /// The home spring's pull in the last step, points/s² (debug overlay).
@@ -326,6 +332,12 @@ pub struct Body {
 }
 
 impl Body {
+    /// Whether the solver treats it as a wall: pinned, or still while the
+    /// world holds (SETL-41).
+    fn fast(&self) -> bool {
+        self.pinned || self.still
+    }
+
     /// The share of its natural size squeezed off, 0..=1, on the axis
     /// squeezed most.
     pub fn tension(&self) -> f32 {
@@ -391,7 +403,7 @@ impl Body {
     /// squeezed: its shape is the user's, and the room between its size and
     /// its minimum is vertex attraction's (SETL-20).
     fn give(&self, axis: Axis) -> f32 {
-        if self.outline.is_some() || self.pinned {
+        if self.outline.is_some() || self.fast() {
             return 0.0;
         }
         (self.rect.size()[axis] - self.min_size[axis]).max(0.0)
@@ -754,6 +766,7 @@ impl World {
             pressed_hi: Vec2::ZERO,
             yielding: false,
             pinned: false,
+            still: false,
             pushes: desc.pushes,
             drag_target: desc.center,
             slid: 0.0,
@@ -1251,15 +1264,73 @@ impl World {
         // Holding, the step runs without the forces that move bodies by
         // themselves (SETL-38); the parameters stay as they were set.
         let live = self.params;
-        if !self.settling.is_settling() {
+        let holding = !self.settling.is_settling();
+        if holding {
             self.params = live.held();
         }
+        self.mark_still(holding);
         self.step_inner();
         self.params = live;
+        if holding {
+            // Holding, nothing coasts: a body let go stays where it was let
+            // go, and what a push moved stays where it was pushed to (SETL-41).
+            for b in &mut self.bodies {
+                if !b.dragged {
+                    b.vel = Vec2::ZERO;
+                    b.coast = Vec2::ZERO;
+                }
+            }
+        }
         if self.at_rest && self.settling == Settling::Once {
             self.settling = Settling::Hold;
         }
         true
+    }
+
+    /// Which bodies are still this step ([`Body::still`], SETL-41): while
+    /// the world holds, every body but those someone moves: held, let go and
+    /// not yet landed or on its way into a cell, a body that pushes and
+    /// grows, and whatever such a body that pushes reaches (one after the
+    /// other: what it pushes pushes on).
+    fn mark_still(&mut self, holding: bool) {
+        if !holding {
+            for b in &mut self.bodies {
+                b.still = false;
+            }
+            return;
+        }
+        let grows = |b: &Body| {
+            let target = b.want.max(b.min_size).min(b.max_size);
+            (target - b.rect.size()).max_abs() > SLOP
+        };
+        let moved = |b: &Body| b.dragged || b.lifted || b.landed < LANDED_STEPS || b.nest.is_some();
+        let mut still: Vec<bool> = self.bodies.iter().map(|b| !moved(b)).collect();
+        // what a body that pushes reaches this step: the gap and a step at
+        // the fastest a body goes
+        let p = &self.params;
+        let reach = p.gap + p.max_speed.max(p.glide_speed) * p.dt.max(1e-4) + SLOP;
+        let mut pushing: Vec<usize> = (0..self.bodies.len())
+            .filter(|&i| {
+                let b = &self.bodies[i];
+                b.pushes && !b.pinned && (moved(b) || grows(b))
+            })
+            .collect();
+        for &i in &pushing {
+            still[i] = false;
+        }
+        while let Some(i) = pushing.pop() {
+            let near = self.bodies[i].rect;
+            for (j, o) in self.bodies.iter().enumerate() {
+                let lap = near.overlap(&o.rect, 2.0 * reach);
+                if still[j] && !o.pinned && lap.x > 0.0 && lap.y > 0.0 {
+                    still[j] = false;
+                    pushing.push(j);
+                }
+            }
+        }
+        for (b, s) in self.bodies.iter_mut().zip(still) {
+            b.still = s;
+        }
     }
 
     fn step_inner(&mut self) {
@@ -1488,7 +1559,7 @@ impl World {
     /// The body that gives way this step ([`Body::yielding`]).
     fn pick_yielder(&mut self) {
         let bulge = |b: &Body| {
-            if b.dragged || b.pinned {
+            if b.dragged || b.fast() {
                 0.0
             } else {
                 b.bulge.x.max(b.bulge.y)
@@ -1603,7 +1674,7 @@ impl World {
         for i in 0..self.bodies.len() {
             let a = &self.bodies[i];
             // The corners of an outline's rectangle are not its vertices.
-            if a.dragged || a.pinned || hold[i] <= 0.0 || a.outline.is_some() {
+            if a.dragged || a.fast() || hold[i] <= 0.0 || a.outline.is_some() {
                 continue;
             }
             let mut winner: Option<(Snap, Vec2, (bool, bool))> = None;
@@ -1796,7 +1867,7 @@ impl World {
             let homed = self.bodies[i].home.is_some() && p.home_stiffness > 0.0;
             let mut lined = [[false; 2]; 2];
             let mut held = [[false; 2]; 2];
-            if on && free[i] && !self.bodies[i].pinned {
+            if on && free[i] && !self.bodies[i].fast() {
                 // Whether nothing on gravity's side holds the body up.
                 let mut hangs = false;
                 if let Some(side) = toward {
@@ -2172,7 +2243,7 @@ impl World {
             }
             for axis in Axis::BOTH {
                 // a pinned body keeps its size as it is
-                if b.pinned {
+                if b.fast() {
                     continue;
                 }
                 // Pressed along this axis there is no room to grow into.
@@ -2341,8 +2412,8 @@ impl World {
                 // (a held body may lie over a pinned one, which stays)
                 // (one gliding into a free cell goes over the others)
                 if a.dragged == b.dragged
-                    || a.pinned
-                    || b.pinned
+                    || a.fast()
+                    || b.fast()
                     || a.nest.is_some()
                     || b.nest.is_some()
                 {
@@ -2479,7 +2550,7 @@ impl World {
         for i in 0..self.bodies.len() {
             for j in i + 1..self.bodies.len() {
                 let (a, b) = pair_mut(&mut self.bodies, i, j);
-                if a.dragged || b.dragged || (a.pinned && b.pinned) {
+                if a.dragged || b.dragged || (a.fast() && b.fast()) {
                     continue;
                 }
                 let Some(hit) = touch(a, b, gap, prefer) else {
@@ -2681,15 +2752,15 @@ impl World {
                 // A pinned body is a wall: the other one takes it all. So is
                 // one that a body which does not push lands on or grows
                 // into (SETL-40).
-                if a.pinned || moves_alone(b, a) {
+                if a.fast() || moves_alone(b, a) {
                     (da, db) = (Vec2::ZERO, db - da);
                     // (put out of it is a place, not speed: it stops at the edge)
-                    if !a.pinned {
+                    if !a.fast() {
                         b.shoved += db;
                     }
-                } else if b.pinned || moves_alone(a, b) {
+                } else if b.fast() || moves_alone(a, b) {
                     (da, db) = (da - db, Vec2::ZERO);
-                    if !b.pinned {
+                    if !b.fast() {
                         a.shoved += da;
                     }
                 }
@@ -2710,7 +2781,7 @@ impl World {
             let d = depth.min(self.band_budget);
             self.band_budget -= d;
             for o in &mut self.bodies {
-                if !o.dragged && !o.yielding && !o.pinned && leading_edge(&o.rect, away) >= front {
+                if !o.dragged && !o.yielding && !o.fast() && leading_edge(&o.rect, away) >= front {
                     o.shift(away * d);
                     // Moved along by the field: a glide, no speed kept.
                     o.slid += d;
@@ -2745,7 +2816,7 @@ impl World {
                 };
                 let b_is_out = (b.rect.center()[axis] - a.rect.center()[axis]) * out >= 0.0;
                 let (inner, outer) = if b_is_out { (&*a, b) } else { (&*b, a) };
-                if outer.pinned {
+                if outer.fast() {
                     continue;
                 }
                 // as far as their rectangles lie in each other that way
@@ -2781,7 +2852,7 @@ impl World {
             for i in 0..self.bodies.len() {
                 for j in i + 1..self.bodies.len() {
                     let (a, b) = pair_mut(&mut self.bodies, i, j);
-                    if a.dragged || b.dragged || (a.pinned && b.pinned) {
+                    if a.dragged || b.dragged || (a.fast() && b.fast()) {
                         continue;
                     }
                     let (depth, out) = core_depth(a, b);
@@ -2798,9 +2869,9 @@ impl World {
                         (true, 0) => out.clamp_length(glide),
                         (true, _) => continue,
                     };
-                    if a.pinned || moves_alone(b, a) {
+                    if a.fast() || moves_alone(b, a) {
                         b.shift(out);
-                    } else if b.pinned || moves_alone(a, b) {
+                    } else if b.fast() || moves_alone(a, b) {
                         a.shift(-out);
                     } else {
                         a.shift(-out * 0.5);
@@ -3187,7 +3258,7 @@ fn integrate(b: &mut Body, p: &Params, dt: f32, cool: f32) -> f32 {
         b.slide_pull = Vec2::ZERO;
         return 0.0;
     }
-    if b.pinned {
+    if b.fast() {
         b.vel = Vec2::ZERO;
         b.coast = Vec2::ZERO;
         b.gravity_pull = Vec2::ZERO;

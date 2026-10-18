@@ -5,6 +5,10 @@ versions follow [Semantic Versioning](https://semver.org/). Feature IDs refer to
 
 ## [Unreleased]
 
+### Fixed
+
+- `ve_settle` (SETL-41): a world that holds moves nothing by itself: after a drop or a resize no other body slides, is squeezed or keeps speed (before, contacts did all three, and the panels under a dashboard's full-width strip crept up for seconds). A body nobody moves is a wall to the solver (`Body::still`), `Params::held` squeezes nothing, and a dropped body stays where it was let go, or is put out of what it landed on alone, or goes back.
+
 ## [0.31.0] - 2026-10-18
 
 ### Added
