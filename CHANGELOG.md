@@ -5,6 +5,8 @@ versions follow [Semantic Versioning](https://semver.org/). Feature IDs refer to
 
 ## [Unreleased]
 
+## [0.32.0] - 2026-10-18
+
 ### Added
 
 - `ve_settle` (SETL-43): tidy up toward a side: `World::settle_once_toward(Side)` packs every body that way at once (`World::pack_toward`) and settles once with gravity that way (against the farthest edge where that side has no wall), then holds again; `frames::side_of`. Sandbox: "Tidy up" offers the four ways.
