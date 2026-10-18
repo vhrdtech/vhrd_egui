@@ -576,6 +576,15 @@ switch (P2605#8oct-1205). ve_settle (SETL-5, SETL-7) later reads the same shapes
   `vertical_auto_follows_the_room_height_without_flipping`, `a_hexagon_picks_its_height_too`,
   `pinned_tall_and_min_heights_hold`, `the_pair_of_switches_cycles_independently`,
   `without_heights_the_height_switch_is_disabled_and_says_why`, snapshots `switch_pair_dark` / `_light`.
+- ✅ **FRM-16 Red frames out of view notify** (P2605#18oct-0755, user, 18 Oct 2026): a frame in a grid whose LED
+  is `Status::Crit` (or `Warn`, shown when the backdrop's `notify_warn` is on) while it is out of view (the
+  `in_view` test of FRM landing: its middle or half of it in the `Ui`'s clip) raises a `ve_backdrop::Notice`
+  each frame until it was seen: scrolled into view or its ring or arrow clicked, which scrolls to it (also
+  through outer scroll areas, `forward_scroll`). Seen once it stays quiet until it turns good and red again, or a
+  seen warning turns red. Frames in view when they turn red, floating frames and a layout's invisible measuring
+  passes raise nothing. `ve_frame/src/notice.rs` (unit tests of the seen logic), one call in `show_area`;
+  kittest `tests/notice.rs` (red out of view noticed with an arrow, red in view not, the arrow scrolls there and
+  it goes quiet, scrolled into view and away again stays quiet).
 - ✅ **FRM-14 One row of header icons** (user, 15 Oct 2026 16:13 and 16:14): the header's icons are one family
   (`ve_dash::ICON` 13 pt box, `ICON_STROKE` 1.2 pt, `icon_ink` muted / lit, `icon_center` pixel-snapped): the ⓘ
   is painted geometry (`paint_info`: circle, round dot, stem with rounded ends; `info_icon` keeps its API and
@@ -1466,6 +1475,27 @@ The app background as its own piece (tpm P2605#8oct-2316). Playground:
     (ranges: 1 and 2 pixels per point). Tessellation stays under 1 ms, so the marks are not batched into one
     `Mesh`. The larger cost is *build*, sampling the field once per mark (`field.rs`), 1.5 ms at 1920 x 1200;
     in wasm expect a few times that. Not measured in a browser yet.
+
+- ✅ **BACK-4 Notice ripples** (P2605#18oct-0755, user, 18 Oct 2026): a widget that needs a look while it is out of
+  view (`Notice`: id, rect, `Severity` `Crit` or `Warn`, title) sends rings across the backdrop from its centre,
+  so the curve of a ring shows which way to scroll; they reuse the click ripples' field math, now per ring
+  (`Ring`: width, light, grow, push and colour, mirrored in `backdrop.wgsl` with `MAX_RINGS` 8 = 4 click + 4
+  notice rings, `MAX_NOTICE_RINGS`). Red for critical (`Colors::crit`), amber for warnings when
+  `Settings::notify_warn` (off by default). A ring starts where it first reaches the view (not at the widget) and
+  ends past the view's farthest corner; a new one every `Settings::notify_interval` (6 s) until the widget was
+  seen, then the live ones fade within 0.4 s. A round arrow on the view's edge points at the widget (tooltip:
+  title, severity, what a click does); a click on it or on a ring (on the bare backdrop, not on a frame) asks the
+  widget's owner to show it (`go_to`, `take_go_to`). Announced per frame with `notify` (read back with
+  `notices`), picked up by `Backdrop` by itself, so an app needs no code; `ve_frame` raises one for every frame
+  with a red LED (FRM-16). Settings in `Settings` (serde): `notify` (off: nothing), `notify_speed`,
+  `notify_interval`, `notify_width`, `notify_light`, `notify_warn`, a *Notices* section in the form;
+  `reduced_motion` leaves the arrows only; `still()` keeps them (rings repaint only while one is alive, and
+  between rings the backdrop asks for one repaint when the next is due). Both renderers, wasm too (`ctx` time,
+  no OS clock). Not on the phone layout of the dash, which builds no backdrop there. `ve_backdrop/src/notice.rs`
+  (unit tests: ring start, crossing and repeat, fade when seen, settings, click on the crest, arrow place, the
+  per-pass store), `field.rs` test `a_notice_ring_tints_marks_in_its_colour` (colour and curvature),
+  `tests/notice.rs` (kittest: the red ring in both renderers, shader and painter agree, off draws nothing,
+  reduced motion arrow only, click on arrow and ring, snapshot `backdrop_notice_ring`).
 
 ## Extracted from apps (`EXT`)
 

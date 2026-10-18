@@ -533,6 +533,7 @@ impl<'a> WidgetFrame<'a> {
         let full = whole.filter(|_| state.folding).map(Vec2::from);
         let edge = self.edge;
         let (land_mode, title) = (self.land_mode, self.title.clone());
+        let status = self.led.as_ref().map(|(status, _)| *status);
         let draw = |ui: &mut Ui, state: &mut FrameState| {
             ui.push_id(("ve_frame", salt), |ui| match shape {
                 Shape::Rect => {
@@ -580,6 +581,12 @@ impl<'a> WidgetFrame<'a> {
         } else {
             let frame = (r.response.rect, salt, title.as_str());
             await_view(ui, &theme, state, frame, land_mode);
+            // red while out of view: rings on the backdrop until seen (FRM-16); not for a layout's measuring
+            if ui.is_visible() {
+                let rect = r.response.rect;
+                let seen = (rect, in_view(rect, ui.clip_rect()));
+                crate::notice::watch(ui, ui.id().with(salt), seen, status, &title);
+            }
         }
         landing_glow(ui, &theme, state, r.response.rect, shape);
         state.drawn = Some(r.response.rect);
@@ -1632,7 +1639,7 @@ fn await_view(
         .request_repaint_after(std::time::Duration::from_secs(1));
 }
 
-fn forward_id() -> Id {
+pub(crate) fn forward_id() -> Id {
     Id::new("ve_frame::forward_scroll")
 }
 

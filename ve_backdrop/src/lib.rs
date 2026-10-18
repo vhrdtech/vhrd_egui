@@ -63,6 +63,16 @@
 //! Widgets deep in the tree can announce their frame without a reference to the [`Backdrop`]:
 //! [`light`] collects, [`take_lit`] hands the frame's collection to the app.
 //!
+//! # Notices
+//!
+//! A widget that needs a look while it is scrolled out of view ([`Notice`]: a `ve_frame` frame with a red
+//! LED raises one by itself) sends rings across the backdrop from where it is, coloured by its [`Severity`],
+//! a new one every [`Settings::notify_interval`] until it was seen; the curve of a ring shows which way to
+//! scroll. An arrow on the edge of the view points at it. A click on either asks the widget's owner to
+//! scroll there ([`take_go_to`]). The backdrop picks the notices up by itself ([`notify`] announces one);
+//! with [`Settings::reduced_motion`] only the arrows show, [`Settings::notify`] turns both off. It asks for
+//! repaints only while a ring is alive.
+//!
 //! A host that repaints only on data and input (a web dashboard) uses [`Settings::still`]: nothing moves on
 //! its own, so the backdrop never asks for a repaint; [`Backdrop::paint`] says whether it did.
 //!
@@ -76,6 +86,7 @@ mod field;
 mod glass;
 #[cfg(feature = "wgpu")]
 mod gpu;
+mod notice;
 // Unix sockets and a listener thread, native only (no `unix` on wasm32).
 #[cfg(all(feature = "glass", unix))]
 #[allow(clippy::disallowed_methods)]
@@ -91,12 +102,13 @@ mod wallpaper;
 use egui::layers::ShapeIdx;
 use egui::{Context, Id, LayerId, Painter, Pos2, Rect, Shape};
 
-pub use field::{Colors, MAX_LIT, MAX_RIPPLES};
+pub use field::{Colors, MAX_LIT, MAX_NOTICE_RINGS, MAX_RIPPLES};
 pub use glass::GlassStatus;
 #[cfg(feature = "wgpu")]
 pub use gpu::ShaderTarget;
 #[cfg(all(feature = "glass", unix))]
 pub use hyprland::Hyprland;
+pub use notice::{Notice, Severity, go_to, notices, notify, take_go_to};
 pub use position::{Placement, PositionProvider};
 pub use settings::{Mark, Settings};
 
@@ -249,6 +261,7 @@ pub struct Backdrop {
     last_time: Option<f64>,
     ripples: Vec<Ripple>,
     fades: Vec<Fade>,
+    notices: notice::Runner,
     glass: glass::Glass,
     repaint_after: Option<f32>,
 }
@@ -273,6 +286,7 @@ impl Backdrop {
             last_time: None,
             ripples: Vec::new(),
             fades: Vec::new(),
+            notices: notice::Runner::default(),
             glass: glass::Glass::default(),
             repaint_after: None,
         }
@@ -333,7 +347,8 @@ impl Backdrop {
     ///
     /// Returns whether it asked egui for a repaint (something moves); [`Backdrop::repaint_after`] says when.
     pub fn paint(&mut self, painter: &Painter, rect: Rect, lit: &[Lit]) -> bool {
-        let shape = self.shape(painter.ctx(), rect, lit);
+        let view = rect.intersect(painter.clip_rect());
+        let shape = self.shape_in(painter.ctx(), rect, view, lit);
         painter.with_clip_rect(rect).add(shape);
         self.repaint_after.is_some()
     }
@@ -356,21 +371,30 @@ impl Backdrop {
     /// Paint the backdrop into a [`Slot`] reserved earlier this frame on the same painter. Returns whether it
     /// asked for a repaint, as [`Backdrop::paint`].
     pub fn fill(&mut self, painter: &Painter, slot: Slot, rect: Rect, lit: &[Lit]) -> bool {
-        let shape = self.shape(painter.ctx(), rect, lit);
+        let view = rect.intersect(painter.clip_rect());
+        let shape = self.shape_in(painter.ctx(), rect, view, lit);
         painter.set(slot.0, shape);
         self.repaint_after.is_some()
     }
 
     /// The repaint the last frame asked egui for, in seconds from then: `None` when nothing moves, so a host
     /// that repaints on data only stays idle. While the drift runs it is `1 / Settings::fps`, while a
-    /// ripple or a fade runs a 60th of a second; [`Settings::still`] asks for none.
+    /// ripple, a notice ring or a fade runs a 60th of a second, while a notice waits for its next ring the
+    /// time until then; [`Settings::still`] asks for none (unless a notice is shown).
     pub fn repaint_after(&self) -> Option<f32> {
         self.repaint_after
     }
 
     /// Advance the animation to now and return this frame's backdrop as a shape covering `rect` (the
-    /// caller clips it). Call once per frame: [`Backdrop::paint`] and [`Backdrop::fill`] do.
+    /// caller clips it). Call once per frame: [`Backdrop::paint`] and [`Backdrop::fill`] do. Notice arrows
+    /// sit on the edge of `rect`.
     pub fn shape(&mut self, ctx: &Context, rect: Rect, lit: &[Lit]) -> Shape {
+        self.shape_in(ctx, rect, rect, lit)
+    }
+
+    /// [`Backdrop::shape`] for a `rect` of which only `view` shows (the painter's clip): notice rings
+    /// cross `view`, their arrows sit on its edge.
+    fn shape_in(&mut self, ctx: &Context, rect: Rect, view: Rect, lit: &[Lit]) -> Shape {
         if !rect.is_positive() || !rect.is_finite() {
             self.repaint_after = None;
             return Shape::Noop;
@@ -386,7 +410,11 @@ impl Backdrop {
         } else {
             settings.background_opacity
         };
-        let scene = self.advance(ctx, rect, lit, bg_alpha);
+        let scene = self.advance(ctx, (rect, view), lit, bg_alpha);
+        let notices = notices(ctx);
+        if let Some(id) = notice::arrows(ctx, view, &notices, &settings, &scene.colors) {
+            go_to(ctx, id);
+        }
         let grid = self.grid(&scene);
         match wallpaper {
             Some(wallpaper) => Shape::Vec(vec![wallpaper, grid]),
@@ -432,18 +460,26 @@ impl Backdrop {
         self.glass.set_position_provider(provider);
     }
 
-    /// Step the clock, ripples and fades, ask for the next repaint and describe the frame.
-    fn advance(&mut self, ctx: &Context, rect: Rect, lit: &[Lit], bg_alpha: f32) -> Scene {
+    /// Step the clock, ripples, notice rings and fades, ask for the next repaint and describe the frame.
+    /// `view` is the part of `rect` that shows.
+    fn advance(
+        &mut self,
+        ctx: &Context,
+        (rect, view): (Rect, Rect),
+        lit: &[Lit],
+        bg_alpha: f32,
+    ) -> Scene {
         let settings = self.settings.sanitized();
         let moving = !settings.reduced_motion;
+        let colors = self
+            .colors
+            .unwrap_or_else(|| Colors::from_tokens(&ve_theme::Tokens::of(ctx, ctx.theme())));
 
-        let (now, pointer, pressed) = ctx.input(|i| {
-            let pressed = i
-                .pointer
-                .any_pressed()
-                .then(|| i.pointer.interact_pos())
-                .flatten();
-            (i.time, i.pointer.hover_pos(), pressed)
+        let (now, pointer, pressed, clicked) = ctx.input(|i| {
+            let at = i.pointer.interact_pos();
+            let pressed = i.pointer.any_pressed().then_some(at).flatten();
+            let clicked = i.pointer.primary_clicked().then_some(at).flatten();
+            (i.time, i.pointer.hover_pos(), pressed, clicked)
         });
         let dt = self
             .last_time
@@ -473,17 +509,33 @@ impl Backdrop {
             rings.extend(self.ripples.iter().map(|r| {
                 let age = (clock - r.born) as f32;
                 let left = 1.0 - age / settings.ripple_life;
-                Ring {
-                    origin: r.origin,
-                    radius: age * settings.ripple_speed,
-                    fade: left * left,
-                }
+                Ring::click(
+                    &settings,
+                    &colors,
+                    r.origin,
+                    age * settings.ripple_speed,
+                    left * left,
+                )
             }));
             pointer_in_reach =
                 pointer.filter(|p| rect.expand(settings.lens_radius * 2.5).contains(*p));
         } else {
             self.ripples.clear();
         }
+
+        // A click on a notice ring, on the bare backdrop (not on a frame): show its widget.
+        if let Some(at) = clicked
+            && view.contains(at)
+            && !lit.iter().any(|l| l.rect.contains(at))
+            && let Some(id) = self.notices.ring_at(at)
+        {
+            go_to(ctx, id);
+        }
+        let notices = notices(ctx);
+        let step = self
+            .notices
+            .step(self.clock, &notices, view, &settings, &colors, moving);
+        rings.extend(step.rings);
 
         let fade = moving && settings.glow_fade > 0.0;
         // An exponential approach that is 95 % there after `glow_fade`.
@@ -517,14 +569,16 @@ impl Backdrop {
             } else if drifting {
                 self.repaint_after = Some(1.0 / settings.fps);
             }
+            if let Some(wait) = step.wait {
+                // the next notice ring, at the latest
+                let wait = wait.max(SMOOTH_DT);
+                self.repaint_after = Some(self.repaint_after.map_or(wait, |r| r.min(wait)));
+            }
         }
         if let Some(secs) = self.repaint_after {
             ctx.request_repaint_after_secs(secs);
         }
 
-        let colors = self
-            .colors
-            .unwrap_or_else(|| Colors::from_tokens(&ve_theme::Tokens::of(ctx, ctx.theme())));
         Scene {
             rect,
             settings,
@@ -602,7 +656,7 @@ mod tests {
         };
         let mut scene = None;
         let mut output = ctx.run_ui(input, |ui| {
-            scene = Some(backdrop.advance(ui.ctx(), rect(), lit, 1.0));
+            scene = Some(backdrop.advance(ui.ctx(), (rect(), rect()), lit, 1.0));
         });
         output.textures_delta.clear();
         scene.expect("the frame ran")

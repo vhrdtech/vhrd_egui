@@ -12,6 +12,11 @@ use crate::settings::Settings;
 pub const MAX_LIT: usize = 32;
 /// At most this many click ripples are alive at once; a new one replaces the oldest.
 pub const MAX_RIPPLES: usize = 4;
+/// At most this many notice rings ([`crate::Notice`]) are alive at once; a new one replaces the oldest.
+pub const MAX_NOTICE_RINGS: usize = 4;
+/// Every ring the renderer takes: click ripples and notice rings (the shader's array size).
+#[cfg_attr(not(feature = "wgpu"), allow(dead_code))]
+pub const MAX_RINGS: usize = MAX_RIPPLES + MAX_NOTICE_RINGS;
 
 /// The peak of `q * exp(-q²)` (at `q = 1/√2`), so `lens_push` is the largest displacement.
 const PUSH_PEAK: f32 = 0.428_881_94;
@@ -25,13 +30,17 @@ pub struct Colors {
     pub mark: Color32,
     /// Marks lit by a frame.
     pub glow: Color32,
-    /// Marks lit by the pointer lens or a ripple.
+    /// Marks lit by the pointer lens or a click ripple.
     pub pointer: Color32,
+    /// Rings and arrows of a warning notice.
+    pub warn: Color32,
+    /// Rings and arrows of a critical notice.
+    pub crit: Color32,
 }
 
 impl Colors {
     /// The colours for a token set: marks in `line_strong` on `bg` (low contrast in both themes), frames
-    /// gather `accent` light, the pointer `text_muted`.
+    /// gather `accent` light, the pointer `text_muted`; notices in `warn` and `crit`.
     pub fn from_tokens(tokens: &ve_theme::Tokens) -> Self {
         let c = &tokens.colors;
         Self {
@@ -39,6 +48,8 @@ impl Colors {
             mark: c.line_strong,
             glow: c.accent,
             pointer: c.text_muted,
+            warn: c.warn,
+            crit: c.crit,
         }
     }
 }
@@ -51,7 +62,7 @@ pub struct LitRect {
     pub strength: f32,
 }
 
-/// A click ripple at one moment.
+/// A ring at one moment: a click ripple or a notice ring.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct Ring {
     pub origin: Pos2,
@@ -59,6 +70,38 @@ pub struct Ring {
     pub radius: f32,
     /// 1 when new, 0 when gone.
     pub fade: f32,
+    /// Width of the ring.
+    pub width: f32,
+    /// Opacity it adds to marks on it.
+    pub light: f32,
+    /// How much marks on it grow.
+    pub grow: f32,
+    /// How far it pushes marks outward.
+    pub push: f32,
+    /// The colour of its light.
+    pub color: Color32,
+}
+
+impl Ring {
+    /// A click ripple: the look from the settings, the pointer's colour.
+    pub fn click(s: &Settings, colors: &Colors, origin: Pos2, radius: f32, fade: f32) -> Self {
+        Self {
+            origin,
+            radius,
+            fade,
+            width: s.ripple_width,
+            light: s.ripple_light,
+            grow: s.ripple_grow,
+            push: s.ripple_push,
+            color: colors.pointer,
+        }
+    }
+
+    /// How strongly the ring touches a mark `dist` from its origin: 1 on its crest, towards 0 away from it.
+    pub fn touch(&self, dist: f32) -> f32 {
+        let q = (dist - self.radius) / self.width.max(1e-3);
+        (-q * q).exp() * self.fade
+    }
 }
 
 /// Everything one frame of the backdrop depends on.
@@ -139,6 +182,8 @@ impl Scene {
         let mut grow = 0.0;
         let mut offset = Vec2::ZERO;
         let mut pointer_light = 0.0;
+        let mut ring_light = 0.0;
+        let mut ring_rgba = [0.0; 4];
 
         if let Some(p) = self.pointer {
             let d = (c - p) / s.lens_radius;
@@ -151,12 +196,16 @@ impl Scene {
         for ring in &self.rings {
             let d = c - ring.origin;
             let dist = d.length();
-            let q = (dist - ring.radius) / s.ripple_width;
-            let g = (-q * q).exp() * ring.fade;
-            pointer_light += s.ripple_light * g;
-            grow += s.ripple_grow * g;
+            let g = ring.touch(dist);
+            let light = ring.light * g;
+            ring_light += light;
+            let rgba = rgba(ring.color);
+            for (sum, c) in ring_rgba.iter_mut().zip(rgba) {
+                *sum += c * light;
+            }
+            grow += ring.grow * g;
             if dist > 1e-3 {
-                offset += d / dist * (g * s.ripple_push);
+                offset += d / dist * (g * ring.push);
             }
         }
 
@@ -172,14 +221,16 @@ impl Scene {
             offset *= max_offset / len.max(1e-6);
         }
 
-        let total = base + pointer_light + glow_light;
+        let total = base + pointer_light + glow_light + ring_light;
         let (m, p, g) = (
             rgba(self.colors.mark),
             rgba(self.colors.pointer),
             rgba(self.colors.glow),
         );
-        let mix =
-            |i: usize| (m[i] * base + p[i] * pointer_light + g[i] * glow_light) / total.max(1e-6);
+        let mix = |i: usize| {
+            (m[i] * base + p[i] * pointer_light + g[i] * glow_light + ring_rgba[i])
+                / total.max(1e-6)
+        };
         Sample {
             center: c + offset,
             half,
@@ -281,13 +332,46 @@ mod tests {
     fn a_ring_lights_marks_at_its_radius() {
         let mut scene = test_scene();
         scene.settings.ambient = 0.0;
-        scene.rings = vec![Ring {
-            origin: pos2(200.0, 150.0),
-            radius: 80.0,
-            fade: 1.0,
-        }];
+        scene.rings = vec![Ring::click(
+            &scene.settings,
+            &scene.colors,
+            pos2(200.0, 150.0),
+            80.0,
+            1.0,
+        )];
         let on = scene.sample(pos2(280.0, 150.0)).rgba[3];
         let inside = scene.sample(pos2(200.0, 150.0)).rgba[3];
         assert!(on > inside + 0.3);
+    }
+
+    #[test]
+    fn a_notice_ring_tints_marks_in_its_colour() {
+        let mut scene = test_scene();
+        scene.settings.ambient = 0.0;
+        let red = Color32::from_rgb(230, 40, 40);
+        // Centred far below the view: only its arc crosses it, curved toward the origin.
+        let origin = pos2(200.0, 900.0);
+        scene.rings = vec![Ring {
+            color: red,
+            light: 0.9,
+            ..Ring::click(&scene.settings, &scene.colors, origin, 700.0, 1.0)
+        }];
+        // On the crest straight above the origin the mark is mostly red.
+        let on = scene.sample(pos2(200.0, 200.0));
+        assert!(on.rgba[0] > on.rgba[2] + 0.3, "{:?}", on.rgba);
+        // The arc bends toward the origin: at the sides the crest lies lower than in the middle.
+        let crest_x = |x: f32| {
+            (0..300)
+                .map(|y| (y as f32, scene.sample(pos2(x, y as f32)).rgba[3]))
+                .max_by(|a, b| a.1.total_cmp(&b.1))
+                .map(|(y, _)| y)
+                .unwrap_or_default()
+        };
+        assert!(crest_x(0.0) > crest_x(200.0) + 10.0);
+        // A faded ring leaves the marks as they were.
+        scene.rings[0].fade = 0.0;
+        let rest = scene.sample(pos2(200.0, 200.0));
+        scene.rings.clear();
+        assert_eq!(rest, scene.sample(pos2(200.0, 200.0)));
     }
 }

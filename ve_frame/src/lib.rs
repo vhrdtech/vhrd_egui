@@ -53,6 +53,7 @@ mod frame;
 mod ghost;
 pub mod hex;
 mod menu;
+mod notice;
 mod remote;
 mod size;
 mod state;

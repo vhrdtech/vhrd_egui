@@ -5,7 +5,7 @@ use std::sync::Arc;
 use egui::{Rect, Shape};
 use egui_wgpu::wgpu;
 
-use crate::field::{MAX_LIT, MAX_RIPPLES, Scene, rgba};
+use crate::field::{MAX_LIT, MAX_RINGS, Scene, rgba};
 use crate::settings::Mark;
 
 /// The peak of `q * exp(-q²)`, see `field.rs`.
@@ -50,7 +50,9 @@ struct Globals {
     pointer_color: [f32; 4],
     lit_rect: [[f32; 4]; MAX_LIT],
     lit_par: [[f32; 4]; MAX_LIT],
-    rings: [[f32; 4]; MAX_RIPPLES],
+    rings: [[f32; 4]; MAX_RINGS],
+    ring_par: [[f32; 4]; MAX_RINGS],
+    ring_color: [[f32; 4]; MAX_RINGS],
 }
 
 fn rect4(r: Rect) -> [f32; 4] {
@@ -87,33 +89,32 @@ impl Globals {
                 s.lens_light,
                 scene.bg_alpha,
             ],
-            ripple: [
-                s.ripple_light,
-                s.ripple_push,
-                s.ripple_width,
-                scene.rings.len().min(MAX_RIPPLES) as f32,
-            ],
+            ripple: [0.0, 0.0, 0.0, scene.rings.len().min(MAX_RINGS) as f32],
             glow: [
                 s.glow_radius,
                 s.glow_light,
                 s.glow_grow,
                 scene.lit.len().min(MAX_LIT) as f32,
             ],
-            frame: [flag(linear_framebuffer), s.ripple_grow, 0.0, 0.0],
+            frame: [flag(linear_framebuffer), 0.0, 0.0, 0.0],
             bg_color: rgba(scene.colors.bg),
             mark_color: rgba(scene.colors.mark),
             glow_color: rgba(scene.colors.glow),
             pointer_color: rgba(scene.colors.pointer),
             lit_rect: [[0.0; 4]; MAX_LIT],
             lit_par: [[0.0; 4]; MAX_LIT],
-            rings: [[0.0; 4]; MAX_RIPPLES],
+            rings: [[0.0; 4]; MAX_RINGS],
+            ring_par: [[0.0; 4]; MAX_RINGS],
+            ring_color: [[0.0; 4]; MAX_RINGS],
         };
         for (i, lit) in scene.lit.iter().take(MAX_LIT).enumerate() {
             g.lit_rect[i] = rect4(lit.rect);
             g.lit_par[i] = [lit.corner_radius, lit.strength, 0.0, 0.0];
         }
-        for (i, ring) in scene.rings.iter().take(MAX_RIPPLES).enumerate() {
-            g.rings[i] = [ring.origin.x, ring.origin.y, ring.radius, ring.fade];
+        for (i, ring) in scene.rings.iter().take(MAX_RINGS).enumerate() {
+            g.rings[i] = [ring.origin.x, ring.origin.y, ring.radius, ring.width];
+            g.ring_par[i] = [ring.fade, ring.light, ring.grow, ring.push];
+            g.ring_color[i] = rgba(ring.color);
         }
         g
     }

@@ -5,6 +5,22 @@ versions follow [Semantic Versioning](https://semver.org/). Feature IDs refer to
 
 ## [Unreleased]
 
+### Added
+
+- `ve_backdrop` (BACK-4): notices. `Notice`, `Severity`, `notify`, `notices`, `go_to`, `take_go_to`: a widget
+  that needs a look while out of view sends red (critical) or amber (warning, opt-in) rings across the backdrop
+  from where it is, repeating until it was seen, with an arrow on the view's edge; a click on either asks to
+  scroll there. Settings `notify`, `notify_speed`, `notify_interval`, `notify_width`, `notify_light`,
+  `notify_warn` and a *Notices* section in the form; reduced motion shows the arrows only. `MAX_NOTICE_RINGS`.
+- `ve_frame` (FRM-16): a frame whose LED is red while it is out of view raises a backdrop notice until it was
+  seen; a click on its ring or arrow scrolls to it. Every app with a `ve_backdrop` gets it without code.
+
+### Changed
+
+- **Breaking:** `ve_backdrop::Colors` has two more fields, `warn` and `crit` (`Colors::from_tokens` fills them
+  from the theme's `warn` and `crit`) (BACK-4).
+- `ve_frame` depends on `ve_backdrop` (no default features: no wgpu, no glass) (FRM-16).
+
 ## [0.30.0] - 2026-10-18
 
 ### Added

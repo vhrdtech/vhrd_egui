@@ -53,7 +53,8 @@ pub struct Settings {
     /// Memory the wallpaper decoder may use, in bytes: a safety cap alongside [`Settings::glass_max_side`].
     pub glass_max_alloc: u64,
 
-    /// Freeze the backdrop: no drift, no pointer lens, no ripples, no fades; frames still gather light.
+    /// Freeze the backdrop: no drift, no pointer lens, no ripples, no fades; frames still gather light, and
+    /// notices show as edge arrows only (no rings).
     pub reduced_motion: bool,
     /// How much the slow drift wave changes the opacity of the marks (0 = none, 1 = down to nothing).
     pub ambient: f32,
@@ -85,6 +86,20 @@ pub struct Settings {
     pub ripple_width: f32,
     /// How long a ripple lasts.
     pub ripple_life: f32,
+
+    /// Notices ([`crate::Notice`]): a widget that needs a look while it is out of view sends rings across the
+    /// backdrop from where it is, and an arrow on the view's edge points at it. Off: neither.
+    pub notify: bool,
+    /// Speed of a notice ring, points per second.
+    pub notify_speed: f32,
+    /// A new notice ring every this many seconds, until the widget was seen.
+    pub notify_interval: f32,
+    /// Width of a notice ring.
+    pub notify_width: f32,
+    /// How much a notice ring brightens marks (in the severity's colour).
+    pub notify_light: f32,
+    /// Warnings send rings too (amber), not only critical states (red).
+    pub notify_warn: bool,
 
     /// How far outside a frame its light reaches.
     pub glow_radius: f32,
@@ -129,6 +144,12 @@ impl Default for Settings {
             ripple_speed: 260.0,
             ripple_width: 28.0,
             ripple_life: 1.4,
+            notify: true,
+            notify_speed: 450.0,
+            notify_interval: 6.0,
+            notify_width: 46.0,
+            notify_light: 0.85,
+            notify_warn: false,
             glow_radius: 48.0,
             glow_light: 0.6,
             glow_grow: 0.6,
@@ -151,7 +172,8 @@ impl Settings {
     /// The defaults without anything that moves on its own: no drift, no click ripples, no fades (a frame's
     /// light jumps). Light comes from the frames and the pointer lens only, so the backdrop never asks for
     /// a repaint by itself: for a host that repaints on data and input only (a web dashboard, a phone).
-    /// Unlike [`Settings::reduced`] the lens still follows the pointer.
+    /// Unlike [`Settings::reduced`] the lens still follows the pointer. Notices still send their rings
+    /// ([`Settings::notify`]): they are rare and ask for repaints only while a ring is alive.
     ///
     /// ```
     /// let s = ve_backdrop::Settings::still();
@@ -206,6 +228,10 @@ impl Settings {
         fix(&mut self.ripple_speed, 1.0..=5000.0, d.ripple_speed);
         fix(&mut self.ripple_width, 1.0..=1000.0, d.ripple_width);
         fix(&mut self.ripple_life, 0.05..=30.0, d.ripple_life);
+        fix(&mut self.notify_speed, 20.0..=10_000.0, d.notify_speed);
+        fix(&mut self.notify_interval, 0.5..=600.0, d.notify_interval);
+        fix(&mut self.notify_width, 2.0..=1000.0, d.notify_width);
+        fix(&mut self.notify_light, 0.0..=1.0, d.notify_light);
         fix(&mut self.glow_radius, 1.0..=2000.0, d.glow_radius);
         fix(&mut self.glow_light, 0.0..=1.0, d.glow_light);
         fix(&mut self.glow_grow, -1.0..=10.0, d.glow_grow);
@@ -427,6 +453,60 @@ impl Settings {
         })
         .response
         .on_disabled_hover_text("off: reduced motion is on");
+
+        ui.section_header(
+            "Notices",
+            "rings from a widget that needs a look while it is out of view, and an arrow toward it",
+        );
+        ui.checkbox(&mut self.notify, "Notices").on_hover_text(
+            "a widget that turns red while scrolled out of view sends rings across the backdrop from where \
+             it is (their curve shows the way) and an arrow on the edge of the view points at it; a click on \
+             either scrolls there. Repeats until the widget was seen",
+        );
+        ui.add_enabled_ui(self.notify, |ui| {
+            ui.checkbox(&mut self.notify_warn, "Warnings too")
+                .on_hover_text(
+                    "amber rings for warnings as well; off: only critical states (red) send rings",
+                );
+            ui.add_enabled_ui(!self.reduced_motion, |ui| {
+                slider(
+                    ui,
+                    &mut self.notify_speed,
+                    100.0..=3000.0,
+                    "Ring speed",
+                    " pt/s",
+                    "how fast a notice ring crosses the view, in points per second",
+                );
+                slider(
+                    ui,
+                    &mut self.notify_interval,
+                    1.0..=60.0,
+                    "Repeat",
+                    " s",
+                    "a new ring every this many seconds until the widget was seen",
+                );
+                slider(
+                    ui,
+                    &mut self.notify_width,
+                    8.0..=200.0,
+                    "Ring width",
+                    " pt",
+                    "width of a notice ring, in points",
+                );
+                slider(
+                    ui,
+                    &mut self.notify_light,
+                    0.0..=1.0,
+                    "Ring light",
+                    "",
+                    "opacity a notice ring adds to marks, in the colour of the severity",
+                );
+            })
+            .response
+            .on_disabled_hover_text("edge arrows only: reduced motion is on");
+        })
+        .response
+        .on_disabled_hover_text("off: notices are turned off");
 
         ui.section_header("Frames", "light gathering under widget frames");
         slider(

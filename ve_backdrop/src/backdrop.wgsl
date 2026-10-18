@@ -2,7 +2,7 @@
 // `Scene::sample` in field.rs, keep the two in step) and how much of the pixel it covers.
 
 const MAX_LIT: i32 = 32;
-const MAX_RINGS: i32 = 4;
+const MAX_RINGS: i32 = 8;
 
 struct Globals {
     // min.xy, max.xy of the covered area, in points
@@ -15,11 +15,11 @@ struct Globals {
     pointer: vec4<f32>,
     // push (peak-normalized), grow, light, background opacity
     lens: vec4<f32>,
-    // light, push, width, ring count
+    // unused, unused, unused, ring count
     ripple: vec4<f32>,
     // reach, light, grow, lit count
     glow: vec4<f32>,
-    // linear (sRGB-aware) framebuffer (0 / 1), ripple grow, unused
+    // linear (sRGB-aware) framebuffer (0 / 1), unused
     frame: vec4<f32>,
     // straight gamma-space colours
     bg_color: vec4<f32>,
@@ -30,8 +30,12 @@ struct Globals {
     lit_rect: array<vec4<f32>, 32>,
     // corner radius, strength per lit frame
     lit_par: array<vec4<f32>, 32>,
-    // origin.xy, radius, fade per ring
-    rings: array<vec4<f32>, 4>,
+    // origin.xy, radius, width per ring
+    rings: array<vec4<f32>, 8>,
+    // fade, light, grow, push per ring
+    ring_par: array<vec4<f32>, 8>,
+    // straight gamma-space colour per ring
+    ring_color: array<vec4<f32>, 8>,
 };
 
 @group(0) @binding(0) var<uniform> g: Globals;
@@ -80,6 +84,8 @@ fn fs_main(@builtin(position) frag: vec4<f32>) -> @location(0) vec4<f32> {
     var grow = 0.0;
     var offset = vec2<f32>(0.0);
     var pointer_light = 0.0;
+    var ring_light = 0.0;
+    var ring_rgba = vec4<f32>(0.0);
 
     if g.pointer.z > 0.5 {
         let d = (c - g.pointer.xy) / g.pointer.w;
@@ -92,14 +98,17 @@ fn fs_main(@builtin(position) frag: vec4<f32>) -> @location(0) vec4<f32> {
     let rings = min(i32(g.ripple.w), MAX_RINGS);
     for (var i = 0; i < rings; i++) {
         let ring = g.rings[i];
+        let par = g.ring_par[i];
         let d = c - ring.xy;
         let dist = length(d);
-        let q = (dist - ring.z) / g.ripple.z;
-        let r = exp(-q * q) * ring.w;
-        pointer_light += g.ripple.x * r;
-        grow += g.frame.y * r;
+        let q = (dist - ring.z) / max(ring.w, 0.001);
+        let r = exp(-q * q) * par.x;
+        let light = par.y * r;
+        ring_light += light;
+        ring_rgba += g.ring_color[i] * light;
+        grow += par.z * r;
         if dist > 0.001 {
-            offset += d / dist * (r * g.ripple.y);
+            offset += d / dist * (r * par.w);
         }
     }
 
@@ -114,9 +123,9 @@ fn fs_main(@builtin(position) frag: vec4<f32>) -> @location(0) vec4<f32> {
         offset *= max_offset / max(len, 0.000001);
     }
 
-    let total = base + pointer_light + glow_light;
-    let color = (g.mark_color * base + g.pointer_color * pointer_light + g.glow_color * glow_light)
-        / max(total, 0.000001);
+    let total = base + pointer_light + glow_light + ring_light;
+    let color = (g.mark_color * base + g.pointer_color * pointer_light + g.glow_color * glow_light
+        + ring_rgba) / max(total, 0.000001);
     let alpha = clamp(total, 0.0, 1.0) * color.a;
 
     let center = c + offset;
