@@ -61,7 +61,7 @@ use std::collections::HashMap;
 use egui::{Align, Id, Layout, Sense, Ui, UiBuilder, pos2, vec2};
 use ve_frame::{
     AUTO_HYSTERESIS, Applied, Dock, FrameAction, Height, HeightMode, Shape, Size, SizeHints,
-    SizeMode, Slot, SlotId, ViewportSlot,
+    SizeMode, Slot, SlotId, Toward, ViewportSlot,
 };
 
 use crate::{BodyDesc, BodyId, Poly, Rect, Vec2, World};
@@ -527,8 +527,9 @@ pub struct Frames<W> {
     view: Option<View>,
     /// The picks as they are were decided for the scene as a whole ([`Frames::hold_picks`]).
     hold: bool,
-    /// A frame's ☰ menu asked to tidy up ([`FrameAction::Tidy`]): the world settles once with the next show.
-    tidy: bool,
+    /// A frame's ☰ menu asked to tidy up that way ([`FrameAction::Tidy`]): the world settles once with the next
+    /// show.
+    tidy: Option<Toward>,
     /// The last pointer used was a touch ([`Hands::MouseOnly`]).
     touch: bool,
     /// The epoch in which the size pick looked at every frame on auto in a world at rest and found nothing
@@ -562,7 +563,7 @@ impl<W> Frames<W> {
             group: Vec::new(),
             view: None,
             hold: false,
-            tidy: false,
+            tidy: None,
             touch: false,
             picks_done: None,
         }
@@ -905,17 +906,19 @@ impl<W> Frames<W> {
         self.epoch += 1;
         let applied = self.dock.apply(id, action);
         // tidying up is the world's: it settles once with the next show (SETL-38)
-        self.tidy |= applied == Applied::Tidy;
+        if let Applied::Tidy(toward) = applied {
+            self.tidy = Some(toward);
+        }
         applied
     }
 
-    /// Tidy the layout up now (SETL-38): the world settles once ([`World::settle_once`]), and the size pick
-    /// looks at every frame again. What a page's own "Tidy up" calls; a frame's ☰ "Tidy up" comes through
-    /// [`Frames::apply`].
-    pub fn tidy_up(&mut self, world: &mut World) {
-        self.tidy = false;
+    /// Tidy the layout up now toward a side (SETL-38, SETL-43): the world settles once that way
+    /// ([`World::settle_once_toward`]), and the size pick looks at every frame again. What a page's own "Tidy up"
+    /// calls; a frame's ☰ "Tidy up" comes through [`Frames::apply`].
+    pub fn tidy_up(&mut self, world: &mut World, toward: Toward) {
+        self.tidy = None;
         self.epoch += 1;
-        world.settle_once();
+        world.settle_once_toward(side_of(toward));
     }
 
     /// The frames of this window as they were drawn last, those in the layout and the floating ones.
@@ -1014,8 +1017,8 @@ impl<W> Frames<W> {
     ) -> Shown {
         self.view = Some(view);
         self.sync(world);
-        if self.tidy {
-            self.tidy_up(world);
+        if let Some(toward) = self.tidy {
+            self.tidy_up(world, toward);
         }
         if self.bounds != Some(world.bounds()) {
             self.bounds = Some(world.bounds());
@@ -1652,6 +1655,16 @@ fn resized(slot: SlotId, frame: &ve_frame::FrameState) -> Resized {
         height: frame.height,
         grid_width: frame.grid_width,
         grid_height: frame.grid_height,
+    }
+}
+
+/// The side of the world a tidy up packs toward.
+pub fn side_of(toward: Toward) -> crate::Side {
+    match toward {
+        Toward::Up => crate::Side::Top,
+        Toward::Left => crate::Side::Left,
+        Toward::Down => crate::Side::Bottom,
+        Toward::Right => crate::Side::Right,
     }
 }
 

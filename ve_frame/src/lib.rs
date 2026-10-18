@@ -66,14 +66,14 @@ pub use frame::{
 };
 pub use ghost::ghost_slot;
 pub use hex::{HexFace, SideItem, Wing};
-pub use menu::{Moves, NO_REMOTE};
+pub use menu::{Moves, NO_REMOTE, tidy_ui};
 pub use remote::{Machine, Parcel, Remote};
 pub use size::{
     AUTO_HYSTERESIS, Height, HeightMode, Size, SizeHints, SizeMode, auto_height, auto_size,
 };
 pub use state::{
     AWAY_SECS, FOLD_SECS, FrameAction, FrameState, GLOW_SECS, LandMode, PLUCK_SECS, Placement,
-    ViewportSlot, ViewportTarget,
+    Toward, ViewportSlot, ViewportTarget,
 };
 
 /// The status an LED shows, from `ve_dash`.

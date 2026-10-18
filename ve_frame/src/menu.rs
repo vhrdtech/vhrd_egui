@@ -45,21 +45,44 @@ impl Moves {
 }
 
 /// The entries of a frame in a physics layout ([`crate::WidgetFrame::layout_menu`]): "Push neighbours" flips
-/// `push`, "Tidy up" is picked.
+/// `push`, "Tidy up" is a submenu of the four ways (FRM-18).
 pub(crate) fn layout_ui(ui: &mut Ui, push: &mut bool) -> Option<FrameAction> {
     ui.checkbox(push, "Push neighbours").on_hover_text(
         "On: dragged onto other widgets, dropped there or growing, this one pushes them out of its way. \
          Off: it stops at their edge and nothing else moves",
     );
-    let tidy = ui.button("Tidy up").on_hover_text(
-        "Settle the layout once: every widget slides up against what lies above it, corners snap \
-         together, then everything stays put again",
-    );
-    if tidy.clicked() {
-        ui.close();
-        return Some(FrameAction::Tidy);
+    let mut picked = None;
+    ui.menu_button("Tidy up", |ui| {
+        picked = tidy_ui(ui);
+    })
+    .response
+    .on_hover_text("Settle the layout once toward a side, then everything stays put again");
+    picked.map(FrameAction::Tidy)
+}
+
+/// The four ways to tidy a physics layout up (FRM-18), each an arrow and its word with a tooltip; returns the
+/// one picked and closes the menu. For a host's own "Tidy up" menus (a chip, the page's background).
+pub fn tidy_ui(ui: &mut Ui) -> Option<crate::Toward> {
+    let mut picked = None;
+    for toward in crate::Toward::ALL {
+        let word = toward.label();
+        let r = ui
+            .button(format!("{} {word}", toward.arrow()))
+            .on_hover_text(format!(
+                "Settle the layout once toward the {}: every widget slides {word} against what lies before \
+                 it, then everything stays put again",
+                match toward {
+                    crate::Toward::Up => "top",
+                    crate::Toward::Down => "bottom",
+                    _ => word,
+                }
+            ));
+        if r.clicked() {
+            picked = Some(toward);
+            ui.close();
+        }
     }
-    None
+    picked
 }
 
 /// The menu's entries; returns what was picked.

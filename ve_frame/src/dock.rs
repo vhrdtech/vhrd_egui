@@ -32,8 +32,9 @@ pub enum Applied {
     Close,
     /// No widget with that id.
     Gone,
-    /// The user wants the layout tidied up ([`FrameAction::Tidy`]): a host with a physics layout settles it.
-    Tidy,
+    /// The user wants the layout tidied up that way ([`FrameAction::Tidy`]): a host with a physics layout
+    /// settles it.
+    Tidy(crate::Toward),
 }
 
 /// Owns widgets of type `W` with their [`FrameState`] and moves them: into an egui `Window` and back, to
@@ -179,7 +180,7 @@ impl<W> Dock<W> {
             }
             FrameAction::SendToMachine(machine) => return Applied::Send(machine),
             FrameAction::Close => return Applied::Close,
-            FrameAction::Tidy => return Applied::Tidy,
+            FrameAction::Tidy(toward) => return Applied::Tidy(toward),
         }
         slot.frame.land();
         Applied::Moved

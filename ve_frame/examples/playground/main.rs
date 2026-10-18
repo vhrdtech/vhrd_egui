@@ -980,7 +980,7 @@ impl Playground {
         let title = title.unwrap_or_default();
         self.message = match self.dock.apply(id, action.clone()) {
             Applied::Moved => format!("{title}: {action:?}"),
-            Applied::Gone | Applied::Tidy => return,
+            Applied::Gone | Applied::Tidy(_) => return,
             Applied::Close => {
                 self.dock.remove(id);
                 format!("{title}: closed")

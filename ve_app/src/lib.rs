@@ -327,7 +327,7 @@ impl Shell {
     /// Carry out what a widget's menu picked.
     fn apply(&mut self, id: SlotId, action: FrameAction) {
         match self.state.widgets.apply(id, action) {
-            Applied::Moved | Applied::Gone | Applied::Tidy => {}
+            Applied::Moved | Applied::Gone | Applied::Tidy(_) => {}
             Applied::Close => {
                 let closeable = self.state.widgets.get(id).map(|s| s.widget.is_closeable());
                 if closeable == Some(true) {

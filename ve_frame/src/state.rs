@@ -429,7 +429,48 @@ pub enum FrameAction {
     SendToMachine(String),
     /// Close the widget.
     Close,
-    /// Tidy the layout up: a physics layout settles once (ve_settle SETL-38). From the ☰ menu's "Tidy up"
-    /// ([`crate::WidgetFrame::layout_menu`]).
-    Tidy,
+    /// Tidy the layout up toward a side: a physics layout settles once that way (ve_settle SETL-38, SETL-43).
+    /// From the ☰ menu's "Tidy up" ([`crate::WidgetFrame::layout_menu`]).
+    Tidy(Toward),
+}
+
+/// Which way a physics layout's "Tidy up" packs the widgets (FRM-18, ve_settle SETL-43): every widget slides
+/// that way against what lies before it, then everything stays put again.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash, Serialize, Deserialize)]
+pub enum Toward {
+    #[default]
+    Up,
+    Left,
+    Down,
+    Right,
+}
+
+impl Toward {
+    /// The four, in the order a menu lists them.
+    pub const ALL: [Self; 4] = [Self::Up, Self::Left, Self::Down, Self::Right];
+
+    /// Its word: `up`, `left`, `down`, `right`.
+    pub fn label(self) -> &'static str {
+        match self {
+            Self::Up => "up",
+            Self::Left => "left",
+            Self::Down => "down",
+            Self::Right => "right",
+        }
+    }
+
+    /// The one with this word; `None` for anything else.
+    pub fn from_label(word: &str) -> Option<Self> {
+        Self::ALL.into_iter().find(|t| t.label() == word)
+    }
+
+    /// An arrow that way, for a menu entry or a chip.
+    pub fn arrow(self) -> &'static str {
+        match self {
+            Self::Up => "⇡",
+            Self::Left => "⇠",
+            Self::Down => "⇣",
+            Self::Right => "⇢",
+        }
+    }
 }

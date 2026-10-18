@@ -178,7 +178,9 @@ fn tidy_up_from_a_frame_menu_settles_once() {
     let mut h = host();
     until_still(&mut h);
     let id = h.state().slots[2];
-    h.state_mut().frames.apply(id, FrameAction::Tidy);
+    h.state_mut()
+        .frames
+        .apply(id, FrameAction::Tidy(ve_frame::Toward::Up));
     h.step();
     until_still(&mut h);
     assert_eq!(h.state().world.settling(), Settling::Hold, "holds again");

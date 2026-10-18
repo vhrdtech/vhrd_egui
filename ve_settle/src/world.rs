@@ -516,6 +516,9 @@ pub struct World {
     steps: u64,
     last_move: f32,
     settling: Settling,
+    /// A tidy up toward a side ([`World::settle_once_toward`], SETL-43): gravity that way while it settles, and
+    /// where that side has no wall, the edge that stands in for one.
+    tidy: Option<(Side, Option<f32>)>,
 }
 
 /// Whether gravity and the pulls that line bodies up act (SETL-38).
@@ -567,6 +570,7 @@ impl World {
             steps: 0,
             last_move: 0.0,
             settling: Settling::Hold,
+            tidy: None,
         }
     }
 
@@ -594,11 +598,138 @@ impl World {
     /// rests, then it holds again (SETL-38). A world that settles all the
     /// time ([`Settling::Always`]) is only woken.
     pub fn settle_once(&mut self) {
+        self.tidy = None;
         if self.settling == Settling::Always {
             self.wake();
         } else {
             self.set_settling(Settling::Once);
             self.wake();
+        }
+    }
+
+    /// Tidy up toward `side` (SETL-43): as [`World::settle_once`], with gravity pulling to `side` whatever
+    /// [`Params::gravity_side`] says, until the world rests; then it holds again. Where that side has no wall
+    /// (a page open at the bottom), the bodies' farthest edge that way stands in for one while it settles, so
+    /// they pack against it instead of falling away. A world that settles all the time is only woken.
+    pub fn settle_once_toward(&mut self, side: Side) {
+        if self.settling == Settling::Always {
+            self.wake();
+            return;
+        }
+        // at once as far as each goes: a long way at a glide would cool to rest half way
+        self.pack_toward(side);
+        let gap = self.params.gap;
+        let axis = side.axis();
+        let edge = if side.is_low() {
+            self.bodies
+                .iter()
+                .map(|b| b.rect.min[axis] - gap)
+                .reduce(f32::min)
+        } else {
+            self.bodies
+                .iter()
+                .map(|b| b.rect.max[axis] + gap)
+                .reduce(f32::max)
+        };
+        let wall = edge.filter(|_| !self.params.walls.has(side));
+        self.settle_once();
+        self.tidy = Some((side, wall));
+    }
+
+    /// Every body as far toward `side` as it goes, at once (SETL-43): from the one nearest that side on, each
+    /// slides that way until it is the gap from the wall there or from a body before it across its width (or
+    /// height) as that one now lies. Where that side has no wall, the body farthest that way stays and the others
+    /// pack against it. Pinned bodies stay and stop the others; nothing moves away from `side`. Not while a body
+    /// is held, lifted or gliding into a cell: that is under way. Sizes, wants and limits are kept.
+    pub fn pack_toward(&mut self, side: Side) {
+        if self
+            .bodies
+            .iter()
+            .any(|b| b.dragged || b.lifted || b.nest.is_some())
+        {
+            return;
+        }
+        let (axis, low, gap) = (side.axis(), side.is_low(), self.params.gap);
+        let cross = axis.other();
+        // how far a rectangle lies from `side`: smaller is nearer
+        let lead = |r: &Rect| if low { r.min[axis] } else { -r.max[axis] };
+        let wall = if self.params.walls.has(side) {
+            if low {
+                self.bounds.min[axis] + gap
+            } else {
+                self.bounds.max[axis] - gap
+            }
+        } else if low {
+            self.bodies
+                .iter()
+                .map(|b| b.rect.min[axis])
+                .fold(f32::INFINITY, f32::min)
+        } else {
+            self.bodies
+                .iter()
+                .map(|b| b.rect.max[axis])
+                .fold(f32::NEG_INFINITY, f32::max)
+        };
+        if !wall.is_finite() {
+            return;
+        }
+        let mut order: Vec<(BodyId, Rect, bool)> = self
+            .bodies
+            .iter()
+            .map(|b| (b.id, b.rect, b.pinned))
+            .collect();
+        order.sort_by(|a, b| lead(&a.1).total_cmp(&lead(&b.1)));
+        // (where each was, where it is now)
+        let mut done: Vec<(Rect, Rect)> = Vec::new();
+        for (id, r, pinned) in order {
+            let across =
+                |o: &Rect| o.max[cross] > r.min[cross] + 0.5 && o.min[cross] < r.max[cross] - 0.5;
+            let before = |old: &Rect| {
+                if low {
+                    old.max[axis] <= r.min[axis] + 0.5
+                } else {
+                    old.min[axis] >= r.max[axis] - 0.5
+                }
+            };
+            let stops = done
+                .iter()
+                .filter(|(old, now)| before(old) && across(now))
+                .map(|(_, now)| {
+                    if low {
+                        now.max[axis] + gap
+                    } else {
+                        now.min[axis] - gap
+                    }
+                });
+            let to = if low {
+                stops.fold(wall, f32::max)
+            } else {
+                stops.fold(wall, f32::min)
+            };
+            let by = if low {
+                to - r.min[axis]
+            } else {
+                to - r.max[axis]
+            };
+            // only toward the side, never away from it
+            let toward = if low { by < -0.5 } else { by > 0.5 };
+            if pinned || !toward {
+                done.push((r, r));
+                continue;
+            }
+            let mut d = Vec2::ZERO;
+            d[axis] = by;
+            self.change(id, |b| {
+                b.rect = b.rect.translate(d);
+                b.prev = b.rect;
+                b.drag_target += d;
+                b.vel = Vec2::ZERO;
+                if let Some(home) = &mut b.home {
+                    *home += d;
+                }
+                true
+            });
+            done.push((r, r.translate(d)));
         }
     }
 
@@ -1263,14 +1394,26 @@ impl World {
         }
         // Holding, the step runs without the forces that move bodies by
         // themselves (SETL-38); the parameters stay as they were set.
-        let live = self.params;
+        let (live, bounds) = (self.params, self.bounds);
         let holding = !self.settling.is_settling();
         if holding {
             self.params = live.held();
+        } else if let Some((side, wall)) = self.tidy.filter(|_| self.settling == Settling::Once) {
+            // a tidy up toward a side: gravity that way, against a stand-in wall where there is none
+            self.params.gravity_side = Some(side);
+            if let Some(at) = wall {
+                self.params.walls.set(side, true);
+                if side.is_low() {
+                    self.bounds.min[side.axis()] = at;
+                } else {
+                    self.bounds.max[side.axis()] = at;
+                }
+            }
         }
         self.mark_still(holding);
         self.step_inner();
         self.params = live;
+        self.bounds = bounds;
         if holding {
             // Holding, nothing coasts: a body let go stays where it was let
             // go, and what a push moved stays where it was pushed to (SETL-41).
@@ -1283,6 +1426,7 @@ impl World {
         }
         if self.at_rest && self.settling == Settling::Once {
             self.settling = Settling::Hold;
+            self.tidy = None;
         }
         true
     }

@@ -536,7 +536,7 @@ impl Sandbox {
         self.message = match self.frames.apply(id, action.clone()) {
             Applied::Moved => format!("{title}: {action:?}"),
             Applied::Gone => return,
-            Applied::Tidy => format!("{title}: tidy up"),
+            Applied::Tidy(toward) => format!("{title}: tidy up, {}", toward.label()),
             Applied::Close => {
                 self.frames.remove(&mut self.world, id);
                 format!("{title}: closed")
@@ -807,12 +807,15 @@ impl Sandbox {
                 let settling = self.settling();
                 self.world.set_settling(settling);
             }
-            let r = ui
-                .add_enabled(!self.settle_always, Button::new("Tidy up"))
-                .on_hover_text("Settle once: gravity and the pulls act until everything rests, then the widgets stay put again.")
-                .on_disabled_hover_text("Not needed: the world settles all the time (\"Settle all the time\" is on).");
-            if r.clicked() {
-                self.frames.tidy_up(&mut self.world);
+            let mut picked = None;
+            ui.add_enabled_ui(!self.settle_always, |ui| {
+                ui.menu_button("Tidy up", |ui| picked = ve_frame::tidy_ui(ui))
+                    .response
+                    .on_hover_text("Settle once toward a side: gravity that way and the pulls act until everything rests, then the widgets stay put again.")
+                    .on_disabled_hover_text("Not needed: the world settles all the time (\"Settle all the time\" is on).");
+            });
+            if let Some(toward) = picked {
+                self.frames.tidy_up(&mut self.world, toward);
             }
         });
         ui.checkbox(&mut self.push_default, "New widgets push their neighbours")

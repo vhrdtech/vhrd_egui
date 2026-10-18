@@ -211,3 +211,94 @@ fn a_body_that_does_not_push_and_finds_no_room_goes_back() {
         rect(&w, mover)
     );
 }
+
+/// How far body `id` could still slide toward `side` before it meets another body (across from it) or the wall
+/// there, less the gap; `None` where nothing stops it that way.
+fn slack(w: &World, id: BodyId, side: ve_settle::Side, wall: Option<f32>) -> Option<f32> {
+    let gap = w.params().gap;
+    let r = rect(w, id);
+    let axis_x = matches!(side, ve_settle::Side::Left | ve_settle::Side::Right);
+    let lo = side == ve_settle::Side::Left || side == ve_settle::Side::Top;
+    let across = |o: &Rect| {
+        if axis_x {
+            o.max.y > r.min.y + 0.5 && o.min.y < r.max.y - 0.5
+        } else {
+            o.max.x > r.min.x + 0.5 && o.min.x < r.max.x - 0.5
+        }
+    };
+    let (near, far) = if axis_x {
+        (r.min.x, r.max.x)
+    } else {
+        (r.min.y, r.max.y)
+    };
+    let gaps = w
+        .bodies()
+        .iter()
+        .filter(|b| b.id != id && across(&b.rect))
+        .filter_map(|b| {
+            let (omin, omax) = if axis_x {
+                (b.rect.min.x, b.rect.max.x)
+            } else {
+                (b.rect.min.y, b.rect.max.y)
+            };
+            if lo && omax <= near + 0.5 {
+                Some(near - omax - gap)
+            } else if !lo && omin >= far - 0.5 {
+                Some(omin - far - gap)
+            } else {
+                None
+            }
+        });
+    let wall = wall.map(|at| if lo { near - at - gap } else { at - far - gap });
+    gaps.chain(wall).reduce(f32::min)
+}
+
+/// P2605#18oct-1409 (SETL-43): a tidy up toward each side packs every body that way (against the wall, or
+/// against what lies before it), then the world holds again and nothing moves; the dash's world is open at the
+/// bottom, so down packs against the lowest body's edge.
+#[test]
+fn a_tidy_up_toward_each_side_packs_that_way_and_holds() {
+    use ve_settle::Side;
+    for side in [Side::Top, Side::Left, Side::Bottom, Side::Right] {
+        let mut w = world();
+        let ids = scattered(&mut w);
+        w.settle(2_000);
+        let bounds = w.bounds();
+        let lowest = ids.iter().map(|&id| rect(&w, id).max.y).fold(0.0, f32::max);
+        w.settle_once_toward(side);
+        assert_eq!(w.settling(), Settling::Once);
+        assert!(
+            w.settle(20_000).is_some(),
+            "{side:?}: the tidy up comes to rest"
+        );
+        assert_eq!(w.settling(), Settling::Hold, "{side:?}: and holds again");
+        assert!(w.max_overlap() < 0.5, "{side:?}: {}", w.max_overlap());
+        let wall = match side {
+            Side::Top => Some(bounds.min.y),
+            Side::Left => Some(bounds.min.x),
+            Side::Right => Some(bounds.max.x),
+            // the page is open at the bottom: the lowest body's edge stands in for a wall
+            Side::Bottom => Some(lowest + w.params().gap),
+        };
+        for &id in &ids {
+            let s = slack(&w, id, side, wall).expect("something stops it");
+            assert!(
+                s < 1.0,
+                "{side:?}: {:?} could still go {s} that way",
+                rect(&w, id)
+            );
+        }
+        // it holds: nothing moves afterwards
+        let tidy: Vec<Rect> = ids.iter().map(|&id| rect(&w, id)).collect();
+        for n in 0..1_200 {
+            if n % 200 == 0 {
+                w.wake();
+            }
+            w.step();
+        }
+        for (i, &id) in ids.iter().enumerate() {
+            let m = moved(tidy[i], rect(&w, id));
+            assert!(m < 0.01, "{side:?}: body {i} moved {m} after the tidy up");
+        }
+    }
+}

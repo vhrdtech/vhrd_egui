@@ -7,11 +7,14 @@ versions follow [Semantic Versioning](https://semver.org/). Feature IDs refer to
 
 ### Added
 
+- `ve_settle` (SETL-43): tidy up toward a side: `World::settle_once_toward(Side)` packs every body that way at once (`World::pack_toward`) and settles once with gravity that way (against the farthest edge where that side has no wall), then holds again; `frames::side_of`. Sandbox: "Tidy up" offers the four ways.
+- `ve_frame` (FRM-18): `Toward` (up, left, down, right) and `tidy_ui`, the four ways as menu entries; the ☰ menu's "Tidy up" is a submenu of them.
 - `ve_frame` (FRM-17): a right click on the width or the height switch opens a list of its modes (auto, min, nom, wide / tall) to jump straight to one; a left click still cycles, and the tooltip says both.
 - `ve_frame` (FRM-15): `FrameState::grid_width`, saved: the width the user gave a frame in a grid; with `grid_height` the frame keeps that size. `ve_settle::frames::Resized::grid_width`.
 
 ### Changed
 
+- **Breaking:** `ve_frame::FrameAction::Tidy` and `Applied::Tidy` carry the way (`Tidy(Toward)`), and `ve_settle::frames::Frames::tidy_up` takes it: matches need `Tidy(_)`, callers pass a `Toward` (`Toward::Up` for the old behaviour). (FRM-18, SETL-43)
 - `ve_settle` (SETL-42): the resize handle no longer snaps: a rectangle keeps exactly the size it is let go at (`grid_width`, `grid_height`), both switches go to auto so the forms that fit that size show, and the body scrolls where its content wants more; a fixed form picked afterwards keeps the size. Auto rather than a fixed form with a scroll area, because after a drag the user sees the panel at its best in the size they chose, not one form cut off. A double click gives the frame its own size back; a hexagon still snaps its width form. **Breaking:** `Resized` has a new field `grid_width`.
 
 ### Fixed
