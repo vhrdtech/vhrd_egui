@@ -1,4 +1,4 @@
-//! The shell's own windows: About, Settings, Debug (WID-8).
+//! The shell's own windows: Settings, Debug (WID-8); the about is the app menu (BAS-4).
 
 use egui::{Ui, Window};
 use egui_tiles::Behavior as _;
@@ -19,11 +19,6 @@ pub(crate) fn show(
     cx: &Context,
 ) {
     let open = &mut state.windows;
-    Window::new("About")
-        .open(&mut open.about)
-        .collapsible(false)
-        .resizable(false)
-        .show(ctx, |ui| about(ui, options));
     Window::new("Settings")
         .open(&mut open.settings)
         .collapsible(true)
@@ -36,28 +31,6 @@ pub(crate) fn show(
         .show(ctx, |ui| {
             debug(ui, &mut state.tree, &mut state.widgets, behavior)
         });
-}
-
-fn about(ui: &mut Ui, options: &ShellOptions) {
-    ui.heading(&options.app_name);
-    if !options.description.is_empty() {
-        ui.label(&options.description);
-    }
-    ui.add_space(8.0);
-    ui.horizontal(|ui| {
-        ui.label("Build")
-            .on_hover_text("Version · git commit · build profile");
-        let r = ve_basics::build_info_label(ui, &options.build_info);
-        ve_basics::hover_link(ui, "ve_app::build_info", &r);
-    });
-    ui.add_space(8.0);
-    ui.horizontal(|ui| {
-        ui.spacing_mut().item_spacing.x = 0.0;
-        ui.label("Built with ");
-        ui.hyperlink_to("egui", "https://github.com/emilk/egui")
-            .on_hover_text("The immediate-mode GUI library (opens the browser)");
-        ui.label(" and vhrd_egui.");
-    });
 }
 
 fn settings(ui: &mut Ui, options: &mut ShellOptions, cx: &Context) {

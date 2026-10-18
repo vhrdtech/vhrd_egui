@@ -23,12 +23,11 @@ versions follow [Semantic Versioning](https://semver.org/). Feature IDs refer to
 - `ve_settle::frames` (SETL-40): a frame that does not push and has no room to grow is drawn as tall as its body,
   which scrolls, instead of being cut off; it grows to its content once there is room.
 - Sandbox: "Settle all the time", "Tidy up", "New widgets push their neighbours"; the playground's `Host::layout`.
-
-### Fixed
-
-- `ve_frame`: a floating window opened low on the screen no longer jumps up on its first frame (egui sized it at
-  its 400 points default before it knew its size): `Dock::show_windows` gives it the size it has, and its shadow
-  is drawn whole on every side (it was cut at the top and left before).
+- `ve_basics` (BAS-4): `AppMenu`, the app menu every vhrd egui app shares, on its version badge: name,
+  description, the build in full, and *Reset storage to defaults…* behind a confirm dialog
+  (`AppMenuAction::ResetStorage`; the app resets its own state). `badge`, `attach` for a badge the app draws,
+  `contents` + `dialog` for an existing menu; `reset_egui_memory` (keeps styles, fonts, zoom, theme preference);
+  `BADGE_HOVER`, the badge's accessible label.
 
 ### Changed
 
@@ -38,6 +37,23 @@ versions follow [Semantic Versioning](https://semver.org/). Feature IDs refer to
   matches need an arm. (SETL-38)
 - `ve_settle::frames`: frames do not push their neighbours unless their `FrameState::push` is on (off by
   default). (SETL-40)
+- `ve_app` (WID-8, BAS-4): *Help* is the app menu (name, description, build, Reset storage to defaults), and the
+  status bar's version badge opens the same menu; *Reset UI memory* stays below it. **Breaking:** the About
+  window is gone, its contents are in the menu.
+
+### Fixed
+
+- `ve_frame`: a floating window opened low on the screen no longer jumps up on its first frame (egui sized it at
+  its 400 points default before it knew its size): `Dock::show_windows` gives it the size it has, and its shadow
+  is drawn whole on every side (it was cut at the top and left before).
+- `ve_app`: *Reset UI memory* no longer wipes the theme's styles and fonts with egui's memory (now
+  `ve_basics::reset_egui_memory`).
+- Template (PLT-2, BAS-4): the top bar's build label is the app menu badge; a confirmed reset puts `Settings`
+  back to the defaults. **Upgrade notes:** in `src/app.rs` replace `build_info_label(ui, &self.build)` with
+  `AppMenu::new(&self.build).title(DISPLAY_NAME).resets("the settings").badge(ui)` and on
+  `AppMenuAction::ResetStorage` set `self.settings = Settings::default()` and call
+  `ve_basics::reset_egui_memory(ui.ctx())`; in `tests/ui.rs` the build check clicks `ve_basics::BADGE_HOVER`
+  and finds the version in the menu.
 
 ## [0.29.0] - 2026-10-15
 

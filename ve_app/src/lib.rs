@@ -19,8 +19,9 @@
 //! *View → Open widget* (and the ➕ of every tab bar), grouped by [`ve_widget::WidgetInfo::group_path`] (WID-3).
 //!
 //! - Menus (WID-8): *File* (Settings, Quit), *View* (Open widget, side panel, reset layout), *Windows*
-//!   (Debug, center), *Help* (About, reset UI memory); theme switch on the right.
-//! - Windows (WID-8): About (app name, description, build info), Settings (theme plus the app's own
+//!   (Debug, center), *Help* (the app menu of `ve_basics::AppMenu`, BAS-4: name, description, build, reset
+//!   storage to defaults); theme switch on the right. The status bar's version badge opens the same menu.
+//! - Windows (WID-8): Settings (theme plus the app's own
 //!   [`ShellOptions::settings`]), Debug (tile tree, tab bar settings, egui inspection).
 //! - Quit (WID-9): when a widget says it is not closeable ([`Widget::is_closeable`]), quitting asks first and
 //!   names the busy widgets.
@@ -47,7 +48,7 @@ pub use repainter::Repainter;
 pub use widget_menu::registered_widgets;
 
 use egui::{CentralPanel, MenuBar, Panel, Ui};
-use ve_basics::BuildInfo;
+use ve_basics::{AppMenu, AppMenuAction, BuildInfo};
 use ve_frame::{Applied, FrameAction, FrameState, Parcel, Remote, SlotId, ViewportSlot};
 use ve_widget::Widget;
 use ve_widget::context::Context;
@@ -61,9 +62,9 @@ pub type UiFn = Box<dyn FnMut(&mut Ui, &Context)>;
 
 /// What the shell needs to know about the app. Build with [`ShellOptions::new`] and the setters.
 pub struct ShellOptions {
-    /// Shown in the About window, the quit dialog and the status bar.
+    /// Shown in the app menu, the quit dialog and the status bar.
     pub app_name: String,
-    /// One or two sentences for the About window: what the app is for.
+    /// One or two sentences for the app menu: what the app is for.
     pub description: String,
     /// The app's build info, `ve_basics::build_info!()` in the app crate.
     pub build_info: BuildInfo,
@@ -363,6 +364,26 @@ impl Shell {
         self.init_widgets();
     }
 
+    /// The app menu (BAS-4) of this app: its name, description and build, the storage reset.
+    fn app_menu(&self) -> AppMenu<'_> {
+        AppMenu::new(&self.options.build_info)
+            .title(&self.options.app_name)
+            .description(&self.options.description)
+            .resets(
+                "the layout, every widget and its settings, the open windows and the theme switch",
+            )
+    }
+
+    /// The confirmed *Reset storage to defaults*: the default layout and widgets, the windows closed, the theme
+    /// following the system, egui's memory forgotten; the next save writes these over the stored state.
+    fn reset_storage(&mut self, ctx: &egui::Context) {
+        self.reset_layout();
+        self.state.side_panel_open = self.options.side_panel.is_some();
+        self.state.windows = Default::default();
+        ve_basics::reset_egui_memory(ctx);
+        ctx.set_theme(egui::ThemePreference::System);
+    }
+
     fn menu_bar(&mut self, ui: &mut Ui) {
         if self.options.side_panel.is_some() {
             ui.toggle_value(&mut self.state.side_panel_open, "☰")
@@ -425,13 +446,10 @@ impl Shell {
                 ui.close();
             }
         });
+        // The app menu (BAS-4), the same as on the status bar's version badge; its confirm dialog is drawn there.
         ui.menu_button("Help", |ui| {
-            ui.toggle_value(&mut self.state.windows.about, "About")
-                .on_hover_text(format!(
-                    "What {} is, its version and build",
-                    self.options.app_name
-                ));
-            ui.separator();
+            ui.set_min_width(240.0);
+            self.app_menu().contents(ui);
             if ui
                 .button("Reset UI memory")
                 .on_hover_text(
@@ -439,7 +457,7 @@ impl Shell {
                 )
                 .clicked()
             {
-                ui.ctx().memory_mut(|m| *m = Default::default());
+                ve_basics::reset_egui_memory(ui.ctx());
                 ui.close();
             }
         });
@@ -458,8 +476,9 @@ impl Shell {
                     .on_hover_text("How the last send of a widget to another machine went");
             }
             ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                let r = ve_basics::build_info_label(ui, &self.options.build_info);
-                ve_basics::hover_link(ui, "ve_app::build_info", &r);
+                if self.app_menu().badge(ui).action == Some(AppMenuAction::ResetStorage) {
+                    self.reset_storage(ui.ctx());
+                }
             });
         });
     }

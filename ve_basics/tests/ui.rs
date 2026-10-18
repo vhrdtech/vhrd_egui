@@ -97,3 +97,83 @@ fn hover_highlights_every_item_with_the_key_and_clears() {
         "highlight clears after leaving"
     );
 }
+
+/// BAS-4: the badge opens the menu with the build in full; the reset asks first, Cancel keeps everything,
+/// Reset reports the action once.
+#[test]
+fn app_menu_opens_from_the_badge_and_confirms_the_reset() {
+    use ve_basics::{AppMenu, AppMenuAction, BADGE_HOVER};
+    let got = Rc::new(Cell::new(0u32));
+    let mut h = Harness::builder().with_size(vec2(500.0, 400.0)).build_ui({
+        let got = got.clone();
+        move |ui| {
+            let i = info(false);
+            let menu = AppMenu::new(&i)
+                .title("Demo app")
+                .description("Shows the menu")
+                .resets("the layout");
+            if menu.badge(ui).action == Some(AppMenuAction::ResetStorage) {
+                got.set(got.get() + 1);
+            }
+        }
+    });
+    h.run();
+    assert!(h.query_by_label("Reset storage to defaults…").is_none());
+    h.get_by_label(BADGE_HOVER).click();
+    h.run();
+    h.get_by_label("Demo app");
+    h.get_by_label("Shows the menu");
+    h.get_by_label("abc1234-dirty");
+    h.get_by_label("8 Oct 2026 10:00 UTC");
+    h.get_by_label("release");
+    h.get_by_label("Reset storage to defaults…").click();
+    h.run();
+    assert!(h.query_by_label("Demo app").is_none(), "the menu closes");
+    h.get_by_label_contains("forgets the layout");
+    h.get_by_label("Cancel").click();
+    h.run();
+    assert!(h.query_by_label_contains("forgets the layout").is_none());
+    assert_eq!(got.get(), 0, "Cancel resets nothing");
+
+    h.get_by_label(BADGE_HOVER).click();
+    h.run();
+    h.get_by_label("Reset storage to defaults…").click();
+    h.run();
+    h.get_by_label("Reset").click();
+    h.run();
+    assert_eq!(got.get(), 1);
+    assert!(h.query_by_label_contains("forgets the layout").is_none());
+    h.run();
+    assert_eq!(got.get(), 1, "reported once");
+}
+
+#[test]
+fn app_menu_snapshot() {
+    use ve_basics::{AppMenu, BADGE_HOVER};
+    let mut h = Harness::builder()
+        .with_size(vec2(360.0, 260.0))
+        .build_ui(|ui| {
+            let i = info(true);
+            AppMenu::new(&i)
+                .title("Demo app")
+                .description("Shows the menu")
+                .badge(ui);
+        });
+    h.run();
+    h.get_by_label(BADGE_HOVER).click();
+    h.run();
+    h.snapshot("app_menu");
+}
+
+#[test]
+fn reset_egui_memory_keeps_the_style() {
+    let ctx = egui::Context::default();
+    ctx.style_mut_of(egui::Theme::Dark, |s| s.spacing.item_spacing.x = 42.0);
+    ctx.data_mut(|d| d.insert_persisted(egui::Id::new("k"), 7u32));
+    ve_basics::reset_egui_memory(&ctx);
+    assert_eq!(
+        ctx.data_mut(|d| d.get_persisted::<u32>(egui::Id::new("k"))),
+        None
+    );
+    assert_eq!(ctx.style_of(egui::Theme::Dark).spacing.item_spacing.x, 42.0);
+}

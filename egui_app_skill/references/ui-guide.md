@@ -17,7 +17,11 @@ ui.label(format!("{rtt:.1} ms"))
 ```
 
 Build info: `ve_basics::build_info_label(ui, &build_info!())` shows `version · sha · debug|release`, with the
-full version, SHA, build time and profile in its tooltip; the same data `--version` prints.
+full version, SHA, build time and profile in its tooltip; the same data `--version` prints. The version badge of
+an app's top bar is the app menu, the same in every app: `ve_basics::AppMenu::badge` (or `attach` on a badge the
+app draws itself) opens name, description, build and *Reset storage to defaults…* (asks first; the app puts its
+saved state back to the defaults when it returns `AppMenuAction::ResetStorage`). `ve_app` has it in *Help* and on
+the status bar.
 
 ## Disabled things say why
 

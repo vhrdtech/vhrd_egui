@@ -61,7 +61,7 @@ Run it from a vhrd_egui checkout (`~/git/vhrd_egui`, or `cargo install --path ve
   src/lib.rs                   # APP_ID, DISPLAY_NAME, pub use App
   src/main.rs                  # --version (Windows: AttachConsole), tracing, StartupGuard, NativeOptions with
                                # app id + icon, ve_theme::setup, setup_labels, run_native
-  src/app.rs                   # App: persisted Settings, top bar with build_info_label, content with tooltip and
+  src/app.rs                   # App: persisted Settings, top bar with the app menu badge, content with tooltip and
                                # hover_link examples, save()
   tests/ui.rs                  # egui_kittest: AccessKit queries, a click test, a wgpu snapshot of the window
   assets/icon.svg icon_256.png # launcher icon (placeholder) and the embedded window icon

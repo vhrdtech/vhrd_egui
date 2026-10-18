@@ -33,9 +33,9 @@ in tpm (P2605). Statuses were checked against the code.
 |---|---|
 | `ve_widget` | `Widget` trait (with its frame hooks), `WidgetInfo` registry, shared `Context`. |
 | `ve_macro` | Proc macros for widget implementations (`svt!`). |
-| `ve_basics` | Small basics every app wants: build info, label selectability, hover cross-reference highlight. |
+| `ve_basics` | Small basics every app wants: build info, the app menu on the version badge, label selectability, hover cross-reference highlight. |
 | `ve_theme` | The design system: brand tokens, dark and light egui styles, fonts and type scale, `UiExt` helpers, gallery. |
-| `ve_app` | The application shell: menu bar, tiles of framed widgets that can float or move to other OS windows, About / Settings / Debug windows, persisted layout, quit dialog. |
+| `ve_app` | The application shell: menu bar, tiles of framed widgets that can float or move to other OS windows, the app menu, Settings / Debug windows, persisted layout, quit dialog. |
 | `ve_dash` | btop-style dashboard building blocks: theme, sparkline, meter, status light, stat tile, titled panel. |
 | `ve_backdrop` | Animated app background: a grid of dots or squares reacting to the pointer and to widget frames; wgpu shader with a CPU-painted fallback. |
 | `ve_frame` | The frame every widget sits in: header (LED, title, ⓘ, width and height switches, menu), body scroll, footer, sides, hexagon shape, moves between grid, window, OS window and machine. |
@@ -135,9 +135,11 @@ in tpm (P2605). Statuses were checked against the code.
 - ✅ **WID-8 App shell and its windows**: crate `ve_app`. `Shell::new(cc, cx, ShellOptions)` turns on
   `ve_theme::setup` and `ve_basics::setup_labels`, implements `eframe::App` (`Shell::ui` for apps that wrap
   it). Menus File (Settings, Quit) / View (Open widget, side panel, Reset layout) / Windows (Debug, Center on
-  screen) / Help (About, Reset UI memory), theme switch, status bar with app name and `build_info_label`
-  (`hover_link`ed to the one in About), optional collapsible side panel (`ShellOptions::side_panel`). Windows:
-  About (name, description, build info), Settings (theme plus `ShellOptions::settings`), Debug (tab bar
+  screen) / Help (the app menu, BAS-4: name, description, build, Reset storage to defaults; then Reset UI memory, which keeps the layout and the theme's styles), theme switch,
+  status bar with app name and the version badge that opens the same menu; a confirmed reset brings back the
+  default layout and widgets, closes the windows, the theme follows the system and egui's memory is forgotten
+  (`Shell::reset_storage`). Optional collapsible side panel (`ShellOptions::side_panel`). Windows:
+  Settings (theme plus `ShellOptions::settings`), Debug (tab bar
   settings, tile tree, egui inspection); which are open is persisted. `Repainter` wakes the UI from background
   work (replaces the template's tokio-channel `UiRepainter`), `ve_app::prelude` for widget code. Every control
   has a tooltip. Demo: `cargo run -p ve_app --example shell_demo`; snapshot `ve_app/tests/snapshots/shell.png`.
@@ -244,6 +246,15 @@ Small helpers every app uses, crate `ve_basics`. UI rules that go with them: AGE
 - ✅ **BAS-3 Hover link**: `hover_link(ui, key, &response)` — hovering one item highlights every item registered
   under the same key from the next frame; state in ctx memory, no repaint while the pointer rests.
   `ve_basics/src/hover_link.rs`, tested.
+- ✅ **BAS-4 App menu** (P2605#18oct-1206): one menu every vhrd egui app shares, opened from its version badge:
+  name, description, the build in full (version, commit, build time, profile; copyable), built with egui, and *Reset storage to
+  defaults…*, which asks first (Cancel / Esc / a click outside keep everything) and returns
+  `AppMenuAction::ResetStorage`; the app puts its saved state back to the defaults, `reset_egui_memory` forgets
+  egui's window positions, scroll offsets and folds but keeps the styles, fonts, zoom and theme preference.
+  `AppMenu::badge` draws the badge (as `build_info_label`), `attach` puts the menu on a badge the app draws
+  itself, `contents` + `dialog` go into an existing menu. `ve_app` has it in *Help* and on the status bar's badge
+  (WID-8), the template's top bar uses it (PLT-2), tpm_mesh_dash on its `v…` badge (APP-116).
+  `ve_basics/src/app_menu.rs`, kittests and snapshot `app_menu` in `ve_basics/tests/ui.rs`.
 
 ## Theme (`THM`)
 

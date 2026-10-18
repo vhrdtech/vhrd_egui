@@ -1,6 +1,6 @@
 //! Headless UI tests of the shell through egui_kittest, on the demo's widgets and options.
 //!
-//! AccessKit queries check the menus, the About window, the open-widget menu, the quit dialog and the
+//! AccessKit queries check the menus, the app menu (Help and the version badge, BAS-4), the open-widget menu, the quit dialog and the
 //! widgets' frames (pop out and back, another OS window, another machine); the
 //! demo shell is rendered through wgpu and pixel-compared against `tests/snapshots/shell.png`. After an
 //! intended visual change: `UPDATE_SNAPSHOTS=1 cargo test -p ve_app --test ui` and commit the PNG.
@@ -50,7 +50,15 @@ fn menus_have_their_entries() {
         ("File", &["Settings…", "Quit"][..]),
         ("View", &["Open widget ⏵", "Side panel", "Reset layout"]),
         ("Windows", &["Debug", "Center on screen"]),
-        ("Help", &["About", "Reset UI memory"]),
+        (
+            "Help",
+            &[
+                "Shell demo",
+                "1.2.3",
+                "Reset storage to defaults…",
+                "Reset UI memory",
+            ],
+        ),
     ] {
         open_menu(&mut h, menu);
         for entry in entries {
@@ -65,14 +73,43 @@ fn menus_have_their_entries() {
 }
 
 #[test]
-fn about_shows_name_description_and_build() {
+fn help_shows_name_description_and_build() {
     let mut h = harness(options());
     open_menu(&mut h, "Help");
-    h.get_by_label("About").click();
-    h.run();
     h.get_by_label("The vhrd_egui application shell with two demo widgets.");
-    // The status bar and the About window both show the build.
-    assert_eq!(h.query_all_by_label("1.2.3 · abc1234 · release").count(), 2);
+    h.get_by_label("abc1234");
+    h.get_by_label("8 Oct 2026 12:00");
+}
+
+/// BAS-4: the status bar's version badge opens the same menu; a confirmed reset brings back the default layout.
+#[test]
+fn reset_storage_from_the_badge_brings_back_the_defaults() {
+    let mut h = harness(options());
+    open_menu(&mut h, "View");
+    h.get_by_label("Open widget ⏵").hover();
+    h.run();
+    h.get_by_label("inputs ⏵").hover();
+    h.run();
+    h.get_by_label("analog ⏵").hover();
+    h.run();
+    h.get_by_label("Level").click();
+    h.run();
+    assert_eq!(h.state().widgets().count(), 3);
+
+    h.get_by_label(ve_basics::BADGE_HOVER).click();
+    h.run();
+    h.get_by_label("Reset storage to defaults…").click();
+    h.run();
+    h.get_by_label("Cancel").click();
+    h.run();
+    assert_eq!(h.state().widgets().count(), 3, "Cancel keeps the layout");
+
+    open_menu(&mut h, "Help");
+    h.get_by_label("Reset storage to defaults…").click();
+    h.run();
+    h.get_by_label("Reset").click();
+    h.run();
+    assert_eq!(h.state().widgets().count(), 2, "the default widgets again");
 }
 
 #[test]

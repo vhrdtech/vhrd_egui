@@ -47,7 +47,8 @@ The rules every app on vhrd_egui follows (helpers in `ve_basics`, the full text 
 
 - **Generous tooltips** on every control, number, badge and abbreviation: what it is, its unit, what clicking it
   does. If a user could ask "what is this?", hovering answers it. Build info shows version, SHA and build time in
-  full on hover (`build_info_label`).
+  full on hover; a click on it opens the app menu shared by every vhrd egui app
+  (`ve_basics::AppMenu`: about, build, reset storage to defaults).
 - **Highlight related items on hover**: when an item is hovered, everything that refers to the same thing (the
   row, its chart, its status light, its name in a legend) lights up (`hover_link`).
 - **Labels are not selectable** (`setup_labels` at startup); text worth copying (ids, paths, commands) uses

@@ -43,7 +43,6 @@ pub(crate) struct State {
 #[derive(Default, Serialize, Deserialize)]
 #[serde(default)]
 pub(crate) struct OpenWindows {
-    pub(crate) about: bool,
     pub(crate) settings: bool,
     pub(crate) debug: bool,
 }

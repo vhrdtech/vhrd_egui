@@ -27,8 +27,11 @@ fn shows_name_and_build_info() {
     let mut h = harness();
     h.run();
     h.get_by_label(DISPLAY_NAME);
-    // the build-info label carries version · sha · profile
-    h.get_by_label_contains(env!("CARGO_PKG_VERSION"));
+    // the version badge opens the app menu: name, build, reset storage to defaults
+    h.get_by_label(ve_basics::BADGE_HOVER).click();
+    h.run();
+    h.get_by_label(env!("CARGO_PKG_VERSION"));
+    h.get_by_label("Reset storage to defaults…");
 }
 
 #[test]

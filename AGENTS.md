@@ -123,7 +123,8 @@ reads before writing UI is `egui_app_skill/references/ui-guide.md`, kept in step
   gallery (`cargo run -p ve_theme --example gallery`) and update its snapshots.
 - **Generous tooltips** on every control, number, badge and abbreviation: what it is, its unit, what clicking it
   does. If a user could ask "what is this?", hovering answers it. Build info shows version, SHA and build time
-  in full on hover (`build_info_label`, BAS-1 build-info).
+  in full on hover (`build_info_label`, BAS-1 build-info); the version badge opens the app menu every app shares
+  (`AppMenu`: about, build, reset storage to defaults, BAS-4 app-menu).
 - **Highlight related items on hover**: when an item is hovered, everything that refers to the same thing (the
   row, its chart, its status light, its name in a legend) lights up (`hover_link`, BAS-3 hover-link).
 - **Labels are not selectable** (`setup_labels(ctx)` at startup, BAS-2 label-select); text worth copying (ids,

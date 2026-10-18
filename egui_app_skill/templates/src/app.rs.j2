@@ -4,7 +4,7 @@
 //! *visual* layout state (persisted), *transient* caches and connections (rebuilt at start, never saved).
 
 use eframe::egui;
-use ve_basics::{BuildInfo, StartupGuard, build_info_label, copyable_label, hover_link};
+use ve_basics::{AppMenu, AppMenuAction, BuildInfo, StartupGuard, copyable_label, hover_link};
 
 use crate::DISPLAY_NAME;
 
@@ -55,8 +55,15 @@ impl App {
                 copyable_label(ui, moved.display().to_string());
             }
             ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                // version · sha · debug|release, everything spelled out in its tooltip
-                build_info_label(ui, &self.build);
+                // version · sha · debug|release, spelled out on hover; a click opens the app menu shared by every
+                // vhrd egui app (about, build, reset storage to defaults)
+                let menu = AppMenu::new(&self.build)
+                    .title(DISPLAY_NAME)
+                    .resets("the settings");
+                if menu.badge(ui).action == Some(AppMenuAction::ResetStorage) {
+                    self.settings = Settings::default();
+                    ve_basics::reset_egui_memory(ui.ctx());
+                }
             });
         });
     }
