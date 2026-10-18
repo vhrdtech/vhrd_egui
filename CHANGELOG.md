@@ -5,6 +5,8 @@ versions follow [Semantic Versioning](https://semver.org/). Feature IDs refer to
 
 ## [Unreleased]
 
+## [0.30.0] - 2026-10-18
+
 ### Added
 
 - `ve_settle` (SETL-38): `Settling` (`Hold`, `Once`, `Always`), `World::settling`, `set_settling`, `with_settling`,
