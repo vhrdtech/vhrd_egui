@@ -1495,7 +1495,11 @@ The app background as its own piece (tpm P2605#8oct-2316). Playground:
   (unit tests: ring start, crossing and repeat, fade when seen, settings, click on the crest, arrow place, the
   per-pass store), `field.rs` test `a_notice_ring_tints_marks_in_its_colour` (colour and curvature),
   `tests/notice.rs` (kittest: the red ring in both renderers, shader and painter agree, off draws nothing,
-  reduced motion arrow only, click on arrow and ring, snapshot `backdrop_notice_ring`).
+  reduced motion arrow only, click on arrow and ring, snapshot `backdrop_notice_ring`). Seen in the real dash
+  (tpm_mesh_dash's own `App` fixture rendered through wgpu at 1240 × 640, backdrop *still*, a PC panel below the
+  fold forced red for the demo: the ring sweeps up through the gaps between panels, the arrow sits on the bottom
+  edge under it, a click on the arrow scrolls the panel into view and both go; 18 Oct 2026). Not yet watched in a
+  live window (the screen was locked then).
 
 ## Extracted from apps (`EXT`)
 
