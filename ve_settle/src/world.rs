@@ -84,6 +84,10 @@ pub const CORE: f32 = 0.5;
 /// A body let go stays lifted this many steps at most (three seconds
 /// at the default step).
 const LIFT_STEPS: u32 = 360;
+/// A body that does not push and was let go where it finds no free place
+/// in this many steps (half a second) goes back where it was picked up
+/// (SETL-40).
+const REFUSE_STEPS: u32 = 60;
 /// Two solid bodies deeper in each other than this (points) after the
 /// solver's passes are parted by the hard pass.
 const EJECT_FROM: f32 = 0.5;
@@ -315,6 +319,9 @@ pub struct Body {
     /// The free cell it glides into after a drop (SETL-28), while it is on
     /// its way: held by the world, not by the user.
     nest: Option<Vec2>,
+    /// Where its middle was when it was grabbed, until it lands again: where
+    /// one that does not push goes back to when it finds no room (SETL-40).
+    picked_from: Option<Vec2>,
     prev: Rect,
 }
 
@@ -758,6 +765,7 @@ impl World {
             shoved: Vec2::ZERO,
             landed: LANDED_STEPS,
             nest: None,
+            picked_from: None,
             prev: rect,
         });
         self.wake();
@@ -925,6 +933,10 @@ impl World {
                 return false;
             }
             let changed = !b.dragged || b.nest.is_some();
+            // (picked up again on its way down: where it came from first)
+            if !b.lifted || b.picked_from.is_none() {
+                b.picked_from = Some(b.rect.center());
+            }
             b.dragged = true;
             b.lifted = true;
             b.nest = None;
@@ -1440,6 +1452,15 @@ impl World {
         // rest threshold. After a while (`SLEEP_STEPS`) in which nothing
         // moved more than a few times that threshold, the world rests
         // all the same; only a real change wakes it.
+        // One that does not push and is still looking for its place is under
+        // way: it finds one or goes back within REFUSE_STEPS (SETL-40).
+        if self
+            .bodies
+            .iter()
+            .any(|b| b.lifted && !b.dragged && !b.pushes)
+        {
+            moved = moved.max(p.rest_eps * SLEEP_COARSE * 2.0);
+        }
         self.quiet = if moved > p.rest_eps * SLEEP_COARSE {
             0
         } else {
@@ -2891,6 +2912,19 @@ impl World {
             // a while lands where it is, and parts from what it lies on
             // as a solid body does (at a glide).
             self.bodies[i].aloft += 1;
+            // One that does not push and finds no free place goes back where
+            // it was picked up, over the others (SETL-40).
+            let b = &mut self.bodies[i];
+            if !b.pushes
+                && b.aloft > REFUSE_STEPS
+                && let Some(from) = b.picked_from.take()
+            {
+                b.nest = Some(from);
+                b.dragged = true;
+                b.drag_target = b.rect.center();
+                b.aloft = 0;
+                continue;
+            }
             if self.bodies[i].aloft > LIFT_STEPS {
                 self.bodies[i].lifted = false;
                 continue;
@@ -2915,6 +2949,7 @@ impl World {
             if free && inside {
                 let b = &mut self.bodies[i];
                 b.lifted = false;
+                b.picked_from = None;
                 // One that does not push came to rest by its neighbours' edge:
                 // that is its place now, its home does not pull it back in.
                 if !b.pushes && b.home.is_some() {

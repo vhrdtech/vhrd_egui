@@ -179,3 +179,35 @@ fn a_body_that_does_not_push_grows_no_further_than_its_neighbour() {
         w.max_overlap()
     );
 }
+
+#[test]
+fn a_body_that_does_not_push_and_finds_no_room_goes_back() {
+    // dropped in a gap between two columns too narrow for it: it does not stay there, it goes back
+    let mut w = world();
+    // two columns from the top down to 1200, 112 points between them; the mover is 200 wide: no way out within
+    // what it glides in half a second
+    let left = w.add(BodyDesc::new(v(150.0, 606.0), v(300.0, 1200.0)).home(None));
+    let right = w.add(BodyDesc::new(v(300.0 + 112.0 + 150.0, 606.0), v(300.0, 1200.0)).home(None));
+    let mover = w.add(
+        BodyDesc::new(v(900.0, 1500.0), v(200.0, 380.0))
+            .home(None)
+            .pushes(false),
+    );
+    w.settle(2_000);
+    let (l, r, from) = (rect(&w, left), rect(&w, right), rect(&w, mover));
+    w.grab(mover);
+    for k in 1..=60 {
+        let t = k as f32 / 60.0;
+        let to = from.center() + (v(356.0, 600.0) - from.center()) * t;
+        w.drag_to(mover, to);
+        w.step();
+    }
+    w.release(mover, true);
+    assert!(w.settle(20_000).is_some(), "rests");
+    assert!(moved(l, rect(&w, left)) < 0.01 && moved(r, rect(&w, right)) < 0.01);
+    assert!(
+        moved(from, rect(&w, mover)) < 0.5,
+        "back where it was: {:?}",
+        rect(&w, mover)
+    );
+}

@@ -18,9 +18,16 @@ versions follow [Semantic Versioning](https://semver.org/). Feature IDs refer to
   older saves), `WidgetFrame::layout_menu` ("Push neighbours" and "Tidy up" in the ☰ menu), a frame in a grid with
   `grid_height` takes that height; `FrameState::set_layout_height` / `layout_height`, a layout's cap on a
   rectangle's height (not saved).
+- `ve_settle` (SETL-40): a body that does not push, let go where it finds no free place within half a second,
+  glides back where it was picked up (the drop is refused); a world does not rest while one is still looking.
 - `ve_settle::frames` (SETL-40): a frame that does not push and has no room to grow is drawn as tall as its body,
   which scrolls, instead of being cut off; it grows to its content once there is room.
 - Sandbox: "Settle all the time", "Tidy up", "New widgets push their neighbours"; the playground's `Host::layout`.
+
+### Fixed
+
+- `ve_frame`: a floating window opened low on the screen no longer jumps up on its first frame (egui sized it at
+  its 400 points default before it knew its size): `Dock::show_windows` gives it the size it has.
 
 ### Changed
 

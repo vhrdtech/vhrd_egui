@@ -256,6 +256,11 @@ impl<W> Dock<W> {
                 Some(pos) => window.current_pos(pos),
                 None => window.default_pos(origin + egui::vec2(48.0 + step, 48.0 + step)),
             };
+            // the size it has, from its first pass on: egui sizes a new window at its default area size (400
+            // points tall) and keeps that inside the screen, so one popped out low on the page jumped up
+            if let Some(size) = slot.frame.window_size {
+                window = window.default_size(size);
+            }
             pluck(&ctx, &mut slot.frame, window_id);
             let layer = egui::LayerId::new(egui::Order::Middle, window_id);
             slot.frame.focused = ctx.top_layer_id() == Some(layer);
