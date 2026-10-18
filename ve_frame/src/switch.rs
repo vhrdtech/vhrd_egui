@@ -51,6 +51,28 @@ pub(crate) fn pair_width(gap: f32) -> f32 {
     2.0 * switch_size().x + gap
 }
 
+/// The list a right click on a switch opens (FRM-17): every mode with its word, the one it is set to marked,
+/// each with a tooltip; returns the one picked. A left click still steps to the next mode.
+pub(crate) fn pick_list<M: Copy + PartialEq>(
+    response: &Response,
+    now: M,
+    choices: [(M, &str, String); 4],
+) -> Option<M> {
+    let mut picked = None;
+    response.context_menu(|ui| {
+        for (mode, word, hover) in choices {
+            let r = ui
+                .add(egui::Button::selectable(mode == now, word))
+                .on_hover_text(hover);
+            if r.clicked() {
+                picked = Some(mode);
+                ui.close();
+            }
+        }
+    });
+    picked
+}
+
 /// Draw one switch; `tip` is its tooltip (what it does, what the next click gives, or why it is disabled).
 pub(crate) fn show(ui: &mut Ui, theme: &Theme, look: &Look<'_>, tip: &str) -> Response {
     let sense = if look.enabled {

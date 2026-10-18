@@ -1341,7 +1341,7 @@ fn width_switch(ui: &mut Ui, theme: &Theme, state: &mut FrameState) {
         SizeMode::Wide => "wide",
     };
     let tip = format!(
-        "width: {}, click for {next}\n\nWidget width, {what}. The box shows the step: the marks under it \
+        "width: {}, click for {next}, right-click to pick one\n\nWidget width, {what}. The box shows the step: the marks under it \
          are min, nom and wide, the longer, solid one is shown; dashed with arrows is auto. The switch beside it sets \
          the height.",
         mode.label()
@@ -1355,8 +1355,27 @@ fn width_switch(ui: &mut Ui, theme: &Theme, state: &mut FrameState) {
     };
     let r = switch::show(ui, theme, &look, &tip);
     state.switch_at = Some(r.rect.center());
-    if r.clicked() {
-        state.size = mode.next();
+    // a right click: the list of all four, to jump straight to one (FRM-17)
+    let choices = SizeMode::ALL.map(|m| {
+        let hover = match m {
+            SizeMode::Auto => format!(
+                "Picks min, nom or wide by the room's width ({} now).",
+                shown.label()
+            ),
+            SizeMode::Min => "The widget's smallest form, a fixed width.".to_owned(),
+            SizeMode::Nom => "The widget's normal width.".to_owned(),
+            SizeMode::Wide => "The width for a whole row.".to_owned(),
+        };
+        (m, m.label(), hover)
+    });
+    let picked = switch::pick_list(&r, mode, choices);
+    let to = if r.clicked() {
+        Some(mode.next())
+    } else {
+        picked
+    };
+    if let Some(to) = to.filter(|m| *m != mode) {
+        state.size = to;
         // the switch should be under the pointer again once the frame has its new size
         state.anchor = state.switch_at;
         state.anchor_height = false;
@@ -1387,7 +1406,7 @@ fn height_switch(ui: &mut Ui, theme: &Theme, state: &mut FrameState, hints: &Siz
             HeightMode::Tall => "tall",
         };
         format!(
-            "height: {}, click for {next}\n\nWidget height, {what}. The box shows the step: the marks \
+            "height: {}, click for {next}, right-click to pick one\n\nWidget height, {what}. The box shows the step: the marks \
              right of it are min, nom and tall, the longer, solid one is shown; dashed with arrows is auto. The switch \
              beside it sets the width.",
             mode.label()
@@ -1408,8 +1427,31 @@ fn height_switch(ui: &mut Ui, theme: &Theme, state: &mut FrameState, hints: &Siz
     };
     let r = switch::show(ui, theme, &look, &tip);
     state.height_switch_at = Some(r.rect.center());
-    if r.clicked() {
-        state.height = mode.next();
+    // a right click: the list of all four (FRM-17); a disabled switch has none
+    let choices = HeightMode::ALL.map(|m| {
+        let hover = match m {
+            HeightMode::Auto => format!(
+                "Picks min, nom or tall by the room's height ({} now).",
+                shown.label()
+            ),
+            HeightMode::Min => "The widget's smallest form, a fixed height.".to_owned(),
+            HeightMode::Nom => "The widget's normal height.".to_owned(),
+            HeightMode::Tall => "Room for more rows or a larger chart.".to_owned(),
+        };
+        (m, m.label(), hover)
+    });
+    let picked = if enabled {
+        switch::pick_list(&r, mode, choices)
+    } else {
+        None
+    };
+    let to = if r.clicked() {
+        Some(mode.next())
+    } else {
+        picked
+    };
+    if let Some(to) = to.filter(|m| *m != mode) {
+        state.height = to;
         state.anchor = state.height_switch_at;
         state.anchor_height = true;
         state.anchor_fresh = true;

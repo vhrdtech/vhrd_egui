@@ -7,6 +7,7 @@ versions follow [Semantic Versioning](https://semver.org/). Feature IDs refer to
 
 ### Added
 
+- `ve_frame` (FRM-17): a right click on the width or the height switch opens a list of its modes (auto, min, nom, wide / tall) to jump straight to one; a left click still cycles, and the tooltip says both.
 - `ve_frame` (FRM-15): `FrameState::grid_width`, saved: the width the user gave a frame in a grid; with `grid_height` the frame keeps that size. `ve_settle::frames::Resized::grid_width`.
 
 ### Changed

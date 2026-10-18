@@ -217,6 +217,67 @@ fn the_pair_of_switches_cycles_independently() {
     assert!(w.x < v.x && (w.y - v.y).abs() < 0.5, "{w:?} {v:?}");
 }
 
+/// A right click on a switch opens the list of its four modes (FRM-17): a pick jumps straight there, no
+/// cycling, and the other switch stays; the tooltip says so. A left click still cycles.
+#[test]
+fn a_right_click_on_a_switch_picks_a_mode_straight() {
+    let mut h = harness(One::new(vec2(500.0, 400.0)), vec2(520.0, 420.0));
+    let modes = |h: &Harness<'_, One>| (h.state().frame.size, h.state().frame.height);
+    let right_click = |h: &mut Harness<'_, One>, label: &str| {
+        let at = h.get_by_label(label).rect().center();
+        h.hover_at(at);
+        h.step();
+        h.event(egui::Event::PointerButton {
+            pos: at,
+            button: egui::PointerButton::Secondary,
+            pressed: true,
+            modifiers: egui::Modifiers::NONE,
+        });
+        h.step();
+        h.event(egui::Event::PointerButton {
+            pos: at,
+            button: egui::PointerButton::Secondary,
+            pressed: false,
+            modifiers: egui::Modifiers::NONE,
+        });
+        h.run();
+    };
+    let pick = |h: &mut Harness<'_, One>, word: &str| {
+        h.get_by_label(word).click();
+        h.run();
+    };
+    // the tooltip names the right click
+    let at = h.get_by_label("width: auto").rect().center();
+    h.hover_at(at);
+    for _ in 0..8 {
+        h.step();
+    }
+    assert!(
+        h.query_by_label_contains("right-click to pick one")
+            .is_some(),
+        "the tooltip says so"
+    );
+    // auto → wide in one step, past min and nom
+    right_click(&mut h, "width: auto");
+    for word in ["auto", "min", "nom", "wide"] {
+        assert!(h.query_by_label(word).is_some(), "{word} in the list");
+    }
+    pick(&mut h, "wide");
+    assert_eq!(modes(&h), (SizeMode::Wide, HeightMode::Auto));
+    assert!(h.query_by_label("nom").is_none(), "the list closed");
+    // the height: auto → tall
+    right_click(&mut h, "height: auto");
+    pick(&mut h, "tall");
+    assert_eq!(modes(&h), (SizeMode::Wide, HeightMode::Tall));
+    assert_eq!(h.state().told, Some((Size::Wide, Height::Tall)));
+    // back to min straight, and a left click still cycles
+    right_click(&mut h, "width: wide");
+    pick(&mut h, "min");
+    assert_eq!(h.state().frame.size, SizeMode::Min);
+    click(&mut h, "width: min");
+    assert_eq!(h.state().frame.size, SizeMode::Nom);
+}
+
 /// A widget without a tall form keeps the height switch visible but disabled, says why, and its height
 /// follows the width.
 #[test]
