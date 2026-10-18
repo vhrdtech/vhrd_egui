@@ -265,6 +265,8 @@ impl<W> Dock<W> {
             let layer = egui::LayerId::new(egui::Order::Middle, window_id);
             slot.frame.focused = ctx.top_layer_id() == Some(layer);
             let shown = window.show(&ctx, |ui| {
+                // the window is exactly the frame's size, and egui clips to it: the frame's shadow lies outside
+                ui.set_clip_rect(screen);
                 let wanted = slot.frame.window_size;
                 if let Some([w, h]) = wanted {
                     ui.set_min_size(egui::vec2(w, h));
