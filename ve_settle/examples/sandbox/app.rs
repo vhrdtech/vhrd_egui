@@ -24,7 +24,7 @@ use playground::{Demo, Opts, Scale};
 use ve_backdrop::{Backdrop, Lit};
 use ve_frame::{Applied, FloatLook, FrameAction, LandMode, Shape, Slot, SlotId};
 use ve_settle::frames::{Frames, LandAt, LayOut, Seat, View};
-use ve_settle::{Axis, BodyId, Params, Poly, Rect, Side, Vec2, World};
+use ve_settle::{Axis, BodyId, Params, Poly, Rect, Settling, Side, Vec2, World};
 use ve_theme::{Tokens, UiExt as _};
 
 fn to_pos(v: Vec2) -> Pos2 {
@@ -237,6 +237,11 @@ pub struct Sandbox {
     pub overlay: Overlay,
     /// A widget dropped after a drag makes that place its home.
     pub rehome_on_drop: bool,
+    /// The world settles all the time (on by default here: the sandbox shows the physics), else it holds and
+    /// "Tidy up" settles it once (SETL-38).
+    pub settle_always: bool,
+    /// What "Push neighbours" new widgets start with (on by default here; off in a frame's own default).
+    pub push_default: bool,
     /// The area the bodies live in, in screen points: the visible part.
     /// The world's coordinates are screen points with the arena scrolled
     /// to the top.
@@ -293,7 +298,7 @@ impl Sandbox {
             None => Backdrop::new(),
         };
         Self {
-            world: World::new(Rect::default(), scene.params()),
+            world: World::new(Rect::default(), scene.params()).with_settling(Settling::Always),
             frames: Frames::new(),
             look: FloatLook::default(),
             land: LandMode::default(),
@@ -313,6 +318,8 @@ impl Sandbox {
             // the frames are the picture there; the layers are a click away
             overlay: Overlay::all(false),
             rehome_on_drop: true,
+            settle_always: true,
+            push_default: true,
             arena: egui::Rect::NOTHING,
             scene,
             scroll: 0.0,
@@ -482,9 +489,21 @@ impl Sandbox {
         self.seq += 1;
         let seat = seat(&demo);
         let slot = self.frames.add(&mut self.world, demo, seat, from_pos(at));
+        if let Some(s) = self.frames.dock.get_mut(slot) {
+            s.frame.push = self.push_default;
+        }
         let id = self.frames.body(slot).unwrap_or(BodyId(0));
         self.selected = Some(id);
         id
+    }
+
+    /// How the world settles: all the time, or held with "Tidy up" (SETL-38).
+    pub fn settling(&self) -> Settling {
+        if self.settle_always {
+            Settling::Always
+        } else {
+            Settling::Hold
+        }
     }
 
     /// The parameters the scene starts with, and "Default parameters"
@@ -517,6 +536,7 @@ impl Sandbox {
         self.message = match self.frames.apply(id, action.clone()) {
             Applied::Moved => format!("{title}: {action:?}"),
             Applied::Gone => return,
+            Applied::Tidy => format!("{title}: tidy up"),
             Applied::Close => {
                 self.frames.remove(&mut self.world, id);
                 format!("{title}: closed")
@@ -538,7 +558,8 @@ impl Sandbox {
     /// overlay): an empty arena to build a case in by hand.
     pub fn clear(&mut self) {
         self.drop_frames();
-        self.world = World::new(from_rect(self.arena), *self.world.params());
+        self.world =
+            World::new(from_rect(self.arena), *self.world.params()).with_settling(self.settling());
         (self.scroll, self.scroll_x, self.due) = (0.0, 0.0, 0);
         self.selected = None;
         // Nothing is seeded or topped up again until Reset.
@@ -548,7 +569,8 @@ impl Sandbox {
 
     pub fn reset(&mut self) {
         self.drop_frames();
-        self.world = World::new(from_rect(self.arena), self.defaults());
+        self.world =
+            World::new(from_rect(self.arena), self.defaults()).with_settling(self.settling());
         (self.scroll, self.scroll_x, self.due) = (0.0, 0.0, 0);
         self.selected = None;
         self.seq = 0;
@@ -599,7 +621,8 @@ impl Sandbox {
         snapshot: Snapshot,
     ) {
         self.drop_frames();
-        self.world = World::new(from_rect(self.arena), snapshot.params);
+        self.world =
+            World::new(from_rect(self.arena), snapshot.params).with_settling(self.settling());
         (self.sideways, self.seq, self.rng) = (snapshot.sideways, snapshot.seq, snapshot.rng);
         (self.seeded, self.due, self.selected) = (true, 0, None);
         self.filled_for = self.arena.width() * self.arena.height();
@@ -614,6 +637,8 @@ impl Sandbox {
             if let Some(s) = self.frames.dock.get_mut(slot) {
                 s.frame = w.frame;
                 s.frame.placement = Default::default();
+                // (recordings were made before "Push neighbours": every frame pushed)
+                s.frame.push = self.push_default;
             }
             self.frames.measure(ui, slot, &mut draw);
             self.frames.place(&mut self.world, slot, r.center());
@@ -774,6 +799,24 @@ impl Sandbox {
         self.frame_controls(ui);
         ui.checkbox(&mut self.rehome_on_drop, "Drop sets home")
             .on_hover_text("A dragged widget makes the place it is dropped its home spot. Off: it is pulled back to its old home.");
+        ui.horizontal(|ui| {
+            let r = ui.checkbox(&mut self.settle_always, "Settle all the time").on_hover_text(
+                "On: gravity, corner snaps and vertex pulls act all the time, as in a physics toy. Off (an app's default): widgets stay where they are put, and \"Tidy up\" settles the world once.",
+            );
+            if r.changed() {
+                let settling = self.settling();
+                self.world.set_settling(settling);
+            }
+            let r = ui
+                .add_enabled(!self.settle_always, Button::new("Tidy up"))
+                .on_hover_text("Settle once: gravity and the pulls act until everything rests, then the widgets stay put again.")
+                .on_disabled_hover_text("Not needed: the world settles all the time (\"Settle all the time\" is on).");
+            if r.clicked() {
+                self.frames.tidy_up(&mut self.world);
+            }
+        });
+        ui.checkbox(&mut self.push_default, "New widgets push their neighbours")
+            .on_hover_text("What \"Push neighbours\" in the ☰ menu of a new widget starts with. On: dragged onto others or growing, it pushes them aside. Off: it stops at their edge and nothing else moves.");
 
         self.status(ui);
 
@@ -1325,6 +1368,7 @@ impl Sandbox {
             let host = playground::Host {
                 header: Some((PIN_W, &mut pin_icon)),
                 menu: Some(&mut pin_entry),
+                layout: true,
             };
             playground::draw_hosted(ui, slot, (&moves, look, land, true), host).0
         };

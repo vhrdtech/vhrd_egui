@@ -127,6 +127,9 @@ pub struct BodyDesc {
     /// Its outline, a convex polygon in unit coordinates of its rectangle
     /// ([`Poly::fit`]); `None` is the rectangle itself.
     pub outline: Option<Poly>,
+    /// Whether it pushes its neighbours out of its way when it is dragged
+    /// onto them, dropped there or grows into them ([`Body::pushes`]).
+    pub pushes: bool,
 }
 
 impl BodyDesc {
@@ -139,6 +142,7 @@ impl BodyDesc {
             max_size: Vec2::INFINITY,
             home: Some(center),
             outline: None,
+            pushes: true,
         }
     }
 
@@ -164,6 +168,12 @@ impl BodyDesc {
     /// Set or clear its home spot.
     pub fn home(mut self, home: Option<Vec2>) -> Self {
         self.home = home;
+        self
+    }
+
+    /// Whether it pushes its neighbours ([`Body::pushes`], on by default).
+    pub fn pushes(mut self, pushes: bool) -> Self {
+        self.pushes = pushes;
         self
     }
 }
@@ -201,6 +211,12 @@ pub struct Body {
     /// Pinned in place ([`World::set_pinned`], SETL-27): it never moves,
     /// gives or stretches; the others rest against it as against a wall.
     pub pinned: bool,
+    /// Whether it pushes its neighbours (SETL-38, [`World::set_pushes`]):
+    /// dragged over them they glide out from under it, dropped or grown into
+    /// them they are pushed aside. Off, nothing moves for it: held, it
+    /// floats over the others; let go or growing where they are, it is the
+    /// one that gives way, and stops at their edge.
+    pub pushes: bool,
     /// Gravity's pull in the last step, points/s² (debug overlay).
     pub gravity_pull: Vec2,
     /// The home spring's pull in the last step, points/s² (debug overlay).
@@ -480,6 +496,30 @@ pub struct World {
     backlog: f32,
     steps: u64,
     last_move: f32,
+    settling: Settling,
+}
+
+/// Whether gravity and the pulls that line bodies up act (SETL-38).
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+pub enum Settling {
+    /// Bodies stay where they are put: no gravity, no corner snap, no vertex
+    /// attraction, no grid pull. Contacts, walls, homes, sizes and drags work
+    /// as always. The default.
+    #[default]
+    Hold,
+    /// Settle once: the world runs with every force of its [`Params`] until
+    /// it rests, then holds again ([`World::settle_once`]).
+    Once,
+    /// Settle all the time, as a physics toy does.
+    Always,
+}
+
+impl Settling {
+    /// Whether the forces of [`Params`] act now.
+    pub fn is_settling(self) -> bool {
+        self != Settling::Hold
+    }
 }
 
 impl World {
@@ -507,6 +547,39 @@ impl World {
             backlog: 0.0,
             steps: 0,
             last_move: 0.0,
+            settling: Settling::Hold,
+        }
+    }
+
+    /// The same world settling as `settling` says ([`World::set_settling`]).
+    pub fn with_settling(mut self, settling: Settling) -> Self {
+        self.settling = settling;
+        self
+    }
+
+    /// Whether the world settles now ([`Settling`]; it holds by default).
+    pub fn settling(&self) -> Settling {
+        self.settling
+    }
+
+    /// Hold, settle once or settle all the time (SETL-38). Wakes the world
+    /// when that changes anything.
+    pub fn set_settling(&mut self, settling: Settling) {
+        if self.settling != settling {
+            self.settling = settling;
+            self.wake();
+        }
+    }
+
+    /// Tidy up: gravity and the pulls of [`Params`] act until the world
+    /// rests, then it holds again (SETL-38). A world that settles all the
+    /// time ([`Settling::Always`]) is only woken.
+    pub fn settle_once(&mut self) {
+        if self.settling == Settling::Always {
+            self.wake();
+        } else {
+            self.set_settling(Settling::Once);
+            self.wake();
         }
     }
 
@@ -674,6 +747,7 @@ impl World {
             pressed_hi: Vec2::ZERO,
             yielding: false,
             pinned: false,
+            pushes: desc.pushes,
             drag_target: desc.center,
             slid: 0.0,
             aloft: 0,
@@ -1037,6 +1111,15 @@ impl World {
         });
     }
 
+    /// Let a body push its neighbours, or not ([`Body::pushes`], SETL-38).
+    pub fn set_pushes(&mut self, id: BodyId, pushes: bool) {
+        self.change(id, |b| {
+            let changed = b.pushes != pushes;
+            b.pushes = pushes;
+            changed
+        });
+    }
+
     fn change(&mut self, id: BodyId, f: impl FnOnce(&mut Body) -> bool) {
         let changed = self.bodies.iter_mut().find(|b| b.id == id).is_some_and(f);
         if changed {
@@ -1153,6 +1236,21 @@ impl World {
             self.params = self.params.toward(&self.wanted, 1.0 / self.ramp as f32);
             self.ramp -= 1;
         }
+        // Holding, the step runs without the forces that move bodies by
+        // themselves (SETL-38); the parameters stay as they were set.
+        let live = self.params;
+        if !self.settling.is_settling() {
+            self.params = live.held();
+        }
+        self.step_inner();
+        self.params = live;
+        if self.at_rest && self.settling == Settling::Once {
+            self.settling = Settling::Hold;
+        }
+        true
+    }
+
+    fn step_inner(&mut self) {
         let p = self.params;
         let dt = p.dt.max(1e-4);
         // A wall that was moved inward does not push: what it left
@@ -1364,7 +1462,6 @@ impl World {
                 b.vel = Vec2::ZERO;
             }
         }
-        true
     }
 
     /// The body that gives way this step ([`Body::yielding`]).
@@ -2230,6 +2327,10 @@ impl World {
                 {
                     continue;
                 }
+                // one that does not push floats over the others (SETL-38)
+                if !(if a.dragged { a.pushes } else { b.pushes }) {
+                    continue;
+                }
                 let Some(hit) = touch(a, b, gap, prefer) else {
                     continue;
                 };
@@ -2413,8 +2514,14 @@ impl World {
                     along[axis] = 0.0;
                     let (ab, bb) = pair_bulges(a, b);
                     let push = along * ((ab[axis] + bb[axis]) * SLIDE_STIFFNESS);
-                    a.slide_pull -= push;
-                    b.slide_pull += push;
+                    // (what a body that does not push lands on or grows into
+                    // stays as a wall: no push along it, SETL-38)
+                    if !moves_alone(b, a) {
+                        a.slide_pull -= push;
+                    }
+                    if !moves_alone(a, b) {
+                        b.slide_pull += push;
+                    }
                 }
                 let a_low = hit.normal[axis] > 0.0;
                 let (lo, hi) = if a_low { (a, b) } else { (b, a) };
@@ -2550,10 +2657,12 @@ impl World {
                         db = spend_net(b, db, glide);
                     }
                 }
-                // A pinned body is a wall: the other one takes it all.
-                if a.pinned {
+                // A pinned body is a wall: the other one takes it all. So is
+                // one that a body which does not push lands on or grows
+                // into (SETL-38).
+                if a.pinned || moves_alone(b, a) {
                     (da, db) = (Vec2::ZERO, db - da);
-                } else if b.pinned {
+                } else if b.pinned || moves_alone(a, b) {
                     (da, db) = (da - db, Vec2::ZERO);
                 }
                 // Put back onto the slope it sits on is a place, not speed: kept
@@ -2661,9 +2770,9 @@ impl World {
                         (true, 0) => out.clamp_length(glide),
                         (true, _) => continue,
                     };
-                    if a.pinned {
+                    if a.pinned || moves_alone(b, a) {
                         b.shift(out);
-                    } else if b.pinned {
+                    } else if b.pinned || moves_alone(a, b) {
                         a.shift(-out);
                     } else {
                         a.shift(-out * 0.5);
@@ -2717,10 +2826,28 @@ impl World {
     /// (the yielder makes the room at a glide, slower than it grows).
     fn measure_room(&mut self) {
         let floor = self.params.gap * RECT_FLOOR;
+        let (gap, walls, hard) = (self.params.gap, self.params.walls, self.hard);
         for i in 0..self.bodies.len() {
             let a = &self.bodies[i];
             let mut room = Vec2::splat(f32::INFINITY);
-            if a.jammed.x > SLOP || a.jammed.y > SLOP {
+            // One that does not push grows only into the room it has, walls
+            // included (SETL-38).
+            let holds = !a.pushes && !a.lifted && !a.dragged;
+            if holds {
+                for axis in Axis::BOTH {
+                    let (low, high) = match axis {
+                        Axis::X => (walls.left, walls.right),
+                        Axis::Y => (walls.top, walls.bottom),
+                    };
+                    if low {
+                        room[axis] = room[axis].min(a.rect.min[axis] - hard.min[axis] - gap);
+                    }
+                    if high {
+                        room[axis] = room[axis].min(hard.max[axis] - a.rect.max[axis] - gap);
+                    }
+                }
+            }
+            if a.jammed.x > SLOP || a.jammed.y > SLOP || holds {
                 for (j, o) in self.bodies.iter().enumerate() {
                     if j == i || o.lifted || a.outline.is_some() || o.outline.is_some() {
                         continue;
@@ -2734,7 +2861,9 @@ impl World {
                         }
                         let apart = (o.rect.min[axis] - a.rect.max[axis])
                             .max(a.rect.min[axis] - o.rect.max[axis]);
-                        room[axis] = room[axis].min(apart - floor);
+                        // (one that does not push keeps the whole gap: less would press)
+                        let keep = if holds { gap } else { floor };
+                        room[axis] = room[axis].min(apart - keep);
                     }
                 }
             }
@@ -2777,10 +2906,28 @@ impl World {
                     }
             });
             if free && inside {
-                self.bodies[i].lifted = false;
+                let b = &mut self.bodies[i];
+                b.lifted = false;
+                // One that does not push came to rest by its neighbours' edge:
+                // that is its place now, its home does not pull it back in.
+                if !b.pushes && b.home.is_some() {
+                    b.home = Some(b.rect.center());
+                }
             }
         }
     }
+}
+
+/// Whether `a` takes the whole of its contact with `b` (SETL-38): it does
+/// not push, and it is the one that came onto `b` (lifted: just added or
+/// let go there) or grew into it this step, while `b` did neither.
+fn moves_alone(a: &Body, b: &Body) -> bool {
+    let active = |o: &Body| {
+        let grew = o.rect.size() - o.prev.size();
+        let landing = o.landed < LANDED_STEPS;
+        o.lifted || landing || o.nest.is_some() || grew.x > 1e-4 || grew.y > 1e-4
+    };
+    !a.pushes && active(a) && !(active(b) && !b.pushes)
 }
 
 /// The part of a move by `d` along `axis` a solid body can make before the
@@ -2915,7 +3062,7 @@ fn resize(b: &mut Body, p: &Params, dt: f32, jammed: Vec2) -> f32 {
     let mut bulged = 0.0f32;
     for axis in Axis::BOTH {
         // (it grows on both sides: half of it on each)
-        let up = if jammed[axis] > SLOP {
+        let up = if jammed[axis] > SLOP || (!b.pushes && !b.lifted && !b.dragged) {
             grow.min(2.0 * b.room[axis]).max(0.0)
         } else {
             grow

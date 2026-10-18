@@ -82,6 +82,14 @@ pub struct FrameState {
     /// The size of the place in the grid the widget floated out of, for a ghost of it there
     /// ([`crate::ghost_slot`]); `None` while it sits in a grid.
     pub left_slot: Option<[f32; 2]>,
+    /// Whether the frame pushes its neighbours out of its way in a physics layout (ve_settle SETL-38): when it is
+    /// dragged onto them, dropped there or grows. Off (the default), it stops at their edge and nothing else
+    /// moves. The ☰ menu's "Push neighbours" ([`crate::WidgetFrame::layout_menu`]).
+    pub push: bool,
+    /// The height the user gave the frame in a grid with its resize handle (ve_settle SETL-39), in points, all
+    /// of the frame; `None` (the default): as tall as its content. The body scrolls, or warns, where its
+    /// content wants more. A floating frame has its own size in `window_size`.
+    pub grid_height: Option<f32>,
     /// The size shown last frame: auto's memory for its hysteresis. Not saved.
     #[serde(skip)]
     pub(crate) last_size: Option<Size>,
@@ -400,4 +408,7 @@ pub enum FrameAction {
     SendToMachine(String),
     /// Close the widget.
     Close,
+    /// Tidy the layout up: a physics layout settles once (ve_settle SETL-38). From the ☰ menu's "Tidy up"
+    /// ([`crate::WidgetFrame::layout_menu`]).
+    Tidy,
 }

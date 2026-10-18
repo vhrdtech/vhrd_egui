@@ -147,6 +147,7 @@ pub struct WidgetFrame<'a> {
     info: Option<UiFn<'a>>,
     sizes: Option<SizeHints>,
     moves: Option<&'a Moves>,
+    layout_menu: bool,
     menu: Vec<UiFn<'a>>,
     header_items: Vec<(f32, UiFn<'a>)>,
     footer: Option<UiFn<'a>>,
@@ -186,6 +187,7 @@ impl<'a> WidgetFrame<'a> {
             info: None,
             sizes: None,
             moves: None,
+            layout_menu: false,
             menu: Vec::new(),
             header_items: Vec::new(),
             footer: None,
@@ -247,6 +249,14 @@ impl<'a> WidgetFrame<'a> {
     /// Where the widget can go; turns the ☰ menu on.
     pub fn moves(mut self, moves: &'a Moves) -> Self {
         self.moves = Some(moves);
+        self
+    }
+
+    /// The ☰ menu's entries for a frame in a physics layout (ve_settle SETL-38): "Push neighbours", a toggle on
+    /// [`FrameState::push`] the frame flips itself, and "Tidy up", reported as [`FrameAction::Tidy`]. Off by
+    /// default.
+    pub fn layout_menu(mut self, on: bool) -> Self {
+        self.layout_menu = on;
         self
     }
 
@@ -428,11 +438,18 @@ impl<'a> WidgetFrame<'a> {
         let floating = state.placement.floating;
         // A floating frame defines its window, so it never takes "the room given" from it: it has the size
         // in `window_size`, or (until the first pass set one) the size its hints and content ask for.
-        let avail = if floating && state.window_size.is_none() {
+        let mut avail = if floating && state.window_size.is_none() {
             Vec2::INFINITY
         } else {
             ui.available_size()
         };
+        // in a grid, the height the user gave it with a layout's resize handle (SETL-39): the frame takes it
+        let held_height = state
+            .grid_height
+            .filter(|h| !floating && h.is_finite() && *h > 0.0);
+        if let Some(h) = held_height {
+            avail.y = h;
+        }
         state.switch_at = None;
         state.height_switch_at = None;
         // the fallback scroll stays on where the body overflowed, until it fits again (`note_overflow`)
@@ -452,7 +469,7 @@ impl<'a> WidgetFrame<'a> {
             finite(avail.y - 2.0 * border - HEADER_H - learned.footer_h - 2.0 * PAD),
         );
         let shape = self.shape;
-        let sized = floating && state.window_size.is_some();
+        let sized = (floating && state.window_size.is_some()) || held_height.is_some();
         self.fill |= sized && shape == Shape::Rect;
         state.resizable = true;
         state.hex = shape == Shape::Hex;
@@ -1095,7 +1112,7 @@ impl<'a> WidgetFrame<'a> {
     }
 
     fn has_menu(&self) -> bool {
-        self.moves.is_some() || !self.menu.is_empty()
+        self.moves.is_some() || self.layout_menu || !self.menu.is_empty()
     }
 
     /// The least width the header needs: its controls and the start of the title.
@@ -1175,6 +1192,8 @@ impl<'a> WidgetFrame<'a> {
         let title_shown = self.title_shown;
         let (about, info, sizes, moves, extra) =
             (self.about, self.info, self.sizes, self.moves, self.menu);
+        let layout_menu = self.layout_menu;
+        let mut push = state.push;
         let items = self.header_items;
         h.with_layout(Layout::right_to_left(Align::Center), |h| {
             if has_menu {
@@ -1200,11 +1219,17 @@ impl<'a> WidgetFrame<'a> {
                         }
                         h.menu_button(icon, |ui| {
                             let mut picked = None;
+                            if layout_menu {
+                                picked = menu::layout_ui(ui, &mut push);
+                            }
                             if let Some(moves) = moves {
-                                picked = menu::ui(ui, moves, placement);
+                                if layout_menu {
+                                    ui.separator();
+                                }
+                                picked = picked.or(menu::ui(ui, moves, placement));
                             }
                             for (n, add) in extra.into_iter().enumerate() {
-                                if moves.is_some() || n > 0 {
+                                if moves.is_some() || layout_menu || n > 0 {
                                     ui.separator();
                                 }
                                 add(ui);
@@ -1222,6 +1247,7 @@ impl<'a> WidgetFrame<'a> {
                 r.response
                     .widget_info(|| egui::WidgetInfo::labeled(egui::WidgetType::Button, true, "☰"));
                 state.menu_open = r.inner.is_some();
+                state.push = push;
                 state.menu_at = Some(r.response.rect);
                 action = r.inner.flatten();
                 r.response.on_hover_text(

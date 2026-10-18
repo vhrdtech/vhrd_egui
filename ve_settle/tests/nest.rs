@@ -5,6 +5,7 @@
 // runs on the web. `ve_settle`'s lib stays wasm-gated (PLT-9).
 #![allow(clippy::disallowed_methods)]
 
+use ve_settle::Settling;
 use ve_settle::{BodyDesc, BodyId, Params, Poly, Rect, Side, Vec2, World};
 
 fn v(x: f32, y: f32) -> Vec2 {
@@ -62,7 +63,8 @@ fn packed(width: f32, n: usize, sizes: &[(f32, f32)]) -> (World, Vec<BodyId>) {
 /// [`packed`], the tiny ones (86 points tall) free to narrow by `give` points: a frame on auto size
 /// (SETL-5) is not rigid across, so it lines up by sliding even in a notch.
 fn packed_giving(width: f32, n: usize, sizes: &[(f32, f32)], give: f32) -> (World, Vec<BodyId>) {
-    let mut w = World::new(Rect::from_min_size(Vec2::ZERO, v(width, 800.0)), params());
+    let mut w = World::new(Rect::from_min_size(Vec2::ZERO, v(width, 800.0)), params())
+        .with_settling(Settling::Always);
     let mut ids = Vec::new();
     for i in 0..n {
         let (sx, sy) = sizes[i % sizes.len()];
@@ -267,7 +269,8 @@ fn without_gravity_only_the_cell_brings_a_dropped_hexagon_to_the_face() {
             home_stiffness: 0.0,
             ..Params::default()
         };
-        let mut w = World::new(Rect::from_min_size(Vec2::ZERO, v(1200.0, 900.0)), p);
+        let mut w = World::new(Rect::from_min_size(Vec2::ZERO, v(1200.0, 900.0)), p)
+            .with_settling(Settling::Always);
         hexagon(&mut w, size, v(400.0, 300.0));
         while w.step() {}
         let b = hexagon(&mut w, size, v(900.0, 700.0));

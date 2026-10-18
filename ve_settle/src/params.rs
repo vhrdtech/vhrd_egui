@@ -177,6 +177,19 @@ impl Params {
 }
 
 impl Params {
+    /// These parameters without the forces that move bodies by themselves:
+    /// no gravity, no corner snap, no vertex attraction, no grid pull. What
+    /// a world that holds ([`crate::Settling::Hold`], SETL-38) steps with.
+    pub fn held(mut self) -> Self {
+        self.gravity_side = None;
+        self.snap_range = 0.0;
+        self.attract_range = 0.0;
+        self.grid_stiffness = 0.0;
+        self
+    }
+}
+
+impl Params {
     /// The same parameters with every number inside the range the solver
     /// can work with: nothing negative that is a size, a speed or a rate,
     /// nothing that is not a number (it becomes the default), a step

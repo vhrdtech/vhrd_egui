@@ -44,6 +44,24 @@ impl Moves {
     }
 }
 
+/// The entries of a frame in a physics layout ([`crate::WidgetFrame::layout_menu`]): "Push neighbours" flips
+/// `push`, "Tidy up" is picked.
+pub(crate) fn layout_ui(ui: &mut Ui, push: &mut bool) -> Option<FrameAction> {
+    ui.checkbox(push, "Push neighbours").on_hover_text(
+        "On: dragged onto other widgets, dropped there or growing, this one pushes them out of its way. \
+         Off: it stops at their edge and nothing else moves",
+    );
+    let tidy = ui.button("Tidy up").on_hover_text(
+        "Settle the layout once: every widget slides up against what lies above it, corners snap \
+         together, then everything stays put again",
+    );
+    if tidy.clicked() {
+        ui.close();
+        return Some(FrameAction::Tidy);
+    }
+    None
+}
+
 /// The menu's entries; returns what was picked.
 pub(crate) fn ui(ui: &mut Ui, moves: &Moves, placement: Placement) -> Option<FrameAction> {
     let mut action = None;

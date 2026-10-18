@@ -85,6 +85,12 @@ const SIZE_SLACK: f32 = 0.05;
 const SNAP_SECS: f32 = 30.0;
 /// Room around a body its frame may paint into when it fits: the landing glow and a floating look's edge.
 const GLOW_ROOM: f32 = 10.0;
+/// The resize handle in a frame's bottom right corner, points square (SETL-39).
+pub const RESIZE_GRIP: f32 = 14.0;
+/// The least size a resize leaves a frame, points: its header and a little of its body.
+const RESIZE_LEAST: egui::Vec2 = vec2(60.0, 40.0);
+/// A height resized to within this of the frame's own (points) is its own again: as tall as its content.
+const RESIZE_BACK: f32 = 8.0;
 
 /// Where the world lies on the screen.
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -218,6 +224,20 @@ pub struct Shown {
     /// nothing changes until something does from outside (input, a widget's content, the window), and
     /// the host may stop painting.
     pub moving: bool,
+    /// Frames the user resized with the handle in their corner this pass (SETL-39), with what that set on
+    /// their frame state. A host that keeps the frame states itself (and lends them to the slots) takes them
+    /// over from here.
+    pub resized: Vec<Resized>,
+}
+
+/// What a resize with the handle in a frame's corner set (SETL-39): the width form it snapped to, the height
+/// step (a frame with heights of its own) or the height it was given (one without), as on its frame state.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct Resized {
+    pub slot: SlotId,
+    pub size: SizeMode,
+    pub height: HeightMode,
+    pub grid_height: Option<f32>,
 }
 
 /// A frame as it was drawn last: what a backdrop needs to gather light around it.
@@ -265,6 +285,10 @@ struct Cell {
     outlined: Option<[f32; 4]>,
     /// How many looks of the size pick in a row found it pressed along its row.
     pressed: u8,
+    /// Where the resize handle has dragged the frame to so far (screen), while it is held (SETL-39).
+    resize: Option<egui::Rect>,
+    /// The frame's height as its content makes it, the last time it was not given one by a resize.
+    own_height: Option<f32>,
 }
 
 impl Cell {
@@ -287,6 +311,8 @@ impl Cell {
             anchor: None,
             outlined: None,
             pressed: 0,
+            resize: None,
+            own_height: None,
         }
     }
 
@@ -501,6 +527,8 @@ pub struct Frames<W> {
     view: Option<View>,
     /// The picks as they are were decided for the scene as a whole ([`Frames::hold_picks`]).
     hold: bool,
+    /// A frame's ☰ menu asked to tidy up ([`FrameAction::Tidy`]): the world settles once with the next show.
+    tidy: bool,
     /// The last pointer used was a touch ([`Hands::MouseOnly`]).
     touch: bool,
     /// The epoch in which the size pick looked at every frame on auto in a world at rest and found nothing
@@ -534,6 +562,7 @@ impl<W> Frames<W> {
             group: Vec::new(),
             view: None,
             hold: false,
+            tidy: false,
             touch: false,
             picks_done: None,
         }
@@ -544,7 +573,7 @@ impl<W> Frames<W> {
     pub fn add(&mut self, world: &mut World, widget: W, seat: Seat, at: Vec2) -> SlotId {
         let id = self.dock.add(widget);
         let mut cell = Cell::new(seat, at);
-        cell.body = Some(seat_body(world, &cell));
+        cell.body = Some(seat_body(world, &cell, false));
         self.cells.insert(id, cell);
         self.epoch += 1;
         id
@@ -874,7 +903,19 @@ impl<W> Frames<W> {
     /// [`Frames::show`]); sending and closing come back for the host, as from [`Dock::apply`].
     pub fn apply(&mut self, id: SlotId, action: FrameAction) -> Applied {
         self.epoch += 1;
-        self.dock.apply(id, action)
+        let applied = self.dock.apply(id, action);
+        // tidying up is the world's: it settles once with the next show (SETL-38)
+        self.tidy |= applied == Applied::Tidy;
+        applied
+    }
+
+    /// Tidy the layout up now (SETL-38): the world settles once ([`World::settle_once`]), and the size pick
+    /// looks at every frame again. What a page's own "Tidy up" calls; a frame's ☰ "Tidy up" comes through
+    /// [`Frames::apply`].
+    pub fn tidy_up(&mut self, world: &mut World) {
+        self.tidy = false;
+        self.epoch += 1;
+        world.settle_once();
     }
 
     /// The frames of this window as they were drawn last, those in the layout and the floating ones.
@@ -937,7 +978,7 @@ impl<W> Frames<W> {
                     {
                         cell.center = view.to_world(rect.center());
                     }
-                    cell.body = Some(seat_body(world, cell));
+                    cell.body = Some(seat_body(world, cell, slot.frame.push));
                     cell.outlined = None;
                     self.epoch += 1;
                 }
@@ -973,6 +1014,9 @@ impl<W> Frames<W> {
     ) -> Shown {
         self.view = Some(view);
         self.sync(world);
+        if self.tidy {
+            self.tidy_up(world);
+        }
         if self.bounds != Some(world.bounds()) {
             self.bounds = Some(world.bounds());
             self.epoch += 1;
@@ -1204,6 +1248,29 @@ impl<W> Frames<W> {
         if let Some(action) = draw(&mut child, slot) {
             shown.picked.push((id, action));
         }
+        // whether it pushes its neighbours is the frame's setting (its ☰ "Push neighbours", SETL-38)
+        if world
+            .body(body_id)
+            .is_some_and(|b| b.pushes != slot.frame.push)
+        {
+            world.set_pushes(body_id, slot.frame.push);
+        }
+        if slot.frame.grid_height.is_none()
+            && let Some(drawn) = slot.frame.drawn_rect()
+            && !slot.frame.collapsed
+            && slot.frame.openness() >= 1.0
+        {
+            cell.own_height = Some(drawn.height());
+        }
+        let can_resize = grab
+            && !slot.frame.collapsed
+            && world.body(body_id).is_some_and(|b| !b.pinned && !b.dragged);
+        if can_resize
+            && let Some(done) = resize_handle(ui, world, view, (id, body_id), cell, slot, rect)
+        {
+            shown.resized.push(done);
+            self.epoch += 1;
+        }
 
         let frame = &slot.frame;
         if frame.shown_height() != cell.shown_height {
@@ -1411,9 +1478,240 @@ impl<W> Frames<W> {
     }
 }
 
+/// The resize handle in the bottom right corner of a frame in the world (SETL-39): dragged, a preview of the
+/// new size follows the pointer (up to the neighbours' edge for a frame that does not push them); let go, the
+/// width snaps to the nearest of the frame's min / nom / wide (a frame without a size switch takes it as its
+/// room), the height to the nearest of its height steps, or, without them, the frame is given that height (back
+/// to its content's own within [`RESIZE_BACK`]). A hexagon keeps its shape: only its width form changes. A
+/// double click gives the frame back to auto, as tall as its content. Returns what it set.
+fn resize_handle<W>(
+    ui: &mut Ui,
+    world: &mut World,
+    view: View,
+    (id, body_id): (SlotId, BodyId),
+    cell: &mut Cell,
+    slot: &mut Slot<W>,
+    rect: egui::Rect,
+) -> Option<Resized> {
+    let hex = cell.seat.shape == Shape::Hex;
+    let grip = egui::Rect::from_min_max(rect.max - vec2(RESIZE_GRIP, RESIZE_GRIP), rect.max);
+    let seen = grip.intersect(view.clip);
+    if !seen.is_positive() {
+        return None;
+    }
+    let r = ui.interact(
+        seen,
+        Id::new(("ve_settle::resize", id.0)),
+        Sense::click_and_drag(),
+    );
+    let r = r
+        .on_hover_cursor(egui::CursorIcon::ResizeNwSe)
+        .on_hover_text(if hex {
+            "Drag to resize: the width snaps to the frame's min, nom or wide form; a hexagon keeps its shape. \
+             Double click: back to auto."
+        } else {
+            "Drag to resize: the width snaps to the frame's min, nom or wide form, the height to its height \
+             steps or to where you let go (the body scrolls when its content wants more). Double click: back \
+             to auto, as tall as its content."
+        });
+    r.widget_info(|| egui::WidgetInfo::labeled(egui::WidgetType::Button, true, "resize"));
+    let lit = r.hovered() || r.dragged();
+    if ui.is_rect_visible(grip) {
+        let v = ui.visuals();
+        let color = if lit {
+            v.selection.stroke.color
+        } else {
+            v.weak_text_color()
+        };
+        let stroke = egui::Stroke::new(1.0, color);
+        let c = grip.right_bottom() - vec2(3.0, 3.0);
+        for k in [4.0, 7.5, 11.0] {
+            ui.painter()
+                .line_segment([c - vec2(k, 0.0), c - vec2(0.0, k)], stroke);
+        }
+    }
+    if r.double_clicked() {
+        cell.resize = None;
+        slot.frame.size = SizeMode::Auto;
+        slot.frame.height = HeightMode::Auto;
+        slot.frame.grid_height = None;
+        return Some(resized(id, &slot.frame));
+    }
+    let body = world.body(body_id)?;
+    let pushes = body.pushes;
+    if r.drag_started() {
+        cell.resize = Some(rect);
+    }
+    let pointer = r.interact_pointer_pos();
+    if let (true, Some(_), Some(p)) = (r.dragged(), cell.resize, pointer) {
+        let mut to = egui::Rect::from_min_max(rect.min, p.max(rect.min + RESIZE_LEAST));
+        if !pushes {
+            // it does not push: it stops at what lies right of it and under it
+            let room = room_from(world, body_id);
+            let most = view.to_screen(room).max;
+            to.max = to.max.min(most).max(rect.min + RESIZE_LEAST);
+        }
+        cell.resize = Some(to);
+        let layer = egui::LayerId::new(
+            egui::Order::Foreground,
+            Id::new(("ve_settle::resizing", id.0)),
+        );
+        let painter = ui.ctx().layer_painter(layer);
+        let accent = ui.visuals().selection.stroke.color;
+        painter.rect_stroke(
+            to,
+            6.0,
+            egui::Stroke::new(1.5, accent),
+            egui::StrokeKind::Inside,
+        );
+        if let Some(size) = snap_width(cell, slot, to.width()) {
+            painter.text(
+                to.right_bottom() - vec2(RESIZE_GRIP + 4.0, RESIZE_GRIP),
+                egui::Align2::RIGHT_BOTTOM,
+                size.label(),
+                egui::FontId::proportional(12.0),
+                accent,
+            );
+        }
+    }
+    if !r.drag_stopped() {
+        return None;
+    }
+    let to = cell.resize.take()?;
+    match snap_width(cell, slot, to.width()) {
+        Some(size) => {
+            slot.frame.size = match size {
+                Size::Min => SizeMode::Min,
+                Size::Nom => SizeMode::Nom,
+                Size::Wide => SizeMode::Wide,
+            }
+        }
+        // no size switch: the width is the room it lays its content out in
+        None => cell.seat.room = to.width().max(RESIZE_LEAST.x),
+    }
+    if !hex {
+        match cell.seat.hints.filter(SizeHints::has_heights) {
+            Some(hints) => {
+                let size = slot.frame.size.fixed().unwrap_or(cell.pick);
+                let chrome = cell.chrome.map_or(CHROME_GUESS.y, |c| c.y);
+                let steps = [Height::Min, Height::Nom, Height::Tall];
+                let near = |h: &Height| (hints.height(size, *h) + chrome - to.height()).abs();
+                let step = steps
+                    .into_iter()
+                    .min_by(|a, b| near(a).total_cmp(&near(b)))
+                    .unwrap_or(Height::Nom);
+                slot.frame.height = match step {
+                    Height::Min => HeightMode::Min,
+                    Height::Nom => HeightMode::Nom,
+                    Height::Tall => HeightMode::Tall,
+                };
+            }
+            None => {
+                let own = cell.own_height.unwrap_or(rect.height());
+                slot.frame.grid_height = if (to.height() - own).abs() <= RESIZE_BACK {
+                    None
+                } else {
+                    Some(to.height())
+                };
+            }
+        }
+    }
+    // the top left corner stays where it is while the body takes the new size
+    let want = Vec2::new(to.width(), to.height());
+    let size = match (cell.seat.hints, slot.frame.size.fixed()) {
+        (Some(_), Some(s)) => cell.outer_of(s, (cell.pick, rect.size())).x,
+        _ => want.x,
+    };
+    let height = slot.frame.grid_height.unwrap_or(rect.height());
+    let size = Vec2::new(size, height);
+    let at = Vec2::new(rect.min.x - view.offset.x, rect.min.y - view.offset.y) + size * 0.5;
+    world.put(body_id, at, size);
+    cell.anchor = None;
+    Some(resized(id, &slot.frame))
+}
+
+fn resized(slot: SlotId, frame: &ve_frame::FrameState) -> Resized {
+    Resized {
+        slot,
+        size: frame.size,
+        height: frame.height,
+        grid_height: frame.grid_height,
+    }
+}
+
+/// The width form nearest to `width` for a frame with a size switch; `None` without one.
+fn snap_width<W>(cell: &Cell, slot: &Slot<W>, width: f32) -> Option<Size> {
+    cell.seat.hints?;
+    let now_size = slot.frame.shown_size().unwrap_or(cell.pick);
+    let now = slot
+        .frame
+        .drawn_rect()
+        .map_or(vec2(cell.size.x, cell.size.y), |r| r.size());
+    let near = |s: &Size| (cell.outer_of(*s, (now_size, now)).x - width).abs();
+    [Size::Min, Size::Nom, Size::Wide]
+        .into_iter()
+        .min_by(|a, b| near(a).total_cmp(&near(b)))
+}
+
+/// The room body `id` may grow into without moving anything (SETL-39): from its top left corner to the nearest
+/// body right of it that shares some of its height, and down to the nearest under it that shares some of its
+/// width (or the walls), less the gap.
+pub fn room_from(world: &World, id: BodyId) -> Rect {
+    let bounds = world.bounds();
+    let Some(me) = world.body(id) else {
+        return bounds;
+    };
+    let gap = world.params().gap;
+    let r = me.rect;
+    let walls = world.params().walls;
+    let mut right = if walls.right {
+        bounds.max.x - gap
+    } else {
+        f32::INFINITY
+    };
+    let mut bottom = if walls.bottom {
+        bounds.max.y - gap
+    } else {
+        f32::INFINITY
+    };
+    for o in world.bodies() {
+        if o.id == id || o.lifted {
+            continue;
+        }
+        let o = o.rect;
+        if o.min.x >= r.max.x - 0.5 && o.max.y > r.min.y && o.min.y < r.max.y {
+            right = right.min(o.min.x - gap);
+        }
+        if o.min.y >= r.max.y - 0.5 && o.max.x > r.min.x && o.min.x < r.max.x {
+            bottom = bottom.min(o.min.y - gap);
+        }
+    }
+    // what lies right and under at once (a corner) stops it too: the corner of the room must be free
+    for o in world.bodies() {
+        if o.id == id || o.lifted {
+            continue;
+        }
+        let o = o.rect;
+        let inside = o.min.x < right && o.max.x > r.min.x && o.min.y < bottom && o.max.y > r.min.y;
+        if inside && o.min.x >= r.max.x - 0.5 && o.min.y >= r.max.y - 0.5 {
+            // give up the one of the two that loses less
+            if o.min.x - gap - r.min.x >= o.min.y - gap - r.min.y {
+                right = right.min(o.min.x - gap);
+            } else {
+                bottom = bottom.min(o.min.y - gap);
+            }
+        }
+    }
+    Rect {
+        min: r.min,
+        max: Vec2::new(right.max(r.max.x), bottom.max(r.max.y)),
+    }
+}
+
 /// A body for `cell` where it sat last, at the size it had.
-fn seat_body(world: &mut World, cell: &Cell) -> BodyId {
+fn seat_body(world: &mut World, cell: &Cell, push: bool) -> BodyId {
     let mut desc = BodyDesc::new(cell.center, cell.size)
+        .pushes(push)
         .min_size(cell.size)
         .max_size(cell.size)
         .home(Some(cell.center));
@@ -1431,7 +1729,7 @@ mod tests {
 
     fn world() -> World {
         let bounds = Rect::from_min_size(Vec2::ZERO, Vec2::new(1000.0, 600.0));
-        World::new(bounds, Params::default())
+        World::new(bounds, Params::default()).with_settling(crate::Settling::Always)
     }
 
     /// The outline is the frame's hexagon: convex, flat on top and bottom, its faces at 60°.

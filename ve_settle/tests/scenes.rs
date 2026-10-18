@@ -3,6 +3,7 @@
 //! takes tiles dropped on it without a jump (SETL-13, SETL-14), and a full field of panels running past
 //! an open bottom that lines its neighbours up and sleeps (SETL-11, SETL-12).
 
+use ve_settle::Settling;
 use ve_settle::{BodyDesc, Params, Poly, Rect, Side, Vec2, World};
 
 /// Frames per second the worlds are advanced at, as the sandbox runs them.
@@ -96,7 +97,8 @@ fn panel(w: &mut World, at: Vec2, size: Vec2) {
 fn honeycomb(tight: bool) -> World {
     let p = Params::default();
     let gap = p.gap;
-    let mut w = World::new(Rect::from_min_size(Vec2::ZERO, ARENA), p);
+    let mut w =
+        World::new(Rect::from_min_size(Vec2::ZERO, ARENA), p).with_settling(Settling::Always);
     let at = |x: f32, y: f32| v(gap + x, gap + y);
     let (hex, half) = (v(180.0, 156.0), 90.0);
     let pitch = hex.x + gap;
@@ -228,7 +230,8 @@ fn a_honeycomb_rests_and_tiles_dropped_on_it_glide_in() {
 fn a_full_field_runs_past_the_open_bottom_lines_up_and_sleeps() {
     let mut p = Params::default();
     p.walls.bottom = false;
-    let mut w = World::new(Rect::from_min_size(Vec2::ZERO, ARENA), p);
+    let mut w =
+        World::new(Rect::from_min_size(Vec2::ZERO, ARENA), p).with_settling(Settling::Always);
     let sizes = [
         v(300.0, 200.0),
         v(280.0, 170.0),

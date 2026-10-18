@@ -1,5 +1,6 @@
 //! Pinned bodies (SETL-27): frozen in place; the others rest against them as against a wall.
 
+use ve_settle::Settling;
 use ve_settle::{BodyDesc, BodyId, Params, Rect, Vec2, World};
 
 fn v(x: f32, y: f32) -> Vec2 {
@@ -7,7 +8,7 @@ fn v(x: f32, y: f32) -> Vec2 {
 }
 
 fn world(p: Params) -> World {
-    World::new(Rect::from_min_size(Vec2::ZERO, v(1200.0, 800.0)), p)
+    World::new(Rect::from_min_size(Vec2::ZERO, v(1200.0, 800.0)), p).with_settling(Settling::Always)
 }
 
 fn rect(w: &World, id: BodyId) -> Rect {

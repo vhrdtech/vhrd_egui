@@ -2,6 +2,7 @@
 //! of other bodies and on the walls, and the pull resizes the body, so
 //! near-equal neighbours end with flush edges.
 
+use ve_settle::Settling;
 use ve_settle::{BodyDesc, BodyId, Params, Rect, Vec2, World};
 
 fn v(x: f32, y: f32) -> Vec2 {
@@ -9,7 +10,7 @@ fn v(x: f32, y: f32) -> Vec2 {
 }
 
 fn world(w: f32, h: f32, params: Params) -> World {
-    World::new(Rect::from_min_size(Vec2::ZERO, v(w, h)), params)
+    World::new(Rect::from_min_size(Vec2::ZERO, v(w, h)), params).with_settling(Settling::Always)
 }
 
 fn rect(w: &World, id: BodyId) -> Rect {

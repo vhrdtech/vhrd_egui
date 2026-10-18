@@ -1,5 +1,6 @@
 //! Group drag (SETL-22): the bodies stuck together with one, as `World::cluster` finds them.
 
+use ve_settle::Settling;
 use ve_settle::{BodyDesc, BodyId, Params, Rect, Vec2, World};
 
 fn v(x: f32, y: f32) -> Vec2 {
@@ -13,7 +14,7 @@ fn world() -> World {
         home_stiffness: 0.0,
         ..Params::default()
     };
-    World::new(Rect::from_min_size(Vec2::ZERO, v(1200.0, 900.0)), p)
+    World::new(Rect::from_min_size(Vec2::ZERO, v(1200.0, 900.0)), p).with_settling(Settling::Always)
 }
 
 fn add(w: &mut World, min: Vec2, size: Vec2) -> BodyId {
@@ -65,7 +66,8 @@ fn a_stack_under_gravity_is_no_group() {
             home_stiffness: 0.0,
             ..Params::default()
         },
-    );
+    )
+    .with_settling(Settling::Always);
     let a = add(&mut w, v(300.0, 300.0), v(200.0, 100.0));
     let b = add(&mut w, v(300.0, 420.0), v(200.0, 100.0));
     rest(&mut w);

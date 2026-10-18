@@ -1,6 +1,7 @@
 //! Convex polygon bodies (SETL-4): outlines, their contacts, editing a
 //! vertex with the outline kept convex, and vertex attraction on them.
 
+use ve_settle::Settling;
 use ve_settle::{BodyDesc, BodyId, Params, Poly, Rect, Side, Vec2, World};
 
 fn v(x: f32, y: f32) -> Vec2 {
@@ -8,7 +9,7 @@ fn v(x: f32, y: f32) -> Vec2 {
 }
 
 fn world(w: f32, h: f32, params: Params) -> World {
-    World::new(Rect::from_min_size(Vec2::ZERO, v(w, h)), params)
+    World::new(Rect::from_min_size(Vec2::ZERO, v(w, h)), params).with_settling(Settling::Always)
 }
 
 fn unit() -> Rect {
@@ -361,7 +362,7 @@ fn column_with_a_hexagon() -> World {
     params.home_stiffness = 0.0;
     params.push_out = true;
     let bounds = Rect::from_min_size(Vec2::ZERO, Vec2::new(400.0, 600.0));
-    let mut world = World::new(bounds, params);
+    let mut world = World::new(bounds, params).with_settling(Settling::Always);
     let rigid = |x: f32, y: f32, h: f32| {
         let size = Vec2::new(300.0, h);
         BodyDesc::new(Vec2::new(x, y), size)
@@ -414,7 +415,7 @@ fn pile_with_hexagons(push_out: bool) -> World {
     params.walls.bottom = false;
     params.push_out = push_out;
     let bounds = Rect::from_min_size(Vec2::ZERO, Vec2::new(890.0, 800.0));
-    let mut world = World::new(bounds, params);
+    let mut world = World::new(bounds, params).with_settling(Settling::Always);
     let sizes = [
         (281.0, 162.0),
         (209.0, 88.0),

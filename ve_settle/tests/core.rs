@@ -1,5 +1,6 @@
 //! The solver on its own: forces, contacts, squeeze, rest, determinism (SETL-1).
 
+use ve_settle::Settling;
 use ve_settle::{Axis, BodyDesc, BodyId, Params, Rect, Side, Vec2, World};
 
 fn v(x: f32, y: f32) -> Vec2 {
@@ -7,7 +8,7 @@ fn v(x: f32, y: f32) -> Vec2 {
 }
 
 fn world(w: f32, h: f32, params: Params) -> World {
-    World::new(Rect::from_min_size(Vec2::ZERO, v(w, h)), params)
+    World::new(Rect::from_min_size(Vec2::ZERO, v(w, h)), params).with_settling(Settling::Always)
 }
 
 /// No gravity and no homes unless a test turns them on.
@@ -626,7 +627,8 @@ fn run_on_after_a_push(drag: f32) -> f32 {
         max_speed: Params::default().glide_speed,
         ..Params::default()
     };
-    let mut w = World::new(Rect::from_min_size(Vec2::ZERO, Vec2::new(3000.0, 800.0)), p);
+    let mut w = World::new(Rect::from_min_size(Vec2::ZERO, Vec2::new(3000.0, 800.0)), p)
+        .with_settling(Settling::Always);
     let size = Vec2::new(200.0, 100.0);
     let a = w.add(BodyDesc::new(Vec2::new(300.0, 400.0), size).home(None));
     let b = w.add(BodyDesc::new(Vec2::new(506.0, 400.0), size).home(None));
@@ -663,7 +665,8 @@ fn drop_beside(inside: f32) -> (f32, f32, f32) {
         max_speed: Params::default().glide_speed,
         ..Params::default()
     };
-    let mut w = World::new(Rect::from_min_size(Vec2::ZERO, Vec2::new(1400.0, 800.0)), p);
+    let mut w = World::new(Rect::from_min_size(Vec2::ZERO, Vec2::new(1400.0, 800.0)), p)
+        .with_settling(Settling::Always);
     let size = Vec2::new(280.0, 160.0);
     let a = w.add(BodyDesc::new(Vec2::new(500.0, p.gap + 80.0), size).home(None));
     let b = w.add(BodyDesc::new(Vec2::new(1100.0, p.gap + 80.0), size).home(None));
@@ -716,7 +719,8 @@ fn every_snap_starts_at_a_snap_anchor_and_hexagons_have_none() {
         home_stiffness: 0.0,
         ..Params::default()
     };
-    let mut w = World::new(Rect::from_min_size(Vec2::ZERO, Vec2::new(1200.0, 800.0)), p);
+    let mut w = World::new(Rect::from_min_size(Vec2::ZERO, Vec2::new(1200.0, 800.0)), p)
+        .with_settling(Settling::Always);
     // a rectangle pair whose corners are near each other, one of them stretched by attraction, and a hexagon
     let a = w.add(
         BodyDesc::new(Vec2::new(300.0, 200.0), Vec2::new(200.0, 120.0))

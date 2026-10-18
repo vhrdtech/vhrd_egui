@@ -1,6 +1,7 @@
 //! Polygon contacts and the pillow: bodies pressed too hard in a row or
 //! column slide off each other instead of being crushed (SETL-9).
 
+use ve_settle::Settling;
 use ve_settle::{BodyDesc, Params, Poly, Rect, Vec2, World, sat};
 
 fn v(x: f32, y: f32) -> Vec2 {
@@ -8,7 +9,7 @@ fn v(x: f32, y: f32) -> Vec2 {
 }
 
 fn world(w: f32, h: f32, params: Params) -> World {
-    World::new(Rect::from_min_size(Vec2::ZERO, v(w, h)), params)
+    World::new(Rect::from_min_size(Vec2::ZERO, v(w, h)), params).with_settling(Settling::Always)
 }
 
 /// Step until at rest, checking on every step that solid bodies never

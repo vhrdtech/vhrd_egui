@@ -1,6 +1,7 @@
 //! Robustness (SETL-19): whatever the parameters are turned to, no two bodies share a middle and nothing
 //! crosses a hard wall; put back to the defaults, the world comes to rest with nothing overlapping.
 
+use ve_settle::Settling;
 use ve_settle::{BodyDesc, Params, Poly, Rect, Side, Vec2, World};
 
 /// A small deterministic generator.
@@ -70,7 +71,7 @@ fn field(gravity: Side) -> (World, Params) {
         Side::Right => params.walls.left = false,
     }
     let bounds = Rect::from_min_size(Vec2::ZERO, Vec2::new(900.0, 700.0));
-    let mut world = World::new(bounds, params);
+    let mut world = World::new(bounds, params).with_settling(Settling::Always);
     let sizes = [
         (280.0, 160.0),
         (210.0, 90.0),
@@ -264,7 +265,7 @@ fn a_body_growing_in_a_full_row_never_overlaps_its_neighbours() {
                 ..Params::default()
             };
             let bounds = Rect::from_min_size(Vec2::ZERO, Vec2::new(900.0, 700.0));
-            let mut world = World::new(bounds, params);
+            let mut world = World::new(bounds, params).with_settling(Settling::Always);
             // a full row along the top, a second one under it
             let rows = [
                 (6.0, [first, 250.0, 870.0 - first - 250.0 - 12.0], 160.0),
@@ -335,7 +336,8 @@ fn a_window_narrower_than_its_rows_moves_nothing_by_a_jump_whatever_the_widths()
         let mut world = World::new(
             Rect::from_min_size(Vec2::ZERO, Vec2::new(wide, 760.0)),
             params,
-        );
+        )
+        .with_settling(Settling::Always);
         let (mut x, mut y, mut row) = (6.0, 6.0, 0.0f32);
         for i in 0..14 {
             let (w, h) = sizes[i % sizes.len()];

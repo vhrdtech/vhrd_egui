@@ -4,6 +4,7 @@
 use egui::{Event, Pos2, ScrollArea, Sense, TouchDeviceId, TouchId, TouchPhase, pos2, vec2};
 use egui_kittest::Harness;
 use ve_frame::{FrameAction, Size, SizeHints, Slot, SlotId, WidgetFrame};
+use ve_settle::Settling;
 use ve_settle::frames::{Frames, Hands, LayOut, Seat, Shown, View};
 use ve_settle::{Params, Rect, Vec2, World};
 
@@ -39,13 +40,18 @@ impl Dash {
         p.max_speed = p.glide_speed;
         p.push_out = true;
         let bounds = Rect::from_min_size(Vec2::ZERO, Vec2::new(PAGE.x, PAGE.y));
-        let mut world = World::new(bounds, p);
+        let mut world = World::new(bounds, p).with_settling(Settling::Always);
         let mut frames = Frames::new();
         let h = hints(200.0);
         let slots = (0..n)
             .map(|i| {
                 let seat = Seat::new(format!("panel {i}")).hints(h);
-                frames.add(&mut world, i, seat, Vec2::new(350.0, 60.0))
+                let id = frames.add(&mut world, i, seat, Vec2::new(350.0, 60.0));
+                // these scenes are about what a panel pushes (SETL-38: off by default)
+                if let Some(slot) = frames.dock.get_mut(id) {
+                    slot.frame.push = true;
+                }
+                id
             })
             .collect();
         Self {

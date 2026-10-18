@@ -1,6 +1,9 @@
 //! Physics layout: rectangles (and convex polygons) that settle.
 //!
-//! A [`World`] holds axis-aligned bodies inside walls. Each step, gravity
+//! A [`World`] holds axis-aligned bodies inside walls. By default it
+//! *holds* ([`Settling`]): bodies stay where they are put and contacts only
+//! keep them apart. Settling is asked for ([`World::settle_once`], a
+//! "Tidy up"; or [`Settling::Always`]): then each step gravity
 //! pulls them toward a side, a spring pulls each one to its home spot (so
 //! it stays where the user knows it), contacts keep them from overlapping
 //! and, where there is no room, bodies that can give are squeezed. Damping
@@ -15,7 +18,7 @@
 //! parameter and draws the bodies, forces, tension and home spots.
 //!
 //! ```
-//! use ve_settle::{BodyDesc, Params, Rect, Vec2, World};
+//! use ve_settle::{BodyDesc, Params, Rect, Settling, Vec2, World};
 //!
 //! let bounds = Rect::from_min_size(Vec2::ZERO, Vec2::new(400.0, 300.0));
 //! let mut world = World::new(bounds, Params::default());
@@ -25,7 +28,12 @@
 //! // Per frame: world.advance(frame_dt). Here: run until nothing moves.
 //! assert!(world.settle(2_000).is_some());
 //! assert_eq!(world.max_overlap(), 0.0);
-//! // Gravity pulls up by default: `a` rests under the top wall, `b` under `a`.
+//! // A world holds by default: the two are parted, nothing falls.
+//! assert!(world.body(a).unwrap().rect.min.y > 100.0);
+//! // Tidy up: gravity (up by default) acts until it rests, then it holds again.
+//! world.settle_once();
+//! assert!(world.settle(2_000).is_some());
+//! assert_eq!(world.settling(), Settling::Hold);
 //! let (a, b) = (world.body(a).unwrap().rect, world.body(b).unwrap().rect);
 //! assert!(a.min.y < 7.0 && b.min.y > a.max.y);
 //! // At rest a step does nothing.
@@ -105,5 +113,5 @@ pub use geom::{Axis, Hit, MAX_VERTICES, Poly, Rect, Side, Vec2, contact, sat};
 pub use params::{Params, Walls};
 pub use world::{
     Body, BodyDesc, BodyId, CLUSTER_SLACK, COOL_AFTER, COOL_SECS, CORE, Contact, PARAM_RAMP_STEPS,
-    Pull, Snap, World,
+    Pull, Settling, Snap, World,
 };

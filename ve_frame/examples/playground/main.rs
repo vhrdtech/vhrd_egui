@@ -518,6 +518,8 @@ impl Demo {
 pub struct Host<'h> {
     pub header: Option<(f32, HostUi<'h>)>,
     pub menu: Option<HostUi<'h>>,
+    /// The ☰ entries of a frame in a physics layout: "Push neighbours" and "Tidy up" (ve_settle SETL-38).
+    pub layout: bool,
 }
 
 /// What a hosting app draws for the widget in slot `SlotId`.
@@ -616,6 +618,7 @@ pub fn draw_hosted(
     if let Some(add) = host.menu {
         f = f.menu(move |ui| add(ui, slot_id));
     }
+    f = f.layout_menu(host.layout);
     if opts.footer {
         f = f.footer(move |ui| {
             ui.weak(format!("slot {}", id.0))
@@ -977,7 +980,7 @@ impl Playground {
         let title = title.unwrap_or_default();
         self.message = match self.dock.apply(id, action.clone()) {
             Applied::Moved => format!("{title}: {action:?}"),
-            Applied::Gone => return,
+            Applied::Gone | Applied::Tidy => return,
             Applied::Close => {
                 self.dock.remove(id);
                 format!("{title}: closed")
