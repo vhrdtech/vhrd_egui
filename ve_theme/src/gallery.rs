@@ -156,12 +156,29 @@ impl Gallery {
         });
         ui.add(egui::ProgressBar::new(0.63).text("63 %"));
 
-        ui.section_header("Containers", "Collapsing header, group frame, separator");
+        ui.section_header(
+            "Containers",
+            "Collapsing header, group frame, the rest of a cut list under a fold (BAS-5), separator",
+        );
         egui::CollapsingHeader::new("Collapsing header")
             .default_open(true)
             .show(ui, |ui| {
                 ui.group(|ui| ui.label("Group frame"));
             });
+        ui.label("busy-1 · working");
+        let muted = ui.tokens().colors.text_muted;
+        let (header, _) = ve_basics::fold_rest(
+            ui,
+            "gallery-fold-rest",
+            RichText::new("2 more subagents, not busy").color(muted),
+            |ui| {
+                ui.label("idle-a · done");
+                ui.label("idle-b · failed");
+            },
+        );
+        header.on_hover_text(
+            "Fold rest: the rest of a cut list, collapsed by default; click to show them",
+        );
         ui.separator();
 
         ui.section_header(

@@ -256,6 +256,16 @@ Small helpers every app uses, crate `ve_basics`. UI rules that go with them: AGE
   (WID-8), the template's top bar uses it (PLT-2), tpm_mesh_dash on its `v…` badge (APP-116).
   `ve_basics/src/app_menu.rs`, kittests and snapshot `app_menu` in `ve_basics/tests/ui.rs`.
 
+- ✅ **BAS-5 Fold rest** (P2605#20oct-1628): nothing is hidden: a list cut for room ends in a fold with the rest,
+  never a bare "N more". `FoldRest` (header in the caller's own row, body below; collapsed by default,
+  `default_open`, `is_open`; in a grid the header alone, the caller draws the rest as rows while open) and
+  `fold_rest` (both in one call): the header is the caller's text with a small
+  triangle after it (right folded, down open), the whole header clickable, labelled for accessibility; the body
+  slides open like a collapsing header and its state lives in egui memory (`reset_egui_memory` folds it again).
+  The rule: AGENTS.md "UI guide rules", `egui_app_skill/references/ui-guide.md`. Shown in the ve_theme gallery
+  (Containers). `ve_basics/src/fold_rest.rs`, kittests (folded, open, split header, grid) and snapshots
+  `fold_rest_folded` / `fold_rest_open` in `ve_basics/tests/ui.rs`. Used by tpm_mesh_dash (P2620#20oct-1628).
+
 ## Theme (`THM`)
 
 The VHRD design system, crate `ve_theme`, ideas from Rerun's `re_ui` (licence check in the crate docs). Apps opt
@@ -627,6 +637,8 @@ switch (P2605#8oct-1205). ve_settle (SETL-5, SETL-7) later reads the same shapes
   the switch pair (FRM-11): narrow headers cut their title a little sooner. (ve_settle bodies taking `SizeHints` and `Shape`: done, SETL-7;
   what is open between the two is SETL-18.) A control added to the playground's control row made 20 of its
   kittests fail (clicks no longer arrived), so the row's layout is something they depend on: not looked into.
+
+- 🐛 **FRM-19 Playground snapshots differ on omarchy-m1**: `playground_pair_dark` / `_light` (269 and 285 pixels over the 0.6 threshold) and `tab_hexagons` (54) fail on omarchy-m1 (aarch64, its wgpu renderer) on a clean main as of 0.32.0, faint antialiasing only, like DASH-21. Fix: a pixel budget as `tolerant()` in `ve_dash/tests/ui.rs`, or the CPU rasteriser tpm_mesh_dash uses (`LIBGL_ALWAYS_SOFTWARE=1` in `.cargo/config.toml`). Found by P2605#20oct-1628.
 
 ## Physics layout (`SETL`)
 

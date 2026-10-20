@@ -5,6 +5,11 @@ versions follow [Semantic Versioning](https://semver.org/). Feature IDs refer to
 
 ## [Unreleased]
 
+### Added
+
+- `ve_basics` (BAS-5): `FoldRest` / `fold_rest`: the rest of a list cut for room under a fold, collapsed by default, the header saying what and how many; the UI guide rule "Nothing is hidden" in AGENTS.md and `ui-guide.md`. The ve_theme gallery shows it (`ve_theme` now depends on `ve_basics`).
+- Template (PLT-2): the generated `AGENTS.md` and the skill carry the rule "Nothing is hidden" (`ve_basics::fold_rest`). Upgrade: add the bullet to your app's `AGENTS.md` "UI guide rules", or run the template upgrade.
+
 ## [0.32.0] - 2026-10-18
 
 ### Added

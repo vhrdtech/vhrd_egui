@@ -70,7 +70,8 @@ Cargo workspace, edition 2024, one shared version (`[workspace.package]`).
 - `ve_app/` — the application shell apps are built on: `Shell` (an `eframe::App`) with menu bar, egui_tiles of
   widgets opened from the `WidgetInfo` registry, About / Settings / Debug windows, status bar, persisted
   layout, quit dialog for busy widgets; `ve_app::prelude` for widget code, the `shell_demo` example.
-- `ve_basics/` — build info, non-selectable labels, hover cross-reference highlight, startup crash guard.
+- `ve_basics/` — build info, non-selectable labels, hover cross-reference highlight, the fold for the rest of a
+  cut list (`FoldRest`), startup crash guard.
 - `ve_template/` — the app template as a command (`new`, `check-answers`, `compare`); the files it renders and the
   agent skill around it live in `egui_app_skill/` (`SKILL.md`, `templates/`, `references/`). A change to what gets
   generated gets a CHANGELOG entry marked `(PLT-2)` with upgrade notes; `cargo test -p ve_template` renders every
@@ -138,6 +139,12 @@ reads before writing UI is `egui_app_skill/references/ui-guide.md`, kept in step
 - **Disabled or unavailable things stay visible and say why**: never hide a control, row or action because it
   can't be used now; show it disabled with a tooltip giving the reason ("not clickable: interactive session, no
   transcript served"), and when the cause is on screen, highlight it on hover (`hover_link`) (user, 8 Oct 2026).
+- **Nothing is hidden: the rest goes under a fold, never a count**: a list cut for room (rows, subagents,
+  sessions, log lines, chips) never ends in "N more" or "…and N others" alone, and never drops items silently;
+  the rest sits under a fold, collapsed by default, whose header says what is in it ("3 more subagents, not busy
+  ▸"), and opening it shows every item (`FoldRest` / `fold_rest`, BAS-5 fold-rest). CLIs and bots, where nothing
+  folds, offer the rest (`--all`, a button). Built this way from the first version, not added on review (user,
+  20 Oct 2026).
 - **Categorical colours avoid red and orange**: labels, chips, tags, series, hosts and models never use red,
   orange or red-ish brown hues (OKLCH 5°-85°, `ve_theme::hue::ALERT_HUES`); those are reserved for error and
   warning (`crit`, `warn`, `red`). Colours that share a view must be clearly distinct (OKLab ΔE, hue gap), and a

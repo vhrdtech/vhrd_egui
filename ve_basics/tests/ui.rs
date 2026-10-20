@@ -2,7 +2,7 @@
 
 use egui::{pos2, vec2};
 use egui_kittest::Harness;
-use egui_kittest::kittest::Queryable;
+use egui_kittest::kittest::{NodeT, Queryable};
 use std::cell::Cell;
 use std::rc::Rc;
 
@@ -176,4 +176,126 @@ fn reset_egui_memory_keeps_the_style() {
         None
     );
     assert_eq!(ctx.style_of(egui::Theme::Dark).spacing.item_spacing.x, 42.0);
+}
+
+/// BAS-5: the rest of a cut list sits under a fold: collapsed at first (header only, labelled with its
+/// count), every item after a click, folded again after another; the open state persists in egui memory.
+#[test]
+fn fold_rest_starts_folded_and_opens_to_every_item() {
+    use ve_basics::fold_rest;
+    let mut h = Harness::builder()
+        .with_size(vec2(300.0, 200.0))
+        .build_ui(|ui| {
+            ui.label("busy-1");
+            let (header, _) = fold_rest(ui, "rest", "3 more subagents, not busy", |ui| {
+                for name in ["idle-a", "idle-b", "idle-c"] {
+                    ui.label(name);
+                }
+            });
+            header.on_hover_text("idle-a, idle-b, idle-c");
+        });
+    h.run();
+    let header = h.get_by_label("3 more subagents, not busy");
+    assert_eq!(
+        header.accesskit_node().role(),
+        egui::accesskit::Role::Button,
+        "a clickable header"
+    );
+    for name in ["idle-a", "idle-b", "idle-c"] {
+        assert!(h.query_by_label(name).is_none(), "{name} folded at first");
+    }
+
+    h.get_by_label("3 more subagents, not busy").click();
+    h.run();
+    for name in ["idle-a", "idle-b", "idle-c"] {
+        h.get_by_label(name);
+    }
+    h.get_by_label("3 more subagents, not busy");
+
+    h.get_by_label("3 more subagents, not busy").click();
+    h.run();
+    for name in ["idle-a", "idle-b", "idle-c"] {
+        assert!(h.query_by_label(name).is_none(), "{name} folded again");
+    }
+}
+
+/// BAS-5: the header and the body drawn apart (the caller's row layout), `default_open` and `is_open`.
+#[test]
+fn fold_rest_split_header_and_default_open() {
+    use ve_basics::FoldRest;
+    let open = Rc::new(Cell::new(false));
+    let mut h = Harness::builder().with_size(vec2(300.0, 200.0)).build_ui({
+        let open = open.clone();
+        move |ui| {
+            let mut fold = FoldRest::new(ui, "split").default_open(ui, true);
+            ui.horizontal(|ui| {
+                ui.add_space(12.0);
+                fold.header(ui, "2 more");
+            });
+            open.set(fold.is_open());
+            fold.body(ui, |ui| ui.label("shown"));
+        }
+    });
+    h.run();
+    assert!(open.get());
+    h.get_by_label("shown");
+    h.get_by_label("2 more").click();
+    h.run();
+    assert!(!open.get());
+    assert!(h.query_by_label("shown").is_none());
+}
+
+/// BAS-5: the fold folded and open, one picture each.
+#[test]
+fn fold_rest_snapshots() {
+    use ve_basics::fold_rest;
+    let body = |ui: &mut egui::Ui| {
+        ui.label("busy-1 · working");
+        fold_rest(ui, "rest", "3 more subagents, not busy", |ui| {
+            for name in ["idle-a · done", "idle-b · done", "idle-c · failed"] {
+                ui.label(name);
+            }
+        });
+        ui.label("next row");
+    };
+    let mut h = Harness::builder()
+        .with_size(vec2(260.0, 120.0))
+        .build_ui(body);
+    h.run();
+    h.snapshot("fold_rest_folded");
+    h.get_by_label("3 more subagents, not busy").click();
+    h.run();
+    h.snapshot("fold_rest_open");
+}
+
+/// BAS-5: in a grid the header stands alone and the caller draws the rest while `is_open`; the header
+/// stores the state itself, so it holds without `body`.
+#[test]
+fn fold_rest_header_alone_in_a_grid() {
+    use ve_basics::FoldRest;
+    let mut h = Harness::builder()
+        .with_size(vec2(300.0, 200.0))
+        .build_ui(|ui| {
+            egui::Grid::new("g").show(ui, |ui| {
+                ui.label("row-1");
+                ui.end_row();
+                let mut fold = FoldRest::new(ui, "grid-rest");
+                fold.header(ui, "2 more rows");
+                ui.end_row();
+                if fold.is_open() {
+                    ui.label("row-2");
+                    ui.end_row();
+                    ui.label("row-3");
+                    ui.end_row();
+                }
+            });
+        });
+    h.run();
+    assert!(h.query_by_label("row-2").is_none());
+    h.get_by_label("2 more rows").click();
+    h.run();
+    h.get_by_label("row-2");
+    h.get_by_label("row-3");
+    h.run();
+    h.get_by_label("row-3");
 }

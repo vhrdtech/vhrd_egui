@@ -3748,6 +3748,7 @@ dependencies = [
  "egui",
  "egui_kittest",
  "serde_json",
+ "ve_basics",
 ]
 
 [[package]]

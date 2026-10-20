@@ -51,6 +51,9 @@ The rules every app on vhrd_egui follows (helpers in `ve_basics`, the full text 
   (`ve_basics::AppMenu`: about, build, reset storage to defaults).
 - **Highlight related items on hover**: when an item is hovered, everything that refers to the same thing (the
   row, its chart, its status light, its name in a legend) lights up (`hover_link`).
+- **Nothing is hidden**: a list cut for room never ends in a bare "N more" or drops items silently; the rest sits
+  under a fold, collapsed by default, whose header says what and how many (`ve_basics::fold_rest` /
+  `FoldRest`), and opening it shows every item. CLIs offer the rest with `--all`.
 - **Labels are not selectable** (`setup_labels` at startup); text worth copying (ids, paths, commands) uses
   `copyable_label`.
 - **Percent bars use a fixed block count**, 10 by default, 20/25/50/100 when finer steps help

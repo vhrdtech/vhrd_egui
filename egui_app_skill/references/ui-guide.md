@@ -29,6 +29,40 @@ Never hide a control, row or action because it can't be used right now. Show it 
 says why and what would enable it. When the cause is visible on screen (a full login, a stopped node, a missing
 setting), hovering the disabled item highlights that cause (`hover_link`).
 
+## Nothing is hidden: the rest goes under a fold
+
+A list cut for room (rows, subagents, sessions, log lines, chips) never ends in "N more" or "…and N others"
+alone, and never drops items silently. The rest sits under a fold, collapsed by default, whose header says what
+is in it and how many ("3 more subagents, not busy ▸"); opening it shows every item. A tooltip listing them is a
+nice extra, not a replacement. CLIs and bots, where nothing folds, offer the rest (`--all`, a button). Build it
+this way from the first version, not on review.
+
+```rust
+// header and rest in one call
+let (header, _) = ve_basics::fold_rest(ui, ("idle", session_id), format!("{n} more subagents, not busy"), |ui| {
+    for a in &idle {
+        agent_row(ui, a);
+    }
+});
+header.on_hover_text(names);
+
+// or the header in your own row (indent, glyph), the rest below it
+let mut fold = ve_basics::FoldRest::new(ui, ("idle", session_id));
+ui.horizontal(|ui| {
+    ui.add_space(indent);
+    fold.header(ui, muted(format!("↳ {n} more subagents, not busy")));
+});
+fold.body(ui, |ui| for a in &idle { agent_row(ui, a); });
+```
+
+In a grid or a table, put `fold.header(..)` in a row and draw the rest as rows of your own while
+`fold.is_open()`. The open state lives in egui memory like a collapsing header's, so it persists and
+`reset_egui_memory` folds it again.
+
+A widget's smallest fixed form (`min` of its size switch) may sum a list up as a count ("usb 3 devices") when the
+count's tooltip lists the items and names the switch; every other form that cuts a list offers the fold.
+A popup on a `+N` is the fold's stand-in where a fixed-width cell has no room for rows below it.
+
 ## Highlight related items on hover
 
 When something refers to something else (a session to its PC, a lane count to its sessions, a graph line to its

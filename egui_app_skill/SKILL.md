@@ -95,7 +95,8 @@ it upgrades like a generated app.
 ## Writing egui UI in these apps
 
 Read `references/ui-guide.md` before writing UI: generous tooltips on every control, number, badge and
-abbreviation; related items highlight together on hover (`ve_basics::hover_link`); labels are not selectable
+abbreviation; related items highlight together on hover (`ve_basics::hover_link`); a list cut for room keeps the
+rest under a fold, never a bare "N more" (`ve_basics::fold_rest`); labels are not selectable
 (`setup_labels`), `copyable_label` for ids, paths, commands; percent bars with a fixed block count, 10 by
 default (`ve_dash::Meter::blocks`);
 colours, spacing and type from `ve_theme` tokens, status colours always with a text label; no blocking I/O in
