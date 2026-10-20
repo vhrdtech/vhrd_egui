@@ -638,7 +638,7 @@ switch (P2605#8oct-1205). ve_settle (SETL-5, SETL-7) later reads the same shapes
   what is open between the two is SETL-18.) A control added to the playground's control row made 20 of its
   kittests fail (clicks no longer arrived), so the row's layout is something they depend on: not looked into.
 
-- 🐛 **FRM-19 Playground snapshots differ on omarchy-m1**: `playground_pair_dark` / `_light` (269 and 285 pixels over the 0.6 threshold) and `tab_hexagons` (54) fail on omarchy-m1 (aarch64, its wgpu renderer) on a clean main as of 0.32.0, faint antialiasing only, like DASH-21. Fix: a pixel budget as `tolerant()` in `ve_dash/tests/ui.rs`, or the CPU rasteriser tpm_mesh_dash uses (`LIBGL_ALWAYS_SOFTWARE=1` in `.cargo/config.toml`). Found by P2605#20oct-1628.
+- ✅ **FRM-19 Playground snapshots differ on omarchy-m1**: `playground_pair_dark` / `_light` (269 and 285 pixels over the 0.6 threshold) and `tab_hexagons` (54) failed on omarchy-m1 on a clean main as of 0.32.0. Cause: egui_kittest draws with a CPU rasteriser only where wgpu offers one; omarchy-m1 has lavapipe, gpd-omarchy only RADV, so pictures written there were drawn by its GPU, whose edge antialiasing differs by a level or two (at most 3 of 255 per channel here, scattered edge pixels, no change of content). Fix at the cause, as tpm_mesh_dash APP-105: `.cargo/config.toml` sets `LIBGL_ALWAYS_SOFTWARE=1`, so Mesa offers llvmpipe on a PC without lavapipe and every PC draws on a CPU; the three pictures redrawn on it (the example windows paint through wgpu on Vulkan, untouched). The pixel budgets of DASH-21 (`ve_dash` `tolerant()`) and `ve_frame`'s `tolerant()` answer the same cause and can likely go once their pictures are redrawn on a CPU too (P2605#20oct-1628).
 
 ## Physics layout (`SETL`)
 

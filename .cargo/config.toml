@@ -1,0 +1,7 @@
+[env]
+# The snapshot tests draw the same picture on every PC (FRM-19): egui_kittest takes a CPU rasteriser when wgpu
+# offers one (lavapipe where it is installed, as on omarchy-m1), and this makes Mesa offer its own (llvmpipe,
+# through GL) on a PC without lavapipe (gpd-omarchy has only RADV). A real GPU antialiases edges a level or two
+# differently, past the snapshot threshold on a few hundred pixels. Only software GL is switched: the example
+# windows paint through wgpu on Vulkan and are not touched. The same fix as tpm_mesh_dash APP-105.
+LIBGL_ALWAYS_SOFTWARE = "1"
