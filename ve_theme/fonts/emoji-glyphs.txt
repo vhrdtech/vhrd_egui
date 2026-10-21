@@ -1,0 +1,99 @@
+# Code points kept in NotoEmoji-subset.ttf (`just emoji-font` regenerates it). One per line, `#` starts a comment.
+# Add a line here when an app needs another emoji, then run the recipe.
+
+# tpm task_status (~/git/tpm/config.toml)
+U+2705   # done
+U+1F6A7  # partial
+U+1F9EA  # testing, validation
+U+1F41B  # buggy
+U+2B1C   # stub
+U+1F4CB  # planned
+U+1F4A1  # idea
+U+26D4   # blocked
+U+23F3   # waiting
+U+1F50D  # verify
+U+274C   # dropped
+
+# tpm project_status
+U+1F52C  # research
+U+1F6E0  # prototype
+U+1F3D7  # development
+U+1F680  # released
+U+1F527  # maintenance
+U+23F8   # paused
+U+1F5C4  # archived
+
+# tpm board_status
+U+1F3ED  # fabbed
+U+1F4D0  # designed
+
+# tpm log_kinds
+U+1F4BB  # code
+U+2696   # decision
+U+2139   # info
+U+1F4DD  # note
+U+1F44D  # up
+U+1F195  # new
+U+1F5E3  # meeting
+
+# common UI
+U+2714   # heavy check mark
+U+26A0   # warning
+U+2757   # exclamation
+U+2753   # question
+U+2B50   # star
+U+2764   # heart
+U+1F514  # bell
+U+1F512  # lock
+U+1F513  # unlock
+U+1F511  # key
+U+1F517  # link
+U+1F4CC  # pin
+U+1F4C1  # folder
+U+1F4C2  # open folder
+U+1F4C4  # page
+U+1F4CA  # bar chart
+U+1F4C8  # chart up
+U+1F4C9  # chart down
+U+1F4E6  # package
+U+1F4E5  # inbox
+U+1F4E4  # outbox
+U+1F504  # refresh
+U+2699   # gear
+U+1F5D1  # trash
+U+270F   # pencil
+U+1F50C  # plug
+U+1F50B  # battery
+U+1F310  # globe
+U+1F4BE  # save
+U+1F5A5  # desktop
+U+1F4F7  # camera
+U+1F3AF  # target
+U+1F525  # fire
+U+26A1   # zap
+U+25B6   # play
+U+23F9   # stop
+U+23FA   # record
+U+23EF   # play/pause
+U+23ED   # next
+U+23EE   # previous
+U+1F7E2  # green circle
+U+1F7E1  # yellow circle
+U+1F534  # red circle
+U+1F535  # blue circle
+U+26AA   # white circle
+U+26AB   # black circle
+U+1F44E  # thumbs down
+U+1F44B  # wave
+U+1F916  # robot
+U+1F9F0  # toolbox
+U+1F9F9  # broom
+U+1F9E9  # puzzle
+U+1F6E1  # shield
+U+1F4AC  # speech
+U+1F4E1  # antenna
+U+1F321  # thermometer
+U+23F1   # stopwatch
+U+231B   # hourglass
+U+FE0F   # emoji variation selector
+U+200D   # zero width joiner

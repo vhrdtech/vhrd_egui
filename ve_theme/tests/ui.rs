@@ -151,3 +151,31 @@ fn number_font_digits_are_tabular() {
         "{w:?}"
     );
 }
+
+/// Every emoji tpm shows for a task or project status, a board or a log kind draws the Noto Emoji glyph, not a
+/// box or egui's tag-like pictogram (THM-14).
+#[test]
+fn tpm_status_emoji_snapshot() {
+    let emoji = [
+        "✅", "🚧", "🧪", "🐛", "⬜", "📋", "💡", "⛔", "⏳", "🔍", "❌", // task_status
+        "🔬", "🛠️", "🏗️", "🚀", "🔧", "⏸️", "🗄️", // project_status
+        "🏭", "📐", // board_status
+        "💻", "⚖️", "ℹ️", "📝", "👍", "🆕", "🗣️", // log_kinds
+    ];
+    let mut h = Harness::builder()
+        .with_size(vec2(360.0, 200.0))
+        .with_theme(Theme::Dark)
+        .build_ui(move |ui| {
+            let bg = ve_theme::Tokens::of(ui.ctx(), Theme::Dark).colors.bg;
+            ui.painter().rect_filled(ui.ctx().viewport_rect(), 0.0, bg);
+            ui.horizontal_wrapped(|ui| {
+                for e in emoji {
+                    ui.label(egui::RichText::new(e).size(28.0));
+                }
+            });
+        });
+    ve_theme::setup(&h.ctx);
+    h.fit_contents();
+    h.run();
+    h.snapshot("tpm_status_emoji");
+}

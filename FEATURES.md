@@ -328,6 +328,12 @@ on every background (unit-tested), status colors always come with a text label.
   warning, error, so `crit` is no longer the brand red and `warn` no longer the power orange. ve_dash `Theme` carries
   `status`, `cat` and `highlight()` (info hover + line, the cross-reference highlight). Tests: stated contrast, error
   apart from brand red, warning apart from power orange, the copy equal to the sibling export.
+- ✅ **THM-14 emoji-fallback**: `install_fonts` adds `NOTO_EMOJI` (`fonts/NotoEmoji-subset.ttf`, 35 KB, Noto Emoji Regular
+  monochrome, OFL, licence in `fonts/LICENSE-NotoEmoji.txt`) right after Plex and ahead of egui's built-in emoji fonts,
+  so 🧪 and 📋 and every tpm status, project, board and log emoji draw their own glyph (egui 0.36's NotoEmoji lacks
+  newer emoji, emoji-icon-font draws 📋 as a tag). The code points are in `fonts/emoji-glyphs.txt`; `just emoji-font`
+  downloads the current release and regenerates the subset (fonttools). Add a line there when an app needs another
+  emoji. Snapshot `tpm_status_emoji`. Not covered: ✓ ✗ (not in Noto Emoji; egui's fonts still draw them).
 - 💡 **THM-6 Hot reload of tokens**: in debug builds, read the tokens from a RON file and re-apply on change, as
   re_ui's `hot_reload_design_tokens` does, so tuning doesn't need a rebuild. Needs serde on the token types.
 

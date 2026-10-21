@@ -2,7 +2,12 @@
 //!
 //! Embedded so apps look the same everywhere without system fonts, and match the datasheets and web pages.
 //! [`install_fonts`] puts Plex Sans first in the proportional family and Plex Mono first in the monospace
-//! family; egui's built-in fonts stay as fallback for glyphs Plex lacks (emoji, box drawing).
+//! family; egui's built-in fonts stay as fallback for glyphs Plex lacks (box drawing).
+//!
+//! Emoji come from [`NOTO_EMOJI`], a subset of Noto Emoji (monochrome, OFL) that sits right after Plex, ahead
+//! of egui's built-in emoji fonts, which lack newer emoji (🧪 draws as a box) or draw a different picture
+//! (THM-14). The code points kept are listed in `ve_theme/fonts/emoji-glyphs.txt`; `just emoji-font`
+//! regenerates the file.
 //!
 //! The faces are © IBM Corp., SIL Open Font License 1.1 (`ve_theme/fonts/LICENSE.txt`); the OFL permits
 //! embedding, the fonts themselves remain under the OFL.
@@ -14,6 +19,9 @@ use egui::{FontFamily, FontId, RichText};
 pub const PLEX_SANS: &[u8] = include_bytes!("../fonts/IBMPlexSans-Regular.ttf");
 /// IBM Plex Mono Regular, TTF bytes.
 pub const PLEX_MONO: &[u8] = include_bytes!("../fonts/IBMPlexMono-Regular.ttf");
+
+/// Noto Emoji Regular (monochrome), subset to the code points of `fonts/emoji-glyphs.txt`, TTF bytes (35 KB).
+pub const NOTO_EMOJI: &[u8] = include_bytes!("../fonts/NotoEmoji-subset.ttf");
 
 /// IBM Plex Mono Bold, TTF bytes: the face of [`number_font`].
 pub const PLEX_MONO_BOLD: &[u8] = include_bytes!("../fonts/IBMPlexMono-Bold.ttf");
@@ -67,6 +75,24 @@ pub fn number_text(ctx: &egui::Context, text: impl Into<String>, size: f32) -> R
 /// [`crate::setup`] calls this; call it directly only when not using `setup`. Calling it again is harmless
 /// (egui replaces fonts by name).
 pub fn install_fonts(ctx: &egui::Context) {
+    // Added first: each `Highest` goes to the front, so the Plex faces below end up ahead of the emoji, and
+    // the emoji ahead of egui's own fonts. The subset holds no Latin letters, so it never shadows Plex.
+    ctx.add_font(FontInsert::new(
+        "Noto Emoji",
+        FontData::from_static(NOTO_EMOJI),
+        [
+            FontFamily::Proportional,
+            FontFamily::Monospace,
+            FontFamily::Name(BRAND_FAMILY.into()),
+            FontFamily::Name(NUMBER_FAMILY.into()),
+        ]
+        .into_iter()
+        .map(|family| InsertFontFamily {
+            family,
+            priority: FontPriority::Highest,
+        })
+        .collect(),
+    ));
     ctx.add_font(FontInsert::new(
         "IBM Plex Sans",
         FontData::from_static(PLEX_SANS),

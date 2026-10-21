@@ -5,6 +5,10 @@ versions follow [Semantic Versioning](https://semver.org/). Feature IDs refer to
 
 ## [Unreleased]
 
+### Added
+
+- `ve_theme` (THM-14): monochrome Noto Emoji subset (`NOTO_EMOJI`, 35 KB added to the binary and the wasm bundle) installed by `install_fonts` after Plex and before egui's built-in emoji fonts, so newer emoji such as 🧪 no longer draw as a box and 📋 no longer as a tag; `just emoji-font` regenerates it from `fonts/emoji-glyphs.txt`.
+
 ## [0.32.2] - 2026-10-21
 
 ### Added

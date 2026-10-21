@@ -35,3 +35,9 @@ new NAME DIR=".":
 # Libraries are not deployed
 deploy:
     @echo "vhrd_egui is a library, nothing to deploy; apps pick up main through their Cargo.toml"
+
+# Regenerate ve_theme's emoji fallback font from the current Noto Emoji (OFL): Regular weight, only the code points of emoji-glyphs.txt (THM-14)
+emoji-font:
+    curl -fsSL -o /tmp/NotoEmoji-var.ttf 'https://github.com/google/fonts/raw/main/ofl/notoemoji/NotoEmoji%5Bwght%5D.ttf'
+    uv run --with fonttools python -m fontTools.varLib.instancer /tmp/NotoEmoji-var.ttf wght=400 -o /tmp/NotoEmoji-regular.ttf
+    uv run --with fonttools pyftsubset /tmp/NotoEmoji-regular.ttf --unicodes-file=ve_theme/fonts/emoji-glyphs.txt --output-file=ve_theme/fonts/NotoEmoji-subset.ttf --layout-features= --no-hinting --desubroutinize
