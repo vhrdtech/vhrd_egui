@@ -1,9 +1,15 @@
 //! Gantt chart: rows grouped under headers, bars from a start to an end day (a soft end for dates known only to
 //! the month), milestones as diamonds, dependency arrows between items, a today line, a fixed label column.
 //!
+//! The schedule overlay: [`GanttMarker`]s (dated vertical lines across the whole chart, at risk or met), a
+//! bar's `latest_start` (a tick) and `latest_finish` (a lighter slack tail, or the overrun past it when it
+//! finishes later than that), and a `critical` flag (a stroke). A [`GanttLink`] may point from a bar to a
+//! marker, not only to another item.
+//!
 //! The time area zooms with the wheel around the pointer and pans by drag or with a horizontal (or shift) wheel;
 //! the visible range is a [`GanttView`] the caller keeps and may persist. A click answers the row (and item) id.
-//! Every size and speed is a field of [`GanttStyle`]; colours are the [`Theme`]'s and the items' own.
+//! Every size and speed is a field of [`GanttStyle`], along with the schedule overlay's own risk / met / critical
+//! colours (the chart's to pick, not the caller's); other colours are the [`Theme`]'s and the items' own.
 
 use egui::text::{LayoutJob, TextFormat};
 use egui::{
@@ -30,7 +36,7 @@ pub struct GanttRow {
 }
 
 /// A bar from `start` to `end` (both days included).
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, Default, PartialEq)]
 pub struct GanttBar {
     /// Stable id for [`GanttLink`]s and [`GanttResponse::clicked_item`]; unique over the whole chart.
     pub id: String,
@@ -41,6 +47,15 @@ pub struct GanttBar {
     pub soft_end: bool,
     /// In the tooltip.
     pub label: String,
+    /// The latest day the bar could start without being late: a tick on the bar
+    /// ([`GanttStyle::tick_width`] / `tick_overhang`).
+    pub latest_start: Option<Day>,
+    /// The latest day the bar could finish without being late. Later than `end`: a lighter tail from `end` to
+    /// here (the slack, [`GanttStyle::slack_alpha`]). Earlier than `end`: the overrun, the part of the bar past
+    /// here, painted in [`GanttStyle::risk_color`].
+    pub latest_finish: Option<Day>,
+    /// On the critical path: a stroke around the bar in [`GanttStyle::critical_color`].
+    pub critical: bool,
 }
 
 /// A diamond on a day.
@@ -54,11 +69,24 @@ pub struct GanttMilestone {
     pub label: String,
 }
 
-/// `to` can start once `from` is finished: an arrow from the end of `from` to the start of `to` (item ids).
+/// `to` can start once `from` is finished: an arrow from the end of `from` to the start of `to` (item ids). `to`
+/// may name a [`GanttMarker`] (a bar linked to the milestone it sets).
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub struct GanttLink {
     pub from: String,
     pub to: String,
+}
+
+/// A dated vertical line across the whole chart (a milestone's forecast), with a label, coloured
+/// [`GanttStyle::risk_color`] or `met_color` by whether it is at risk.
+#[derive(Clone, Debug, PartialEq)]
+pub struct GanttMarker {
+    /// Stable id for [`GanttLink`]s; unique over the whole chart.
+    pub id: String,
+    pub day: Day,
+    pub at_risk: bool,
+    /// Drawn next to the line.
+    pub label: String,
 }
 
 /// The visible time range: the day number at the left edge of the time area and how many days it shows.
@@ -94,7 +122,8 @@ impl GanttView {
     }
 }
 
-/// Everything about a [`Gantt`]'s look and feel that isn't a colour.
+/// Everything about a [`Gantt`]'s look and feel, beyond an item's own colour: sizes and speeds, plus the
+/// schedule overlay's own colours (risk, met, critical), which are the chart's, not the caller's, to pick.
 #[derive(Clone, Debug, PartialEq)]
 pub struct GanttStyle {
     /// The day axis on top.
@@ -141,6 +170,24 @@ pub struct GanttStyle {
     pub link_alpha: f32,
     /// Opacity of the stripe on every other row.
     pub stripe_alpha: f32,
+    /// Width of a [`GanttMarker`]'s line.
+    pub marker_width: f32,
+    /// Size of a marker's label.
+    pub marker_font_size: f32,
+    /// A marker at risk, and a bar's overrun past `latest_finish`.
+    pub risk_color: Color32,
+    /// A marker met in time.
+    pub met_color: Color32,
+    /// Width and colour of a critical bar's stroke.
+    pub critical_width: f32,
+    pub critical_color: Color32,
+    /// Colour of a bar's `latest_start` tick.
+    pub tick_color: Color32,
+    /// Width of a bar's `latest_start` tick, and how far it reaches past the bar's top and bottom.
+    pub tick_width: f32,
+    pub tick_overhang: f32,
+    /// Opacity of a bar's slack tail (`end` to `latest_finish`, lighter than the bar).
+    pub slack_alpha: f32,
 }
 
 impl Default for GanttStyle {
@@ -168,6 +215,16 @@ impl Default for GanttStyle {
             link_elbow: 8.0,
             link_alpha: 0.7,
             stripe_alpha: 0.35,
+            marker_width: 1.5,
+            marker_font_size: 10.0,
+            risk_color: Color32::from_rgb(224, 86, 86),
+            met_color: Color32::from_rgb(92, 176, 112),
+            critical_width: 1.5,
+            critical_color: Color32::from_rgb(230, 178, 60),
+            tick_color: Color32::WHITE,
+            tick_width: 1.5,
+            tick_overhang: 3.0,
+            slack_alpha: 0.3,
         }
     }
 }
@@ -202,7 +259,7 @@ pub struct GanttResponse {
 ///     group: "P1".into(),
 ///     bars: vec![GanttBar {
 ///         id: "P1#v1/bar".into(), start: d, end: d + 30, color: Theme::dark().cat[1],
-///         soft_end: true, label: "release v1".into(),
+///         soft_end: true, label: "release v1".into(), ..Default::default()
 ///     }],
 ///     ..Default::default()
 /// }];
@@ -216,6 +273,7 @@ pub struct Gantt<'a> {
     rows: &'a [GanttRow],
     view: &'a mut GanttView,
     links: &'a [GanttLink],
+    markers: &'a [GanttMarker],
     today: Option<Day>,
     theme: Theme,
     style: GanttStyle,
@@ -241,15 +299,23 @@ impl<'a> Gantt<'a> {
             rows,
             view,
             links: &[],
+            markers: &[],
             today: None,
             theme: DARK.clone(),
             style: GanttStyle::default(),
         }
     }
 
-    /// Dependency arrows between items (by their ids); links to unknown ids are left out.
+    /// Dependency arrows between items (by their ids); links to unknown ids are left out. `to` may name a
+    /// [`GanttMarker`].
     pub fn links(mut self, links: &'a [GanttLink]) -> Self {
         self.links = links;
+        self
+    }
+
+    /// Schedule markers: dated vertical lines across the whole chart.
+    pub fn markers(mut self, markers: &'a [GanttMarker]) -> Self {
+        self.markers = markers;
         self
     }
 
@@ -303,7 +369,8 @@ impl<'a> Gantt<'a> {
                     .flat_map(|b| [b.start, b.end])
                     .chain(r.milestones.iter().map(|m| m.day))
             })
-            .chain(self.today);
+            .chain(self.today)
+            .chain(self.markers.iter().map(|m| m.day));
         let (mut lo, mut hi) = (None::<Day>, None::<Day>);
         for d in days {
             lo = Some(lo.map_or(d, |l| l.min(d)));
@@ -489,6 +556,7 @@ impl<'a> Gantt<'a> {
             for b in &r.bars {
                 let Some(pl) = find(&b.id) else { continue };
                 paint_bar(&tp, pl.rect, b.color, b.soft_end, &st);
+                paint_schedule(&tp, pl.rect, b, x_of, &st);
             }
             for m in &r.milestones {
                 let Some(pl) = find(&m.id) else { continue };
@@ -507,13 +575,42 @@ impl<'a> Gantt<'a> {
             }
         }
 
-        // Dependency arrows, highlighted when either end is hovered.
+        // Markers: dated vertical lines across the whole chart, at risk or met.
+        let marker_label_font = FontId::proportional(st.marker_font_size);
+        for m in self.markers {
+            let x = x_of(m.day.0 as f32 + 0.5);
+            if !time.x_range().contains(x) {
+                continue;
+            }
+            let color = if m.at_risk {
+                st.risk_color
+            } else {
+                st.met_color
+            };
+            tp.vline(x, time.y_range(), Stroke::new(st.marker_width, color));
+            if !m.label.is_empty() {
+                tp.text(
+                    pos2(x + st.label_pad, time.top()),
+                    egui::Align2::LEFT_TOP,
+                    &m.label,
+                    marker_label_font.clone(),
+                    color,
+                );
+            }
+        }
+
+        // Dependency arrows, highlighted when either end is hovered; `to` may name a marker.
         let hot = hovered_item.as_ref().map(|(id, _)| id.as_str());
         let (_, hl_line) = th.highlight();
         for l in self.links {
-            let (Some(a), Some(b)) = (find(&l.from), find(&l.to)) else {
-                continue;
-            };
+            let Some(a) = find(&l.from) else { continue };
+            let to_p = find(&l.to).map(|b| b.rect.left_center()).or_else(|| {
+                self.markers
+                    .iter()
+                    .find(|m| m.id == l.to)
+                    .map(|m| pos2(x_of(m.day.0 as f32 + 0.5), a.rect.center().y))
+            });
+            let Some(to_p) = to_p else { continue };
             let lit = hot == Some(l.from.as_str()) || hot == Some(l.to.as_str());
             let color = if lit {
                 hl_line
@@ -522,7 +619,6 @@ impl<'a> Gantt<'a> {
             };
             let w = st.link_width[usize::from(lit)];
             let from_p = a.rect.right_center();
-            let to_p = b.rect.left_center();
             let path = route(from_p, to_p, st.link_elbow, st.row_height);
             tp.add(Shape::line(path, Stroke::new(w, color)));
             let s = st.arrow_size;
@@ -580,6 +676,20 @@ impl<'a> Gantt<'a> {
                         b.start.label(),
                         (b.end - b.start).abs() + 1
                     ));
+                    if let Some(ls) = b.latest_start {
+                        lines.push(format!("latest start {}", ls.label()));
+                    }
+                    if let Some(lf) = b.latest_finish {
+                        let slack = lf - b.end;
+                        lines.push(if slack < 0 {
+                            format!("{} days over the latest finish ({})", -slack, lf.label())
+                        } else {
+                            format!("{slack} days' slack (latest finish {})", lf.label())
+                        });
+                    }
+                    if b.critical {
+                        lines.push("on the critical path".into());
+                    }
                 } else if let Some(m) = row.milestones.iter().find(|m| &m.id == id) {
                     lines.push(if m.label.is_empty() {
                         row.label.clone()
@@ -670,6 +780,45 @@ fn paint_bar(p: &egui::Painter, r: Rect, color: Color32, soft: bool, st: &GanttS
     mesh.add_triangle(0, 1, 2);
     mesh.add_triangle(1, 3, 2);
     p.add(Shape::mesh(mesh));
+}
+
+/// A bar's schedule overlay: the critical stroke, the slack tail or overrun, and the latest-start tick. `r` is
+/// the bar's own rect (its fill already painted); `x_of` maps a fractional day to a screen x.
+fn paint_schedule(
+    p: &egui::Painter,
+    r: Rect,
+    b: &GanttBar,
+    x_of: impl Fn(f32) -> f32,
+    st: &GanttStyle,
+) {
+    if let Some(lf) = b.latest_finish {
+        let end_x = r.right();
+        let lf_x = x_of(lf.0 as f32 + 1.0);
+        if lf > b.end {
+            let tail = Rect::from_min_max(pos2(end_x, r.top()), pos2(lf_x, r.bottom()));
+            p.rect_filled(tail, 0.0, b.color.gamma_multiply(st.slack_alpha));
+        } else if lf < b.end {
+            let overrun =
+                Rect::from_min_max(pos2(lf_x.max(r.left()), r.top()), pos2(end_x, r.bottom()));
+            p.rect_filled(overrun, 0.0, st.risk_color);
+        }
+    }
+    if b.critical {
+        p.rect_stroke(
+            r,
+            st.bar_radius,
+            Stroke::new(st.critical_width, st.critical_color),
+            egui::StrokeKind::Outside,
+        );
+    }
+    if let Some(ls) = b.latest_start {
+        let x = x_of(ls.0 as f32);
+        p.vline(
+            x,
+            (r.top() - st.tick_overhang)..=(r.bottom() + st.tick_overhang),
+            Stroke::new(st.tick_width, st.tick_color),
+        );
+    }
 }
 
 /// The elbow path of a dependency arrow from the end of one item (`a`) to the start of another (`b`): out to the
@@ -775,5 +924,39 @@ mod tests {
                 Line::Row(3)
             ]
         );
+    }
+
+    #[test]
+    fn data_range_includes_markers() {
+        let rows = [GanttRow {
+            bars: vec![GanttBar {
+                start: Day::from_ymd(2026, 10, 1),
+                end: Day::from_ymd(2026, 10, 10),
+                ..Default::default()
+            }],
+            ..Default::default()
+        }];
+        let markers = [GanttMarker {
+            id: "m".into(),
+            day: Day::from_ymd(2026, 11, 1),
+            at_risk: true,
+            label: String::new(),
+        }];
+        let mut v = GanttView::default();
+        let g = Gantt::new(&rows, &mut v).markers(&markers);
+        assert_eq!(
+            g.data_range(),
+            Some((Day::from_ymd(2026, 10, 1), Day::from_ymd(2026, 11, 1)))
+        );
+    }
+
+    #[test]
+    fn schedule_overrun_detection() {
+        let end = Day::from_ymd(2026, 11, 30);
+        let on_time = Day::from_ymd(2026, 12, 10);
+        let late = Day::from_ymd(2026, 11, 20);
+        assert!(on_time > end, "slack: latest finish after the bar's end");
+        assert!(late < end, "overrun: latest finish before the bar's end");
+        assert_eq!(late - end, -10, "overrun is 10 days");
     }
 }

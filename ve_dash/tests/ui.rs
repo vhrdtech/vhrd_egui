@@ -530,6 +530,7 @@ fn gantt_rows() -> (Vec<ve_dash::GanttRow>, Vec<ve_dash::GanttLink>) {
         color: c,
         soft_end: soft,
         label: format!("release {id}"),
+        ..Default::default()
     };
     let rows = vec![
         GanttRow {
@@ -652,4 +653,83 @@ fn gantt_clicks_zooms_and_pans() {
     h.drop_at(pos2(360.0, 60.0));
     h.run();
     assert!(state.borrow().0.start < after.start);
+}
+
+/// One row on the critical path with a latest-start tick and an overrun past its latest finish, one with slack,
+/// a risk marker the critical bar links to.
+fn gantt_schedule_rows() -> (
+    Vec<ve_dash::GanttRow>,
+    Vec<ve_dash::GanttLink>,
+    Vec<ve_dash::GanttMarker>,
+) {
+    use ve_dash::{Day, GanttBar, GanttLink, GanttMarker, GanttRow};
+    let th = Theme::dark();
+    let d = |m, dd| Day::from_ymd(2026, m, dd);
+    let rows = vec![
+        GanttRow {
+            id: "P1#v2".into(),
+            label: "v2 (critical, overrun)".into(),
+            group: "P1 board".into(),
+            bars: vec![GanttBar {
+                id: "v2".into(),
+                start: d(10, 8),
+                end: d(11, 30),
+                color: th.cat[0],
+                label: "release v2".into(),
+                latest_finish: Some(d(11, 20)),
+                critical: true,
+                ..Default::default()
+            }],
+            ..Default::default()
+        },
+        GanttRow {
+            id: "P1#case".into(),
+            label: "case drawings (slack)".into(),
+            group: "P1 board".into(),
+            bars: vec![GanttBar {
+                id: "case".into(),
+                start: d(10, 12),
+                end: d(10, 28),
+                color: th.cat[2],
+                label: "case drawings".into(),
+                latest_start: Some(d(10, 20)),
+                latest_finish: Some(d(11, 10)),
+                ..Default::default()
+            }],
+            ..Default::default()
+        },
+    ];
+    let links = vec![GanttLink {
+        from: "v2".into(),
+        to: "v2-due".into(),
+    }];
+    let markers = vec![GanttMarker {
+        id: "v2-due".into(),
+        day: d(11, 20),
+        at_risk: true,
+        label: "milestone at risk".into(),
+    }];
+    (rows, links, markers)
+}
+
+#[test]
+fn gantt_schedule_snapshot() {
+    let (rows, links, markers) = gantt_schedule_rows();
+    let theme = Theme::dark();
+    let mut view = ve_dash::GanttView::default();
+    let mut h = Harness::builder()
+        .with_size(vec2(560.0, 110.0))
+        .build_ui(move |ui| {
+            theme.apply(ui.ctx());
+            ve_theme::install_fonts(ui.ctx());
+            ui.painter()
+                .rect_filled(ui.ctx().viewport_rect(), 0.0, theme.bg);
+            let _ = ve_dash::Gantt::new(&rows, &mut view)
+                .links(&links)
+                .markers(&markers)
+                .show(ui);
+        });
+    h.run();
+    h.run(); // the label column settles on what the first frame measured
+    h.snapshot_options("gantt_schedule", &tolerant());
 }

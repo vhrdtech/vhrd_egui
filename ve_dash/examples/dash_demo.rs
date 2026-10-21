@@ -15,9 +15,9 @@
 use eframe::egui;
 use egui::{Align2, FontId, RichText, Ui, vec2};
 use ve_dash::{
-    Blocks, BurnSeries, Burndown, Day, Decay, Gantt, GanttBar, GanttLink, GanttMilestone, GanttRow,
-    GanttView, History, Ideal, Meter, Sparkline, StatTile, Status, StatusLight, SteadyColumn,
-    Theme, Trend,
+    Blocks, BurnSeries, Burndown, Day, Decay, Gantt, GanttBar, GanttLink, GanttMarker,
+    GanttMilestone, GanttRow, GanttView, History, Ideal, Meter, Sparkline, StatTile, Status,
+    StatusLight, SteadyColumn, Theme, Trend,
 };
 use ve_frame::{FrameState, WidgetFrame};
 
@@ -118,6 +118,7 @@ struct Tasks {
     series: Vec<BurnSeries>,
     rows: Vec<GanttRow>,
     links: Vec<GanttLink>,
+    markers: Vec<GanttMarker>,
     /// The Gantt's zoom and scroll; an app persists it.
     view: GanttView,
     /// The row clicked last, shown under the chart.
@@ -168,6 +169,7 @@ impl Tasks {
             color,
             soft_end,
             label: format!("release {id}"),
+            ..Default::default()
         };
         let row = |id: &str, label: &str, group: &str, hover: &str| GanttRow {
             id: id.into(),
@@ -204,6 +206,8 @@ impl Tasks {
         rows[1]
             .bars
             .push(bar("v2", d(10, 6), d(12, 31), theme.cat[0], true));
+        rows[1].bars[0].latest_finish = Some(d(12, 20));
+        rows[1].bars[0].critical = true;
         rows[1].milestones.push(GanttMilestone {
             id: "v2-due".into(),
             day: d(11, 13),
@@ -213,6 +217,7 @@ impl Tasks {
         rows[2]
             .bars
             .push(bar("case", d(10, 12), today, theme.cat[2], false));
+        rows[2].bars[0].latest_start = Some(d(10, 20));
         rows[3]
             .bars
             .push(bar("app", d(9, 25), d(11, 4), theme.cat[1], false));
@@ -228,13 +233,24 @@ impl Tasks {
                 from: "app".into(),
                 to: "web".into(),
             },
+            GanttLink {
+                from: "v2".into(),
+                to: "v2-ship".into(),
+            },
         ];
+        let markers = vec![GanttMarker {
+            id: "v2-ship".into(),
+            day: d(12, 20),
+            at_risk: true,
+            label: "milestone: v2 ship 20 Dec".into(),
+        }];
         Self {
             today,
             days,
             series: vec![fw, hw],
             rows,
             links,
+            markers,
             view: GanttView::default(),
             clicked: None,
             burn_frame: FrameState::default(),
@@ -249,6 +265,7 @@ impl Tasks {
             series,
             rows,
             links,
+            markers,
             view,
             clicked,
             burn_frame,
@@ -265,6 +282,7 @@ impl Tasks {
         WidgetFrame::new("gantt").show(ui, gantt_frame, |ui, _| {
             let r = Gantt::new(rows, view)
                 .links(links)
+                .markers(markers)
                 .today(*today)
                 .theme(theme.clone())
                 .show(ui);

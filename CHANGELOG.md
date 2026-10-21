@@ -5,6 +5,10 @@ versions follow [Semantic Versioning](https://semver.org/). Feature IDs refer to
 
 ## [Unreleased]
 
+### Added
+
+- `ve_dash` (DASH-24): Gantt schedule overlay: `GanttMarker` (a dated vertical line across the chart, at risk or met), a bar's `latest_start` tick and `latest_finish` slack tail or overrun, a `critical` flag (stroke), a `GanttLink` to a marker. All new sizes and colours in `GanttStyle`.
+
 ## [0.32.4] - 2026-10-21
 
 ### Added

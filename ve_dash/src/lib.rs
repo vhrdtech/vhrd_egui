@@ -41,7 +41,8 @@ pub use column::SteadyColumn;
 pub use day::{AxisStyle, Day, Tick, TickKind, day_ticks};
 pub use decay::Decay;
 pub use gantt::{
-    Gantt, GanttBar, GanttLink, GanttMilestone, GanttResponse, GanttRow, GanttStyle, GanttView,
+    Gantt, GanttBar, GanttLink, GanttMarker, GanttMilestone, GanttResponse, GanttRow, GanttStyle,
+    GanttView,
 };
 pub use history::History;
 pub use info::{ICON, ICON_STROKE, icon_center, icon_ink, info_icon, paint_info, paint_menu};
