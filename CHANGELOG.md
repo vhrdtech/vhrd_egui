@@ -5,6 +5,8 @@ versions follow [Semantic Versioning](https://semver.org/). Feature IDs refer to
 
 ## [Unreleased]
 
+## [0.32.2] - 2026-10-21
+
 ### Added
 
 - `ve_dash` (DASH-22): `Burndown` chart: several series (open line and area, closed per day as bars, ideas band, ideal and trend dashed), value and day axes, today line, legend, hover readout per day; `BurnSeries`, `Ideal`, `Trend`, `BurndownStyle`. `Day` (civil dates, no date crate), `AxisStyle` and `day_ticks` (month, week and day ticks by zoom).
