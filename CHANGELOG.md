@@ -5,6 +5,10 @@ versions follow [Semantic Versioning](https://semver.org/). Feature IDs refer to
 
 ## [Unreleased]
 
+### Added
+
+- `ve_theme` (THM-15): `status` module maps tpm's status words (`[task_status]`, `[project_status]`, `[log_kinds]`) onto a glyph (THM-14's emoji-fallback font) and a `Tone`; `status_icon(ui, name, tooltip)` looks a status up by tpm's config.toml key and draws it (an unlisted name still draws the bare word, neutral tone), `status_icon_with(ui, glyph, tone, tooltip)` for any glyph. egui 0.36 has no colour-glyph (COLR/CPAL/CBDT) support — confirmed in epaint's `skrifa`-based rasteriser, every glyph is a single coverage mask tinted by the text colour — so tinting is the same as colouring any label; code only, no wasm bytes added (the glyphs already ship with THM-14's font; the table and two small functions add roughly 1-2 KB to an app that already links egui's tooltip machinery).
+
 ## [0.32.3] - 2026-10-21
 
 ### Added

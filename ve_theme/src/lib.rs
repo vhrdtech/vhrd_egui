@@ -39,6 +39,7 @@ pub mod contrast;
 mod fonts;
 pub mod gallery;
 pub mod hue;
+mod status;
 mod tokens;
 pub mod typography;
 mod ui_ext;
@@ -48,6 +49,7 @@ pub use fonts::{
     BRAND_FAMILY, NUMBER_FAMILY, PLEX_MONO, PLEX_MONO_BOLD, PLEX_SANS, PLEX_SANS_BOLD, brand_font,
     install_fonts, number_font, number_text,
 };
+pub use status::{STATUS_GLYPHS, StatusGlyph, status_glyph, status_icon, status_icon_with};
 pub use tokens::{Elevation, Palette, Radius, Ramp, Space, Status, Strokes, Tokens, vhrd};
 pub use ui_ext::{Tone, UiExt};
 

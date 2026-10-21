@@ -179,3 +179,51 @@ fn tpm_status_emoji_snapshot() {
     h.run();
     h.snapshot("tpm_status_emoji");
 }
+
+/// Every tpm status tinted by its tone (THM-15): the same glyphs as `tpm_status_emoji_snapshot`, now in
+/// colour. `status_icon_with` adds nothing egui's text painting didn't already do: the glyph takes the
+/// colour it is drawn with, the same as any other character (no colour-glyph font support to lose).
+#[test]
+fn tpm_status_color_snapshot() {
+    let mut h = Harness::builder()
+        .with_size(vec2(420.0, 420.0))
+        .with_theme(Theme::Dark)
+        .build_ui(move |ui| {
+            let bg = ve_theme::Tokens::of(ui.ctx(), Theme::Dark).colors.bg;
+            ui.painter().rect_filled(ui.ctx().viewport_rect(), 0.0, bg);
+            egui::Grid::new("status_colors")
+                .spacing(vec2(12.0, 6.0))
+                .show(ui, |ui| {
+                    for s in ve_theme::STATUS_GLYPHS {
+                        ve_theme::status_icon_with(
+                            ui,
+                            s.glyph,
+                            s.tone,
+                            format!("{} ({:?})", s.name, s.tone),
+                        );
+                        ui.label(s.name);
+                        ui.end_row();
+                    }
+                });
+        });
+    ve_theme::setup(&h.ctx);
+    h.fit_contents();
+    h.run();
+    h.snapshot("tpm_status_color");
+}
+
+/// `status_icon` looks a tpm status up by name; a name outside `STATUS_GLYPHS` still shows the bare word
+/// (neutral tone) rather than disappearing, and every icon carries its tooltip.
+#[test]
+fn status_icon_shows_tooltip_and_falls_back_for_unknown_names() {
+    let mut h = Harness::builder()
+        .with_size(vec2(300.0, 120.0))
+        .build_ui(|ui| {
+            ve_theme::status_icon(ui, "done", "finished, believed correct");
+            ve_theme::status_icon(ui, "not-a-tpm-status", "an app's own status");
+        });
+    ve_theme::setup(&h.ctx);
+    h.run();
+    hover_tooltip(&mut h, "✅", "finished, believed correct");
+    h.get_by_label("not-a-tpm-status");
+}

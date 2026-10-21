@@ -334,6 +334,14 @@ on every background (unit-tested), status colors always come with a text label.
   newer emoji, emoji-icon-font draws 📋 as a tag). The code points are in `fonts/emoji-glyphs.txt`; `just emoji-font`
   downloads the current release and regenerates the subset (fonttools). Add a line there when an app needs another
   emoji. Snapshot `tpm_status_emoji`. Not covered: ✓ ✗ (not in Noto Emoji; egui's fonts still draw them).
+- ✅ **THM-15 status colour**: `ve_theme::status` maps tpm's status words (`[task_status]`, `[project_status]`,
+  `[log_kinds]`) onto a glyph (THM-14's font) and a `Tone`; `status_icon(ui, name, tooltip)` looks a status up
+  by tpm's config.toml key and draws it (an unknown name still draws the bare word, neutral tone, rather than
+  nothing), `status_icon_with(ui, glyph, tone, tooltip)` draws any glyph for an app's own vocabulary.
+  egui 0.36 (epaint's `skrifa` outline rasteriser) has no COLR/CPAL or CBDT colour-glyph support — every glyph
+  is one coverage mask tinted by the text colour, so tinting a status glyph is exactly colouring a label, the
+  same as THM-14's emoji already were; no new rendering path. Snapshot `tpm_status_color`.
+  `ve_theme/src/status.rs`, kittest in `ve_theme/tests/ui.rs`.
 - 💡 **THM-6 Hot reload of tokens**: in debug builds, read the tokens from a RON file and re-apply on change, as
   re_ui's `hot_reload_design_tokens` does, so tuning doesn't need a rebuild. Needs serde on the token types.
 
