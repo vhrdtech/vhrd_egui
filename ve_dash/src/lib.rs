@@ -8,6 +8,9 @@
 //! (glowing dot + label), [`StatTile`] (headline number); the frame around them is `ve_frame::WidgetFrame`. [`steady_width`] keeps live values from shoving their
 //! neighbours around, and [`SteadyColumn`] aligns the first cell of list rows without a hard-coded width.
 //!
+//! Charts over calendar days: [`Burndown`] (open work per day, closed bars, ideal and trend) and [`Gantt`]
+//! (grouped rows of bars and milestones with dependency arrows, zoom and pan), both on a [`Day`] axis.
+//!
 //! `SegBar` and `Segments` are deprecated: folded into [`Meter`] and [`Blocks`].
 //!
 //! Colors come from `ve_theme`'s design tokens ([`Theme::from_tokens`]); apps turn the whole
@@ -16,9 +19,12 @@
 //!
 //! Run the demo: `cargo run -p ve_dash --example dash_demo`.
 
+mod burndown;
 mod chip;
 mod column;
+mod day;
 mod decay;
+mod gantt;
 mod history;
 mod info;
 mod meter;
@@ -29,9 +35,14 @@ mod status;
 mod steady;
 mod theme;
 
+pub use burndown::{BurnSeries, Burndown, BurndownResponse, BurndownStyle, Ideal, Trend};
 pub use chip::ActionChip;
 pub use column::SteadyColumn;
+pub use day::{AxisStyle, Day, Tick, TickKind, day_ticks};
 pub use decay::Decay;
+pub use gantt::{
+    Gantt, GanttBar, GanttLink, GanttMilestone, GanttResponse, GanttRow, GanttStyle, GanttView,
+};
 pub use history::History;
 pub use info::{ICON, ICON_STROKE, icon_center, icon_ink, info_icon, paint_info, paint_menu};
 pub use meter::{Blocks, Meter};

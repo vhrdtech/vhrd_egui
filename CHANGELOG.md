@@ -5,6 +5,11 @@ versions follow [Semantic Versioning](https://semver.org/). Feature IDs refer to
 
 ## [Unreleased]
 
+### Added
+
+- `ve_dash` (DASH-22): `Burndown` chart: several series (open line and area, closed per day as bars, ideas band, ideal and trend dashed), value and day axes, today line, legend, hover readout per day; `BurnSeries`, `Ideal`, `Trend`, `BurndownStyle`. `Day` (civil dates, no date crate), `AxisStyle` and `day_ticks` (month, week and day ticks by zoom).
+- `ve_dash` (DASH-23): `Gantt` chart: grouped rows, bars with a soft end for month-only dates, milestone diamonds, dependency arrows (`GanttLink`), today line, fixed label column, wheel zoom around the pointer, drag to pan, tooltips, click answers row and item ids; the caller keeps the `GanttView`; `GanttStyle`. Both in `dash_demo`.
+
 ## [0.32.1] - 2026-10-20
 
 ### Added

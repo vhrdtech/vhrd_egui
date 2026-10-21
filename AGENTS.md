@@ -52,7 +52,7 @@ Cargo workspace, edition 2024, one shared version (`[workspace.package]`).
   as egui dark and light styles, IBM Plex fonts, `UiExt` helpers (primary / danger button, section header,
   panel title bar, toolbar, muted label, badge), the gallery example.
 - `ve_dash/` — btop-style dashboard blocks (theme from `ve_theme` tokens, sparkline, meter with a fixed or
-  auto block count, tiles).
+  auto block count, tiles) and day charts (`Day`, burndown, Gantt; every tunable in a `*Style` struct).
 - `ve_backdrop/` — the animated app background: a grid of dots or squares reacting to the pointer and to widget
   frames (`Backdrop`, `Lit`, `Settings`), a wgpu shader (`backdrop.wgsl`) with a CPU-painted fallback; the
   math lives once in `field.rs` and the shader mirrors it, so change both together. Emulated transparency

@@ -423,3 +423,233 @@ fn reset_steady_forgets_learned_widths() {
     h.run();
     assert_eq!(got.get(), 20.0, "settles on the new text");
 }
+
+/// Three weeks of a burndown in two series: open lines with areas, closed bars, an ideas band, ideal and trend.
+fn burn_data() -> (Vec<ve_dash::Day>, Vec<ve_dash::BurnSeries>) {
+    use ve_dash::{BurnSeries, Day, Ideal, Trend};
+    let th = Theme::dark();
+    let start = Day::from_ymd(2026, 10, 1);
+    let days: Vec<Day> = (0..21).map(|i| start + i).collect();
+    let mut fw = BurnSeries::new(
+        "fw",
+        th.cat[0],
+        (0..21)
+            .map(|i| 40.0 - i as f32 * 1.4 + (i % 4) as f32)
+            .collect(),
+    );
+    fw.closed = Some((0..21).map(|i| ((i * 7) % 5) as f32).collect());
+    fw.ideas_open = Some((0..21).map(|i| 8.0 + (i % 3) as f32).collect());
+    fw.ideal = Some(Ideal {
+        from: start,
+        value: 40.0,
+        to: start + 28,
+    });
+    fw.trend = Some(Trend {
+        per_day: 1.3,
+        zero: Some(start + 34),
+    });
+    let mut hw = BurnSeries::new(
+        "hw",
+        th.cat[1],
+        (0..21)
+            .map(|i| 12.0 + (i as f32 * 0.5).sin() * 3.0)
+            .collect(),
+    );
+    hw.closed = Some((0..21).map(|i| ((i * 3) % 4) as f32).collect());
+    hw.trend = Some(Trend {
+        per_day: 0.2,
+        zero: None,
+    });
+    (days, vec![fw, hw])
+}
+
+/// The burndown: legend, both axes, bars, band, dashed guides; hovering a day answers it and shows its values.
+#[test]
+fn burndown_snapshot_and_hover() {
+    let (days, series) = burn_data();
+    let theme = Theme::dark();
+    let hovered = Rc::new(Cell::new(None));
+    let seen = hovered.clone();
+    let mut h = Harness::builder()
+        .with_size(vec2(520.0, 240.0))
+        .build_ui(move |ui| {
+            theme.apply(ui.ctx());
+            ve_theme::install_fonts(ui.ctx());
+            ui.painter()
+                .rect_filled(ui.ctx().viewport_rect(), 0.0, theme.bg);
+            let r = ve_dash::Burndown::new(&days, &series)
+                .height(220.0)
+                .today(days[20])
+                .show(ui);
+            if r.hovered.is_some() {
+                seen.set(r.hovered);
+            }
+        });
+    h.run();
+    h.snapshot_options("burndown", &tolerant());
+    h.hover_at(pos2(300.0, 120.0));
+    h.run();
+    let day = hovered.get().expect("a day under the pointer");
+    assert!(
+        day >= ve_dash::Day::from_ymd(2026, 10, 1) && day <= ve_dash::Day::from_ymd(2026, 10, 21)
+    );
+    assert!(
+        h.query_by_label(&day.label()).is_some(),
+        "the readout names the day"
+    );
+    assert!(h.query_by_label_contains("fw  open").is_some());
+    assert!(h.query_by_label_contains("hw  open").is_some());
+}
+
+#[test]
+fn burndown_survives_empty_and_garbage() {
+    let days = [ve_dash::Day::from_ymd(2026, 1, 1)];
+    let series = [ve_dash::BurnSeries::new(
+        "x",
+        Theme::dark().cat[2],
+        vec![f32::NAN],
+    )];
+    let mut h = Harness::new_ui(move |ui| {
+        let _ = ve_dash::Burndown::new(&[], &[]).show(ui);
+        let _ = ve_dash::Burndown::new(&days, &series).show(ui);
+    });
+    h.run();
+    h.hover_at(pos2(100.0, 250.0));
+    h.run();
+}
+
+/// Two groups of rows: bars (one soft-ended), milestones, a dependency arrow and the today line.
+fn gantt_rows() -> (Vec<ve_dash::GanttRow>, Vec<ve_dash::GanttLink>) {
+    use ve_dash::{Day, GanttBar, GanttLink, GanttMilestone, GanttRow};
+    let th = Theme::dark();
+    let d = |m, dd| Day::from_ymd(2026, m, dd);
+    let bar = |id: &str, s, e, c, soft| GanttBar {
+        id: id.into(),
+        start: s,
+        end: e,
+        color: c,
+        soft_end: soft,
+        label: format!("release {id}"),
+    };
+    let rows = vec![
+        GanttRow {
+            id: "P1#v1".into(),
+            label: "v1 first light".into(),
+            group: "P1 board".into(),
+            hover: "released".into(),
+            bars: vec![bar("v1", d(9, 1), d(9, 30), th.cat[0], false)],
+            milestones: vec![],
+        },
+        GanttRow {
+            id: "P1#v2".into(),
+            label: "v2".into(),
+            group: "P1 board".into(),
+            hover: "planned for Nov".into(),
+            bars: vec![bar("v2", d(10, 8), d(11, 30), th.cat[0], true)],
+            milestones: vec![GanttMilestone {
+                id: "v2-due".into(),
+                day: d(11, 13),
+                color: th.cat[3],
+                label: "due: case drawings".into(),
+            }],
+        },
+        GanttRow {
+            id: "P2#a".into(),
+            label: "a rather long task name that does not fit the label column".into(),
+            group: "P2 app".into(),
+            hover: String::new(),
+            bars: vec![bar("a", d(10, 10), d(10, 28), th.cat[2], false)],
+            milestones: vec![],
+        },
+    ];
+    let links = vec![GanttLink {
+        from: "v1".into(),
+        to: "v2".into(),
+    }];
+    (rows, links)
+}
+
+#[test]
+fn gantt_snapshot() {
+    let (rows, links) = gantt_rows();
+    let theme = Theme::dark();
+    let mut view = ve_dash::GanttView::default();
+    let mut h = Harness::builder()
+        .with_size(vec2(560.0, 150.0))
+        .build_ui(move |ui| {
+            theme.apply(ui.ctx());
+            ve_theme::install_fonts(ui.ctx());
+            ui.painter()
+                .rect_filled(ui.ctx().viewport_rect(), 0.0, theme.bg);
+            let _ = ve_dash::Gantt::new(&rows, &mut view)
+                .links(&links)
+                .today(ve_dash::Day::from_ymd(2026, 10, 21))
+                .show(ui);
+        });
+    h.run();
+    h.run(); // the label column settles on what the first frame measured
+    h.snapshot_options("gantt", &tolerant());
+}
+
+/// A click answers the row (and the item under the pointer); the wheel zooms around the pointer, a drag pans.
+#[test]
+fn gantt_clicks_zooms_and_pans() {
+    let (rows, links) = gantt_rows();
+    let state = Rc::new(std::cell::RefCell::new((
+        ve_dash::GanttView::default(),
+        None::<String>,
+        None::<String>,
+    )));
+    let s = state.clone();
+    let mut h = Harness::builder()
+        .with_size(vec2(560.0, 150.0))
+        .build_ui(move |ui| {
+            let mut st = s.borrow_mut();
+            let r = ve_dash::Gantt::new(&rows, &mut st.0).links(&links).show(ui);
+            if r.clicked.is_some() {
+                st.1 = r.clicked;
+                st.2 = r.clicked_item;
+            }
+        });
+    h.run();
+    h.run();
+    let fitted = state.borrow().0;
+    assert!(fitted.span > 0.0, "fits the data on the first show");
+
+    // Click on the label of the third row (two headers and two rows above it, axis on top).
+    // Lines: axis 16, header 22, row 22, row 22, header 22, row 22.
+    let row = pos2(20.0, 16.0 + 22.0 * 4.0 + 11.0);
+    h.hover_at(row);
+    h.run();
+    h.drag_at(row);
+    h.run();
+    h.drop_at(row);
+    h.run();
+    assert_eq!(state.borrow().1.as_deref(), Some("P2#a"));
+    assert_eq!(state.borrow().2, None, "the label column has no items");
+
+    // The wheel over the time area zooms in, keeping the day under the pointer in place.
+    let at = pos2(400.0, 60.0);
+    h.hover_at(at);
+    h.run();
+    let before = state.borrow().0;
+    h.event(egui::Event::MouseWheel {
+        unit: egui::MouseWheelUnit::Point,
+        delta: vec2(0.0, 120.0),
+        modifiers: egui::Modifiers::NONE,
+        phase: egui::TouchPhase::Move,
+    });
+    for _ in 0..10 {
+        h.step();
+    }
+    let after = state.borrow().0;
+    assert!(after.span < before.span, "{before:?} -> {after:?}");
+
+    // Drag to the right shows earlier days.
+    h.drag_at(pos2(300.0, 60.0));
+    h.hover_at(pos2(360.0, 60.0));
+    h.run();
+    h.drop_at(pos2(360.0, 60.0));
+    h.run();
+    assert!(state.borrow().0.start < after.start);
+}

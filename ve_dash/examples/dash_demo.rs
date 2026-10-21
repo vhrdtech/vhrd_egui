@@ -2,7 +2,8 @@
 //!
 //! A btop-style node dashboard built from the ve_dash blocks: stat tiles,
 //! status lights, sparklines, meters and fed by a small
-//! simulation. The real mesh dashboard (live `tpm_mesh` data) lives in the
+//! simulation; below it a task burndown and a Gantt chart of made-up releases
+//! (wheel over the Gantt zooms, drag scrolls in time, a click names the row). The real mesh dashboard (live `tpm_mesh` data) lives in the
 //! tpm_mesh_dash repo; this demo stays here so the crate shows off and
 //! exercises every block without external dependencies.
 //!
@@ -14,14 +15,16 @@
 use eframe::egui;
 use egui::{Align2, FontId, RichText, Ui, vec2};
 use ve_dash::{
-    Blocks, Decay, History, Meter, Sparkline, StatTile, Status, StatusLight, SteadyColumn, Theme,
+    Blocks, BurnSeries, Burndown, Day, Decay, Gantt, GanttBar, GanttLink, GanttMilestone, GanttRow,
+    GanttView, History, Ideal, Meter, Sparkline, StatTile, Status, StatusLight, SteadyColumn,
+    Theme, Trend,
 };
 use ve_frame::{FrameState, WidgetFrame};
 
 fn main() -> eframe::Result {
     let options = eframe::NativeOptions {
         viewport: egui::ViewportBuilder::default()
-            .with_inner_size([900.0, 520.0])
+            .with_inner_size([900.0, 980.0])
             .with_title("ve_dash demo"),
         renderer: eframe::Renderer::Wgpu,
         ..Default::default()
@@ -105,6 +108,188 @@ struct App {
     fps: f32,
     /// How many blocks the load meters show; a combo box in the header switches it live.
     blocks: Blocks,
+    tasks: Tasks,
+}
+
+/// Made-up task data for the burndown and the Gantt.
+struct Tasks {
+    today: Day,
+    days: Vec<Day>,
+    series: Vec<BurnSeries>,
+    rows: Vec<GanttRow>,
+    links: Vec<GanttLink>,
+    /// The Gantt's zoom and scroll; an app persists it.
+    view: GanttView,
+    /// The row clicked last, shown under the chart.
+    clicked: Option<String>,
+    burn_frame: FrameState,
+    gantt_frame: FrameState,
+}
+
+impl Tasks {
+    fn new(theme: &Theme) -> Self {
+        let start = Day::from_ymd(2026, 9, 21);
+        let days: Vec<Day> = (0..31).map(|i| start + i).collect();
+        let today = start + 30;
+        let wave = |i: usize, k: f32| ((i as f32 * k).sin() + 1.0) * 1.5;
+        let mut fw = BurnSeries::new(
+            "fw",
+            theme.cat[0],
+            (0..31)
+                .map(|i| 46.0 - i as f32 * 1.1 + wave(i, 0.7))
+                .collect(),
+        );
+        fw.closed = Some((0..31).map(|i| ((i * 7) % 5) as f32).collect());
+        fw.ideas_open = Some((0..31).map(|i| 9.0 + (i % 3) as f32).collect());
+        fw.ideal = Some(Ideal {
+            from: start,
+            value: 46.0,
+            to: start + 45,
+        });
+        fw.trend = Some(Trend {
+            per_day: 1.1,
+            zero: Some(start + 44),
+        });
+        let mut hw = BurnSeries::new(
+            "hw",
+            theme.cat[1],
+            (0..31).map(|i| 14.0 + wave(i, 0.3)).collect(),
+        );
+        hw.closed = Some((0..31).map(|i| ((i * 3) % 4) as f32).collect());
+        hw.trend = Some(Trend {
+            per_day: 0.0,
+            zero: None,
+        });
+        let d = |m, dd| Day::from_ymd(2026, m, dd);
+        let bar = |id: &str, s: Day, e: Day, color, soft_end| GanttBar {
+            id: id.into(),
+            start: s,
+            end: e,
+            color,
+            soft_end,
+            label: format!("release {id}"),
+        };
+        let row = |id: &str, label: &str, group: &str, hover: &str| GanttRow {
+            id: id.into(),
+            label: label.into(),
+            group: group.into(),
+            hover: hover.into(),
+            ..Default::default()
+        };
+        let mut rows = vec![
+            row(
+                "P1#v1",
+                "v1 first light",
+                "P1 sensor board",
+                "released 30 Sep",
+            ),
+            row(
+                "P1#v2",
+                "v2 production",
+                "P1 sensor board",
+                "month-only date: Dec 2026",
+            ),
+            row(
+                "P1#case",
+                "case drawings",
+                "P1 sensor board",
+                "🚧 in progress",
+            ),
+            row("P2#app", "app 0.4", "P2 dashboard", "planned"),
+            row("P2#web", "web build", "P2 dashboard", "waits for app 0.4"),
+        ];
+        rows[0]
+            .bars
+            .push(bar("v1", d(8, 15), d(9, 30), theme.cat[0], false));
+        rows[1]
+            .bars
+            .push(bar("v2", d(10, 6), d(12, 31), theme.cat[0], true));
+        rows[1].milestones.push(GanttMilestone {
+            id: "v2-due".into(),
+            day: d(11, 13),
+            color: theme.cat[3],
+            label: "due: first batch".into(),
+        });
+        rows[2]
+            .bars
+            .push(bar("case", d(10, 12), today, theme.cat[2], false));
+        rows[3]
+            .bars
+            .push(bar("app", d(9, 25), d(11, 4), theme.cat[1], false));
+        rows[4]
+            .bars
+            .push(bar("web", d(11, 10), d(11, 30), theme.cat[1], true));
+        let links = vec![
+            GanttLink {
+                from: "v1".into(),
+                to: "v2".into(),
+            },
+            GanttLink {
+                from: "app".into(),
+                to: "web".into(),
+            },
+        ];
+        Self {
+            today,
+            days,
+            series: vec![fw, hw],
+            rows,
+            links,
+            view: GanttView::default(),
+            clicked: None,
+            burn_frame: FrameState::default(),
+            gantt_frame: FrameState::default(),
+        }
+    }
+
+    fn ui(&mut self, ui: &mut Ui, theme: &Theme) {
+        let Self {
+            today,
+            days,
+            series,
+            rows,
+            links,
+            view,
+            clicked,
+            burn_frame,
+            gantt_frame,
+        } = self;
+        WidgetFrame::new("burndown").show(ui, burn_frame, |ui, _| {
+            let _ = Burndown::new(days, series)
+                .theme(theme.clone())
+                .today(*today)
+                .height(200.0)
+                .show(ui);
+        });
+        ui.add_space(8.0);
+        WidgetFrame::new("gantt").show(ui, gantt_frame, |ui, _| {
+            let r = Gantt::new(rows, view)
+                .links(links)
+                .today(*today)
+                .theme(theme.clone())
+                .show(ui);
+            if r.clicked.is_some() {
+                *clicked = r.clicked;
+            }
+            ui.horizontal(|ui| {
+                ui.label(
+                    RichText::new(match clicked {
+                        Some(id) => format!("clicked: {id}"),
+                        None => "click a row".into(),
+                    })
+                    .color(theme.text_muted)
+                    .size(11.0),
+                );
+                if ui
+                    .small_button("fit")
+                    .on_hover_text("Show all the bars again (the zoom and scroll are reset)")
+                    .clicked()
+                {
+                    view.reset();
+                }
+            });
+        });
+    }
 }
 
 impl App {
@@ -119,11 +304,13 @@ impl App {
         ];
         nodes[0].is_self = true;
         nodes[2].online = false;
+        let tasks = Tasks::new(&theme);
         Self {
             theme,
             nodes,
             fps: 0.0,
             blocks: Blocks::default(),
+            tasks,
         }
     }
 
@@ -288,13 +475,18 @@ impl eframe::App for App {
         egui::CentralPanel::default()
             .frame(egui::Frame::new().fill(self.theme.bg).inner_margin(12))
             .show(ui, |ui| {
-                self.header(ui);
-                ui.add_space(10.0);
-                let cols = self.nodes.len().clamp(1, 3);
-                ui.columns(cols, |columns| {
-                    for idx in 0..self.nodes.len() {
-                        self.node_panel(&mut columns[idx % cols], idx);
-                    }
+                egui::ScrollArea::vertical().show(ui, |ui| {
+                    self.header(ui);
+                    ui.add_space(10.0);
+                    let cols = self.nodes.len().clamp(1, 3);
+                    ui.columns(cols, |columns| {
+                        for idx in 0..self.nodes.len() {
+                            self.node_panel(&mut columns[idx % cols], idx);
+                        }
+                    });
+                    ui.add_space(10.0);
+                    let theme = self.theme.clone();
+                    self.tasks.ui(ui, &theme);
                 });
             });
     }
