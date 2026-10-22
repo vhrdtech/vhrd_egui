@@ -5,6 +5,8 @@ versions follow [Semantic Versioning](https://semver.org/). Feature IDs refer to
 
 ## [Unreleased]
 
+## [0.32.6] - 2026-10-22
+
 ### Changed
 
 - `just install` builds `ve_template` with the `deploy` profile and puts it on PATH through `tpm install` when tpm is there (kept-releases stack in ~/.local/bin), else `cargo install`; `just deploy` now pulls, installs and checks the version. `ve_template --version` shows the commit and build time
