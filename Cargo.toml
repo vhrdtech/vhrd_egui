@@ -41,3 +41,8 @@ opt-level = 1
 
 [profile.dev.package."*"]
 opt-level = 3
+
+# just install: release, but incremental so a rebuild after a small change is quick
+[profile.deploy]
+inherits = "release"
+incremental = true

@@ -88,6 +88,7 @@ cargo build --workspace
 cargo clippy --workspace --all-targets -- -D warnings
 cargo fmt --all
 cargo test --workspace
+just install     # the ve_template command onto PATH; works anywhere, with tpm it uses the release stack
 just check-wasm  # ve_dash, ve_theme, ve_basics, ve_frame, ve_settle: wasm-clean (PLT-7, PLT-9)
 ```
 

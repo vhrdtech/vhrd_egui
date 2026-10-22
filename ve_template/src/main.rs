@@ -27,12 +27,21 @@ pub const TEMPLATE_COMMIT: &str = match option_env!("GIT_SHA") {
     Some(s) => s,
     None => "unknown",
 };
+/// `--version`: `0.4.1 (a1b2c3d-dirty, commit 3 Oct 2026 18:20 UTC)`, stamped by `build.rs`.
+const VERSION: &str = concat!(
+    env!("CARGO_PKG_VERSION"),
+    " (",
+    env!("GIT_SHA"),
+    ", built ",
+    env!("BUILD_TIME"),
+    ")"
+);
 /// Name of the skill the template belongs to (`egui_app_skill/SKILL.md`).
 pub const TEMPLATE_NAME: &str = "egui-app";
 
 #[derive(Parser)]
 #[command(
-    version,
+    version = VERSION,
     about = "vhrd egui app template: generate, check and compare apps (egui_app_skill)"
 )]
 struct Cli {

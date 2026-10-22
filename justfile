@@ -26,15 +26,21 @@ brand:
 
 # Local install: the app template command (the crates themselves are depended on, not installed)
 install:
-    cargo install --path ve_template --locked
+    cargo build --profile deploy --locked -p ve_template
+    # With tpm on PATH: tpm install (kept-releases stack, one copy on PATH); otherwise: cargo install
+    if command -v tpm >/dev/null; then tpm install target/deploy/ve_template; else cargo install --locked --path ve_template; fi
 
 # Generate an app from the template: just new NAME [DIR]
 new NAME DIR=".":
     cargo run -q -p ve_template -- new {{NAME}} --out {{DIR}}
 
-# Libraries are not deployed
+# Bring this PC up to main and install the template command (the libraries are not deployed: apps pick up main through their Cargo.toml)
 deploy:
-    @echo "vhrd_egui is a library, nothing to deploy; apps pick up main through their Cargo.toml"
+    test -z "$(git status --porcelain)" || { echo "local changes, commit or move them first:" >&2; git status --short >&2; exit 1; }
+    git pull --ff-only
+    just install
+    ve_template --version | grep -qF "($(git rev-parse --short HEAD)"
+    ve_template --version
 
 # Regenerate ve_theme's emoji fallback font from the current Noto Emoji (OFL): Regular weight, only the code points of emoji-glyphs.txt (THM-14)
 emoji-font:
