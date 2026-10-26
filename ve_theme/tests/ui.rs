@@ -227,3 +227,55 @@ fn status_icon_shows_tooltip_and_falls_back_for_unknown_names() {
     hover_tooltip(&mut h, "✅", "finished, believed correct");
     h.get_by_label("not-a-tpm-status");
 }
+
+/// Every status glyph stands out from the background it is drawn on, in both themes (THM-16): the neutral
+/// ones (📋 planned, 💡 idea, ⬜ stub: most of a task list) were painted in `line_strong`, a hairline colour,
+/// and read as no colour at all. Checked as a person would see it, on the colour the frame painted.
+#[test]
+fn status_glyphs_stand_out_in_both_themes() {
+    for theme in [Theme::Dark, Theme::Light] {
+        let mut h = Harness::builder()
+            .with_size(vec2(200.0, 80.0))
+            .with_theme(theme)
+            .build_ui(|ui| {
+                ve_theme::status_icon(ui, "planned", "planned");
+                ve_theme::status_icon(ui, "done", "done");
+            });
+        ve_theme::setup(&h.ctx);
+        h.run();
+        let t = ve_theme::Tokens::of(&h.ctx, theme);
+        let painted: Vec<(char, egui::Color32)> = h
+            .output()
+            .shapes
+            .iter()
+            .filter_map(|c| match &c.shape {
+                egui::Shape::Text(s) => Some((
+                    s.galley.job.text.chars().next()?,
+                    s.galley.job.sections[0].format.color,
+                )),
+                _ => None,
+            })
+            .collect();
+        let planned = painted
+            .iter()
+            .find(|(c, _)| *c == '📋')
+            .expect("📋 painted")
+            .1;
+        assert_eq!(planned, Tone::Neutral.ink(&t));
+        assert_eq!(
+            planned, t.colors.text_muted,
+            "neutral ink is the muted text"
+        );
+        assert!(
+            ve_theme::contrast::contrast(planned, t.colors.bg) >= 3.0,
+            "{theme:?}: planned at {:.1}:1",
+            ve_theme::contrast::contrast(planned, t.colors.bg)
+        );
+        let done = painted
+            .iter()
+            .find(|(c, _)| *c == '✅')
+            .expect("✅ painted")
+            .1;
+        assert_eq!(done, Tone::Good.color(&t));
+    }
+}

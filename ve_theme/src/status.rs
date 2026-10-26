@@ -5,7 +5,7 @@
 //! egui 0.36 rasterises every glyph — emoji included — from vector outlines into a single-channel
 //! coverage mask (`skrifa` in epaint); there is no COLR/CPAL or CBDT/CBLC colour-glyph table support, so a
 //! glyph always takes the colour it is drawn with, the same as any other character. [`status_icon_with`]
-//! is exactly `ui.label(RichText::new(glyph).color(tone.color(..)))` plus the tooltip: no special
+//! is exactly `ui.label(RichText::new(glyph).color(tone.ink(..)))` plus the tooltip: no special
 //! rendering path exists or is needed, and none of egui's built-in or bundled fonts carry colour glyphs to
 //! lose by relying on this.
 
@@ -82,7 +82,7 @@ pub fn status_icon_with(
     tone: Tone,
     tooltip: impl Into<WidgetText>,
 ) -> Response {
-    let color = tone.color(&ui.tokens());
+    let color = tone.ink(&ui.tokens());
     ui.label(RichText::new(glyph.to_string()).color(color))
         .on_hover_text(tooltip)
 }
@@ -94,7 +94,7 @@ pub fn status_icon(ui: &mut Ui, name: &str, tooltip: impl Into<WidgetText>) -> R
     match status_glyph(name) {
         Some(s) => status_icon_with(ui, s.glyph, s.tone, tooltip),
         None => {
-            let color = Tone::Neutral.color(&ui.tokens());
+            let color = Tone::Neutral.ink(&ui.tokens());
             ui.label(RichText::new(name).color(color))
                 .on_hover_text(tooltip)
         }

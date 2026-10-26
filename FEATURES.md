@@ -343,6 +343,7 @@ on every background (unit-tested), status colors always come with a text label.
   downloads the current release and regenerates the subset (fonttools). Add a line there when an app needs another
   emoji. Snapshot `tpm_status_emoji`. Not covered: ✓ ✗ (not in Noto Emoji; egui's fonts still draw them).
 - ✅ **THM-15 status colour**: `ve_theme::status` maps tpm's status words (`[task_status]`, `[project_status]`,
+- ✅ **THM-16 Status glyphs are legible in the neutral tone** (P2620#26oct-0459): `Tone::ink(tokens)`, the colour of text or a glyph in a tone: `Tone::color` except `Neutral`, which inks in `text_muted` (a neutral badge's text) rather than its base `line_strong` (a hairline, 2.2:1 on the background in both themes, against 6.8:1 and 5.3:1 for `text_muted`). `status_icon` and `status_icon_with` draw with it. Cause: THM-15 painted every glyph in `Tone::color`, so 📋 planned, 💡 idea and ⬜ stub, most rows of a tpm task list, nearly vanished and the tpm_mesh_dash table looked uncoloured. Kittest `status_glyphs_stand_out_in_both_themes` (the painted colour, at least 3:1 on the background in dark and light), snapshot `tpm_status_color`.
   `[log_kinds]`) onto a glyph (THM-14's font) and a `Tone`; `status_icon(ui, name, tooltip)` looks a status up
   by tpm's config.toml key and draws it (an unknown name still draws the bare word, neutral tone, rather than
   nothing), `status_icon_with(ui, glyph, tone, tooltip)` draws any glyph for an app's own vocabulary.

@@ -43,6 +43,16 @@ impl Tone {
             Self::Off => c.off,
         }
     }
+
+    /// The colour of text or a glyph drawn in this tone (THM-16): [`Tone::color`], except `Neutral`, whose base
+    /// colour is a hairline's (`line_strong`, a badge's border) and too faint for ink: there the muted text
+    /// colour, as a neutral badge's text.
+    pub fn ink(self, tokens: &Tokens) -> Color32 {
+        match self {
+            Self::Neutral => tokens.colors.text_muted,
+            _ => self.color(tokens),
+        }
+    }
 }
 
 /// VHRD styles on top of egui. `use ve_theme::UiExt as _;` then `ui.primary_button(..)`.

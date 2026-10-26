@@ -10,6 +10,10 @@ versions follow [Semantic Versioning](https://semver.org/). Feature IDs refer to
 - `ve_basics` (BAS-6): `Checklist`, a dropdown of checkboxes that stays open while they are ticked and closes on a click outside, Esc or its button (`ui.menu_button` closes after every click inside), and `checklist_item` for a plain row; the list grows to the screen's bottom when a fold inside it opens, where a ScrollArea in a popup keeps the height it opened with; the UI guide says when to use it (P2620#26oct-0459).
 - `ve_dash` (DASH-25): `Glyph`, a status glyph painted in its own colour before a label: `GanttRow::glyph` before the row's label, `BurnSeries::glyph` before the legend entry. A glyph inside the label text took the text colour (P2605#21oct-2048, P2620#26oct-0459). `GanttRow` and `BurnSeries` gain a public field: a struct literal without `..Default::default()` needs `glyph: None`.
 
+### Fixed
+
+- `ve_theme` (THM-16): a neutral status glyph (📋 planned, 💡 idea, ⬜ stub, an unknown word) is drawn in the muted text colour, new `Tone::ink`; `status_icon` painted it in `Tone::color`, a neutral badge's hairline (`line_strong`), so a task list, mostly planned, read as uncoloured (P2620#26oct-0459).
+
 ## [0.32.7] - 2026-10-22
 
 ### Added
