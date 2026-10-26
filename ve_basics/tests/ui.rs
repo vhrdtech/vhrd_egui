@@ -299,3 +299,57 @@ fn fold_rest_header_alone_in_a_grid() {
     h.run();
     h.get_by_label("row-3");
 }
+
+/// BAS-6: a checklist stays open while its boxes are ticked (two in a row), and closes on a click outside it
+/// and on Esc; the button opens it again.
+#[test]
+fn checklist_stays_open_while_ticking_and_closes_outside_or_on_esc() {
+    use ve_basics::{Checklist, checklist_item};
+    let picked: Rc<std::cell::RefCell<Vec<&'static str>>> = Rc::default();
+    let mut h = Harness::builder().with_size(vec2(300.0, 300.0)).build_ui({
+        let picked = picked.clone();
+        move |ui| {
+            let mut picked = picked.borrow_mut();
+            Checklist::new("tracks").ui(ui, |ui| {
+                for v in ["hw", "fw", "ops"] {
+                    checklist_item(ui, &mut picked, &v, v);
+                }
+            });
+            ui.add_space(150.0);
+            ui.label("outside");
+        }
+    });
+    h.run();
+    assert!(h.query_by_label("hw").is_none(), "closed at first");
+    h.get_by_label("tracks").click();
+    h.run();
+    h.get_by_label("hw").click();
+    h.run();
+    h.get_by_label("ops").click();
+    h.run();
+    assert_eq!(*picked.borrow(), ["hw", "ops"]);
+    assert!(
+        h.query_by_label("fw").is_some(),
+        "still open after two ticks"
+    );
+    h.get_by_label("hw").click();
+    h.run();
+    assert_eq!(*picked.borrow(), ["ops"], "unticked");
+
+    h.get_by_label("outside").click();
+    h.run();
+    assert!(
+        h.query_by_label("fw").is_none(),
+        "a click outside closes it"
+    );
+
+    h.get_by_label("tracks").click();
+    h.run();
+    assert!(
+        h.query_by_label("fw").is_some(),
+        "the button opens it again"
+    );
+    h.key_press(egui::Key::Escape);
+    h.run();
+    assert!(h.query_by_label("fw").is_none(), "Esc closes it");
+}

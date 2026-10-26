@@ -63,6 +63,24 @@ A widget's smallest fixed form (`min` of its size switch) may sum a list up as a
 count's tooltip lists the items and names the switch; every other form that cuts a list offers the fold.
 A popup on a `+N` is the fold's stand-in where a fixed-width cell has no room for rows below it.
 
+## A list of checkboxes stays open while it is ticked
+
+A dropdown whose items are checkboxes (a filter's values, the columns to show) stays open while they are ticked:
+only a click outside it, Esc or its button closes it. `ui.menu_button` closes after every click inside (egui
+0.36), so ticking three values takes three trips to the button: use `ve_basics::Checklist` (BAS-6) instead,
+with the rows your own (tooltips, a greyed row saying why, a fold with the rest) or `checklist_item` for a plain
+one:
+
+```rust
+ve_basics::Checklist::new(format!("tracks: {}", picked.len())).ui(ui, |ui| {
+    for t in &tracks {
+        ve_basics::checklist_item(ui, &mut picked, t, t.as_str());
+    }
+}).response.on_hover_text("Only tasks with one of these tracks");
+```
+
+A menu of actions (one click does one thing) stays a `menu_button`.
+
 ## Highlight related items on hover
 
 When something refers to something else (a session to its PC, a lane count to its sessions, a graph line to its

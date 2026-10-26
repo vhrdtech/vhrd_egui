@@ -268,6 +268,12 @@ Small helpers every app uses, crate `ve_basics`. UI rules that go with them: AGE
   The rule: AGENTS.md "UI guide rules", `egui_app_skill/references/ui-guide.md`. Shown in the ve_theme gallery
   (Containers). `ve_basics/src/fold_rest.rs`, kittests (folded, open, split header, grid) and snapshots
   `fold_rest_folded` / `fold_rest_open` in `ve_basics/tests/ui.rs`. Used by tpm_mesh_dash (P2620#20oct-1628).
+- ✅ **BAS-6 Checklist** (P2620#26oct-0459): a dropdown of checkboxes that stays open while they are ticked;
+  only a click outside it, Esc or its button closes it (`ui.menu_button` closes after every click inside in egui
+  0.36). `Checklist::new(text).ui(ui, |ui| rows)` (`from_button` for a styled button, `max_height`; the list
+  scrolls), `checklist_item(ui, &mut picked, &value, text)` for a plain row, `Checklist::is_open`. The rule:
+  `egui_app_skill/references/ui-guide.md`. `ve_basics/src/checklist.rs`, kittest
+  `checklist_stays_open_while_ticking_and_closes_outside_or_on_esc`. Used by tpm_mesh_dash's task filters.
 
 ## Theme (`THM`)
 
