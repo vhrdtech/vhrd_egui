@@ -353,3 +353,43 @@ fn checklist_stays_open_while_ticking_and_closes_outside_or_on_esc() {
     h.run();
     assert!(h.query_by_label("fw").is_none(), "Esc closes it");
 }
+
+/// BAS-6: a fold inside a checklist opens without closing the list, and the rows it adds take clicks: the list
+/// grows with them instead of keeping the height it opened with.
+#[test]
+fn checklist_keeps_open_when_a_fold_inside_opens() {
+    use ve_basics::{Checklist, FoldRest, checklist_item};
+    let picked: Rc<std::cell::RefCell<Vec<&'static str>>> = Rc::default();
+    let mut h = Harness::builder().with_size(vec2(300.0, 300.0)).build_ui({
+        let picked = picked.clone();
+        move |ui| {
+            let mut picked = picked.borrow_mut();
+            Checklist::new("tracks").ui(ui, |ui| {
+                checklist_item(ui, &mut picked, &"hw", "hw");
+                let mut fold = FoldRest::new(ui, "rest");
+                fold.header(ui, "2 more from other projects")
+                    .on_hover_text("their values");
+                fold.body(ui, |ui| {
+                    for v in ["fw", "ops"] {
+                        checklist_item(ui, &mut picked, &v, v);
+                    }
+                });
+            });
+        }
+    });
+    h.run();
+    h.get_by_label("tracks").click();
+    h.run();
+    h.get_by_label("hw").click();
+    h.run();
+    h.get_by_label("2 more from other projects").click();
+    h.run();
+    assert!(h.query_by_label("hw").is_some(), "still open");
+    // the pointer gets there first, as a mouse does, and the header's tooltip goes (kittest moves and clicks
+    // in one frame, under the tooltip still shown)
+    h.get_by_label("ops").hover();
+    h.run();
+    h.get_by_label("ops").click();
+    h.run();
+    assert_eq!(*picked.borrow(), ["hw", "ops"]);
+}

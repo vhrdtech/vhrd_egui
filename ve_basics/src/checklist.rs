@@ -55,11 +55,17 @@ impl<'a> Checklist<'a> {
         let inner = Popup::menu(&response)
             .close_behavior(PopupCloseBehavior::CloseOnClickOutside)
             .show(|ui| {
-                let mut scroll = egui::ScrollArea::vertical();
-                if let Some(h) = max_height {
-                    scroll = scroll.max_height(h);
-                }
-                scroll.show(ui, content).inner
+                // the popup's area hands its ui last frame's size: a list that grew (a fold opened) would
+                // stay clipped at the old height, its new rows out of reach; room to the screen's bottom instead
+                let room = ui.ctx().content_rect().bottom()
+                    - ui.max_rect().top()
+                    - ui.spacing().menu_margin.sum().y;
+                let height = max_height.unwrap_or(room).min(room).max(0.0);
+                ui.set_max_height(height);
+                egui::ScrollArea::vertical()
+                    .max_height(height)
+                    .show(ui, content)
+                    .inner
             });
         InnerResponse::new(inner.map(|i| i.inner), response)
     }
