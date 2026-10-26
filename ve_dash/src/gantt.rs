@@ -11,12 +11,12 @@
 //! Every size and speed is a field of [`GanttStyle`], along with the schedule overlay's own risk / met / critical
 //! colours (the chart's to pick, not the caller's); other colours are the [`Theme`]'s and the items' own.
 
-use egui::text::{LayoutJob, TextFormat};
 use egui::{
     Color32, CursorIcon, FontId, Mesh, Pos2, Rect, Response, Sense, Shape, Stroke, Ui, pos2, vec2,
 };
 
 use crate::day::{AxisStyle, Day, paint_day_axis};
+use crate::glyph::Glyph;
 use crate::steady::steady_of;
 use crate::theme::{DARK, Theme};
 
@@ -27,6 +27,8 @@ pub struct GanttRow {
     pub id: String,
     /// In the label column; cut with an ellipsis when too long (whole in the tooltip).
     pub label: String,
+    /// A status glyph before the label, in its own colour (DASH-25).
+    pub glyph: Option<Glyph>,
     /// Rows are drawn in the order given, with a header whenever the group changes; `""` has no header.
     pub group: String,
     /// More for the tooltip of the row (status, release, ...); may be empty.
@@ -406,7 +408,7 @@ impl<'a> Gantt<'a> {
             .iter()
             .map(|r| {
                 ui.painter()
-                    .layout_no_wrap(r.label.clone(), label_font.clone(), th.text)
+                    .layout_job(Glyph::job(r.glyph, &r.label, label_font.clone(), th.text))
                     .size()
                     .x
             })
@@ -501,10 +503,8 @@ impl<'a> Gantt<'a> {
                         painter.rect_filled(band, 0.0, th.panel_bg.gamma_multiply(st.stripe_alpha));
                     }
                     stripe = !stripe;
-                    let mut job = LayoutJob::single_section(
-                        self.rows[i].label.clone(),
-                        TextFormat::simple(label_font.clone(), th.text),
-                    );
+                    let r = &self.rows[i];
+                    let mut job = Glyph::job(r.glyph, &r.label, label_font.clone(), th.text);
                     job.wrap.max_width = (label_w - 2.0 * st.label_pad).max(1.0);
                     job.wrap.max_rows = 1;
                     job.wrap.break_anywhere = true;

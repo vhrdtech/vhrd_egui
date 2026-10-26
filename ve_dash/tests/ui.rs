@@ -456,6 +456,7 @@ fn burn_data() -> (Vec<ve_dash::Day>, Vec<ve_dash::BurnSeries>) {
             .collect(),
     );
     hw.closed = Some((0..21).map(|i| ((i * 3) % 4) as f32).collect());
+    hw.glyph = Some(ve_dash::Glyph::new('⛔', th.crit));
     hw.trend = Some(Trend {
         per_day: 0.2,
         zero: None,
@@ -536,6 +537,7 @@ fn gantt_rows() -> (Vec<ve_dash::GanttRow>, Vec<ve_dash::GanttLink>) {
         GanttRow {
             id: "P1#v1".into(),
             label: "v1 first light".into(),
+            glyph: Some(ve_dash::Glyph::new('✅', th.good)),
             group: "P1 board".into(),
             hover: "released".into(),
             bars: vec![bar("v1", d(9, 1), d(9, 30), th.cat[0], false)],
@@ -544,6 +546,7 @@ fn gantt_rows() -> (Vec<ve_dash::GanttRow>, Vec<ve_dash::GanttLink>) {
         GanttRow {
             id: "P1#v2".into(),
             label: "v2".into(),
+            glyph: Some(ve_dash::Glyph::new('🚧', th.warn)),
             group: "P1 board".into(),
             hover: "planned for Nov".into(),
             bars: vec![bar("v2", d(10, 8), d(11, 30), th.cat[0], true)],
@@ -557,6 +560,7 @@ fn gantt_rows() -> (Vec<ve_dash::GanttRow>, Vec<ve_dash::GanttLink>) {
         GanttRow {
             id: "P2#a".into(),
             label: "a rather long task name that does not fit the label column".into(),
+            glyph: None,
             group: "P2 app".into(),
             hover: String::new(),
             bars: vec![bar("a", d(10, 10), d(10, 28), th.cat[2], false)],
@@ -590,6 +594,52 @@ fn gantt_snapshot() {
     h.run();
     h.run(); // the label column settles on what the first frame measured
     h.snapshot_options("gantt", &tolerant());
+}
+
+/// The colour each glyph was painted in, from the frame's text shapes: the first section of every galley that
+/// starts with one of `glyphs`.
+fn painted_glyphs(h: &Harness<'_>, glyphs: &[char]) -> Vec<(char, egui::Color32)> {
+    h.output()
+        .shapes
+        .iter()
+        .filter_map(|c| match &c.shape {
+            egui::Shape::Text(t) => {
+                let first = t.galley.job.text.chars().next()?;
+                glyphs
+                    .contains(&first)
+                    .then(|| (first, t.galley.job.sections[0].format.color))
+            }
+            _ => None,
+        })
+        .collect()
+}
+
+/// A Gantt row's glyph and a burndown legend entry's glyph are painted in their own colour, the label beside
+/// them in the text colour (DASH-25).
+#[test]
+fn glyphs_take_their_own_colour() {
+    let (rows, links) = gantt_rows();
+    let (days, series) = burn_data();
+    let theme = Theme::dark();
+    let mut view = ve_dash::GanttView::default();
+    let mut h = Harness::builder()
+        .with_size(vec2(560.0, 420.0))
+        .build_ui(move |ui| {
+            theme.apply(ui.ctx());
+            ve_theme::install_fonts(ui.ctx());
+            let _ = ve_dash::Burndown::new(&days, &series)
+                .height(220.0)
+                .show(ui);
+            let _ = ve_dash::Gantt::new(&rows, &mut view).links(&links).show(ui);
+        });
+    h.run();
+    let th = Theme::dark();
+    let mut seen = painted_glyphs(&h, &['✅', '🚧', '⛔']);
+    seen.sort_by_key(|(c, _)| *c);
+    assert_eq!(
+        seen,
+        vec![('⛔', th.crit), ('✅', th.good), ('🚧', th.warn)]
+    );
 }
 
 /// A click answers the row (and the item under the pointer); the wheel zooms around the pointer, a drag pans.

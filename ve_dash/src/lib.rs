@@ -25,6 +25,7 @@ mod column;
 mod day;
 mod decay;
 mod gantt;
+mod glyph;
 mod history;
 mod info;
 mod meter;
@@ -44,6 +45,7 @@ pub use gantt::{
     Gantt, GanttBar, GanttLink, GanttMarker, GanttMilestone, GanttResponse, GanttRow, GanttStyle,
     GanttView,
 };
+pub use glyph::Glyph;
 pub use history::History;
 pub use info::{ICON, ICON_STROKE, icon_center, icon_ink, info_icon, paint_info, paint_menu};
 pub use meter::{Blocks, Meter};

@@ -81,6 +81,14 @@ ve_basics::Checklist::new(format!("tracks: {}", picked.len())).ui(ui, |ui| {
 
 A menu of actions (one click does one thing) stays a `menu_button`.
 
+## A status glyph is drawn in its tone
+
+A status emoji (✅ 🚧 ⛔ ...) is painted in its tone's colour, never as a plain character inside a label, where it
+takes the text colour (egui draws every glyph as a one-colour mask). In a `Ui`: `ve_theme::status_icon(ui, name,
+tooltip)` (THM-15). In a widget that paints its own labels (a `ve_dash::GanttRow`, a `BurnSeries` legend entry):
+the glyph goes in the item's `glyph` field as `ve_dash::Glyph::new(s.glyph, s.tone.color(&tokens))` (DASH-25),
+not in its text; the status word goes in the item's hover.
+
 ## Highlight related items on hover
 
 When something refers to something else (a session to its PC, a lane count to its sessions, a graph line to its

@@ -10,6 +10,7 @@ use egui::{
 };
 
 use crate::day::{AxisStyle, Day, axis_color, paint_day_axis};
+use crate::glyph::Glyph;
 use crate::theme::{DARK, Theme};
 
 /// One line of a [`Burndown`]: the open count per day, and optionally what was closed per day, the ideas open
@@ -20,6 +21,8 @@ use crate::theme::{DARK, Theme};
 pub struct BurnSeries {
     /// Shown in the legend and the hover readout.
     pub name: String,
+    /// A status glyph before the name in the legend, in its own colour (DASH-25).
+    pub glyph: Option<Glyph>,
     /// The line, its area, its bars; pick from `Theme::cat` (never a status colour).
     pub color: Color32,
     /// Open items at the end of each day.
@@ -39,6 +42,7 @@ impl BurnSeries {
     pub fn new(name: impl Into<String>, color: Color32, open: Vec<f32>) -> Self {
         Self {
             name: name.into(),
+            glyph: None,
             color,
             open,
             closed: None,
@@ -505,14 +509,16 @@ impl<'a> Burndown<'a> {
         let mut x = rect.left();
         let y = rect.top();
         let h = st.legend_font_size + 4.0;
-        let mut item = |swatch: &dyn Fn(Rect), text: String, color: Color32| {
-            let g = painter.layout_no_wrap(text, font.clone(), color);
-            let sw = Rect::from_min_size(pos2(x, y + h / 2.0 - 1.0), vec2(st.legend_swatch, 2.0));
-            swatch(sw);
-            let text_x = x + st.legend_swatch + 4.0;
-            painter.galley(pos2(text_x, y + (h - g.size().y) / 2.0), g.clone(), color);
-            x = text_x + g.size().x + st.legend_gap;
-        };
+        let mut item =
+            |swatch: &dyn Fn(Rect), glyph: Option<Glyph>, text: String, color: Color32| {
+                let g = painter.layout_job(Glyph::job(glyph, &text, font.clone(), color));
+                let sw =
+                    Rect::from_min_size(pos2(x, y + h / 2.0 - 1.0), vec2(st.legend_swatch, 2.0));
+                swatch(sw);
+                let text_x = x + st.legend_swatch + 4.0;
+                painter.galley(pos2(text_x, y + (h - g.size().y) / 2.0), g.clone(), color);
+                x = text_x + g.size().x + st.legend_gap;
+            };
         let th = &self.theme;
         for s in self.series {
             let last = s.open.iter().rev().find(|v| v.is_finite()).copied();
@@ -524,6 +530,7 @@ impl<'a> Burndown<'a> {
                 &|r| {
                     painter.rect_filled(r.expand2(vec2(0.0, 1.0)), 0.0, s.color);
                 },
+                s.glyph,
                 text,
                 th.text,
             );
@@ -539,6 +546,7 @@ impl<'a> Burndown<'a> {
                         st.ideal_dash[1],
                     ));
                 },
+                None,
                 "ideal".into(),
                 th.text_muted,
             );
@@ -553,6 +561,7 @@ impl<'a> Burndown<'a> {
                         st.trend_dash[1],
                     ));
                 },
+                None,
                 "trend".into(),
                 th.text_muted,
             );
@@ -562,6 +571,7 @@ impl<'a> Burndown<'a> {
                 &|r| {
                     painter.rect_filled(r.expand2(vec2(0.0, 3.0)), 0.0, guide.gamma_multiply(0.35));
                 },
+                None,
                 "ideas".into(),
                 th.text_muted,
             );
@@ -578,6 +588,7 @@ impl<'a> Burndown<'a> {
                         guide.gamma_multiply(0.6),
                     );
                 },
+                None,
                 "closed / day".into(),
                 th.text_muted,
             );
