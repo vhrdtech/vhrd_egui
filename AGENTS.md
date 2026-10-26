@@ -130,7 +130,7 @@ reads before writing UI is `egui_app_skill/references/ui-guide.md`, kept in step
 - **Highlight related items on hover**: when an item is hovered, everything that refers to the same thing (the
   row, its chart, its status light, its name in a legend) lights up (`hover_link`, BAS-3 hover-link).
 - **Labels are not selectable** (`setup_labels(ctx)` at startup, BAS-2 label-select); text worth copying (ids,
-  paths, commands) uses `copyable_label`.
+  paths, commands) uses `copyable_label`, a region of it (a detail panel, a log) `copyable` (BAS-7 copy-region).
 - **Percent bars use a fixed block count**, 10 by default, 20/25/50/100 when finer steps help
   (`Meter::blocks(Blocks)`, DASH-13 seg-bar / DASH-4 meter); `Blocks::Auto` (grows with the width) only
   where the width itself should carry meaning.

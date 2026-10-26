@@ -5,6 +5,10 @@ versions follow [Semantic Versioning](https://semver.org/). Feature IDs refer to
 
 ## [Unreleased]
 
+### Added
+
+- `ve_basics` (BAS-7): `copyable(ui, |ui| ..)`, a region whose labels can be selected and copied (a detail panel, a log) while `setup_labels` keeps labels off app-wide; a drag selects, Ctrl+C copies, buttons inside keep their clicks (P2620#26oct-0758).
+
 ## [0.32.8] - 2026-10-26
 
 ### Added

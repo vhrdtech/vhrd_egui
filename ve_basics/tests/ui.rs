@@ -393,3 +393,60 @@ fn checklist_keeps_open_when_a_fold_inside_opens() {
     h.run();
     assert_eq!(*picked.borrow(), ["hw", "ops"]);
 }
+
+/// BAS-7: with labels off app-wide, a drag over a label inside `copyable` selects its text and Ctrl+C
+/// (egui's `Event::Copy`) copies it; a button inside still takes its click.
+#[test]
+fn copyable_region_selects_and_copies_its_labels() {
+    use egui::{Event, OutputCommand};
+    let clicks = Rc::new(Cell::new(0u32));
+    let mut h = Harness::builder().with_size(vec2(400.0, 120.0)).build_ui({
+        let clicks = clicks.clone();
+        move |ui| {
+            setup_labels(ui.ctx());
+            ui.label("outside");
+            ve_basics::copyable(ui, |ui| {
+                ui.label("P2620#26oct-0758 log line");
+                if ui.button("open").clicked() {
+                    clicks.set(clicks.get() + 1);
+                }
+            });
+        }
+    });
+    h.run();
+    let outside = h.get_by_label("outside").rect();
+    let line = h.get_by_label("P2620#26oct-0758 log line").rect();
+    h.drag_at(outside.left_center() + vec2(1.0, 0.0));
+    h.run();
+    h.drop_at(outside.right_center());
+    h.run();
+    h.event(Event::Copy);
+    h.run();
+    assert!(
+        !h.output()
+            .platform_output
+            .commands
+            .iter()
+            .any(|c| matches!(c, OutputCommand::CopyText(_))),
+        "a label outside the region stays unselectable"
+    );
+    h.drag_at(line.left_center() + vec2(1.0, 0.0));
+    h.run();
+    h.drop_at(line.right_center() + vec2(5.0, 0.0));
+    h.run();
+    h.event(Event::Copy);
+    h.step();
+    let copied = h
+        .output()
+        .platform_output
+        .commands
+        .iter()
+        .find_map(|c| match c {
+            OutputCommand::CopyText(t) => Some(t.clone()),
+            _ => None,
+        });
+    assert_eq!(copied.as_deref(), Some("P2620#26oct-0758 log line"));
+    h.get_by_label("open").click();
+    h.run();
+    assert_eq!(clicks.get(), 1);
+}

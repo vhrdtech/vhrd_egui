@@ -247,6 +247,9 @@ Small helpers every app uses, crate `ve_basics`. UI rules that go with them: AGE
   `ve_basics/tests/ui.rs`.
 - ✅ **BAS-2 Label selection**: `setup_labels(ctx)` turns `selectable_labels` off app-wide, `copyable_label`
   opts a label back in for ids, paths, commands. `ve_basics/src/labels.rs`, tested.
+- ✅ **BAS-7 Copyable region** (P2620#26oct-0758): `copyable(ui, |ui| ..)` makes every label drawn inside
+  selectable, for a region worth copying from (a detail panel, a log) in an app with labels off (BAS-2); widgets
+  inside keep their clicks. `ve_basics/src/labels.rs`, tested.
 - ✅ **BAS-3 Hover link**: `hover_link(ui, key, &response)` — hovering one item highlights every item registered
   under the same key from the next frame; state in ctx memory, no repaint while the pointer rests.
   `ve_basics/src/hover_link.rs`, tested.
