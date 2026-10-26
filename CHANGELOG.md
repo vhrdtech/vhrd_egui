@@ -5,6 +5,8 @@ versions follow [Semantic Versioning](https://semver.org/). Feature IDs refer to
 
 ## [Unreleased]
 
+## [0.32.8] - 2026-10-26
+
 ### Added
 
 - `ve_basics` (BAS-6): `Checklist`, a dropdown of checkboxes that stays open while they are ticked and closes on a click outside, Esc or its button (`ui.menu_button` closes after every click inside), and `checklist_item` for a plain row; the list grows to the screen's bottom when a fold inside it opens, where a ScrollArea in a popup keeps the height it opened with; the UI guide says when to use it (P2620#26oct-0459).
