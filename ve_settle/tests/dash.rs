@@ -70,10 +70,13 @@ impl Dash {
 
     fn ui(&mut self, ui: &mut egui::Ui) {
         let out = ScrollArea::vertical().id_salt("page").show(ui, |ui| {
-            let (page, _) = ui.allocate_exact_size(PAGE, Sense::hover());
+            // the page reaches past a panel held at its end (SETL-44), as a host does with `Shown::reach`
+            let tall = PAGE.y.max(self.shown.reach.map_or(0.0, |r| r.y));
+            let (page, _) = ui.allocate_exact_size(vec2(PAGE.x, tall), Sense::hover());
             let view = View {
                 offset: page.min.to_vec2(),
                 clip: ui.clip_rect(),
+                scrolls: egui::Vec2b::new(false, true),
             };
             let (hints, heights) = (&self.hints, &self.heights);
             let mut draw =
@@ -437,5 +440,105 @@ fn a_live_panel_moves_only_what_is_under_it_and_rests() {
     assert!(
         moved(&start[7], &under) < 0.5,
         "back where it was: {under:?}"
+    );
+}
+
+/// Holds the mouse at `at` (pressed) for `frames` frames without moving it.
+fn hold(h: &mut App, at: Pos2, frames: usize) {
+    for _ in 0..frames {
+        h.hover_at(at);
+        h.step();
+    }
+}
+
+/// SETL-44: a panel moved with the pointer held at the bottom edge of the page's view scrolls the page and goes
+/// on past the page's old end in one hold; the canvas reaches past it while it is held. At the top edge the page
+/// scrolls back.
+#[test]
+fn a_panel_held_at_the_bottom_edge_scrolls_the_page_on_past_its_end() {
+    let mut h = dash(4, LayOut::default());
+    until_still(&mut h, 600);
+    assert!(h.state().scroll < 1.0);
+    let from = on_screen(&h, 0);
+    h.hover_at(from);
+    h.step();
+    h.drag_at(from);
+    h.step();
+    let edge = pos2(from.x, WINDOW.y - 10.0);
+    for k in 1..=10 {
+        h.hover_at(from + (edge - from) * (k as f32 / 10.0));
+        h.step();
+    }
+    let start = h.state().scroll;
+    hold(&mut h, edge, 30);
+    let early = h.state().scroll;
+    assert!(
+        early > start + 100.0,
+        "the page scrolls on its own: {start} -> {early}"
+    );
+    hold(&mut h, edge, 240);
+    let far = h.state().rect(0);
+    assert!(
+        far.max.y > PAGE.y,
+        "the panel went past the page's old end ({}): {far:?}",
+        PAGE.y
+    );
+    let reach = h
+        .state()
+        .shown
+        .reach
+        .expect("held: the canvas reaches past it");
+    assert!(reach.y > far.max.y, "{reach:?} past {far:?}");
+    // in the middle of the view nothing scrolls
+    let middle = pos2(from.x, WINDOW.y / 2.0);
+    hold(&mut h, middle, 5);
+    let still = h.state().scroll;
+    hold(&mut h, middle, 20);
+    assert!(
+        (h.state().scroll - still).abs() < 0.5,
+        "it scrolled in the middle"
+    );
+    // at the top edge it scrolls back
+    hold(&mut h, pos2(from.x, 5.0), 30);
+    assert!(
+        h.state().scroll < still - 100.0,
+        "back up: {still} -> {}",
+        h.state().scroll
+    );
+    h.drop_at(pos2(from.x, 5.0));
+    h.step();
+    assert!(h.state().shown.reach.is_none(), "nothing held");
+}
+
+/// SETL-44: a panel resized with the pointer held at the bottom edge grows past what was in view, the page
+/// scrolling with it, in one hold (it took a few points per drag, the view never went past the canvas).
+#[test]
+fn a_panel_resized_at_the_bottom_edge_grows_past_it() {
+    let mut h = dash(4, LayOut::default());
+    until_still(&mut h, 600);
+    let r = h.state().rect(0);
+    let corner = pos2(r.max.x - 4.0, r.max.y - 4.0 - h.state().scroll);
+    h.hover_at(corner);
+    h.step();
+    h.drag_at(corner);
+    h.step();
+    let edge = pos2(corner.x, WINDOW.y - 5.0);
+    for k in 1..=10 {
+        h.hover_at(corner + (edge - corner) * (k as f32 / 10.0));
+        h.step();
+    }
+    hold(&mut h, edge, 120);
+    let scrolled = h.state().scroll;
+    assert!(
+        scrolled > WINDOW.y,
+        "the page scrolled on with it: {scrolled}"
+    );
+    h.drop_at(edge);
+    h.step();
+    until_still(&mut h, 900);
+    let grown = h.state().rect(0);
+    assert!(
+        grown.size().y > WINDOW.y + 200.0,
+        "taller than the view it started in: {grown:?}"
     );
 }

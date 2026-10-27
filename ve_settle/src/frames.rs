@@ -35,12 +35,11 @@
 //! // per frame
 //! world.advance(1.0 / 60.0);
 //! let moves = frames.dock.moves(None);
-//! let view = View { offset: egui::Vec2::ZERO, clip: ui.clip_rect() };
+//! let view = View { offset: egui::Vec2::ZERO, clip: ui.clip_rect(), scrolls: egui::Vec2b::FALSE };
 //! let mut draw = |ui: &mut egui::Ui, slot: &mut ve_frame::Slot<&str>| {
 //!     WidgetFrame::new(slot.widget)
 //!         .sizes(hints)
 //!         .moves(&moves)
-//!         .fold_in_grid(true)
 //!         .show(ui, &mut slot.frame, |ui, size| { ui.label(size.label()); })
 //!         .action
 //! };
@@ -89,6 +88,17 @@ const GLOW_ROOM: f32 = 10.0;
 pub const RESIZE_GRIP: f32 = 14.0;
 /// The least size a resize leaves a frame, points: its header and a little of its body.
 const RESIZE_LEAST: egui::Vec2 = vec2(60.0, 40.0);
+/// How near a scrolling view's edge (points) the pointer that moves or resizes a frame scrolls the view that way.
+pub const EDGE_ZONE: f32 = 40.0;
+/// How fast the view scrolls (points/s) with that pointer at its very edge; deeper past the edge up to
+/// [`EDGE_FAST`] times that.
+const EDGE_SPEED: f32 = 900.0;
+const EDGE_FAST: f32 = 2.0;
+/// The longest frame time an edge scroll steps by, s: a slow frame does not jump the view.
+const EDGE_DT: f32 = 1.0 / 30.0;
+/// Room past a held frame the canvas reaches ([`Shown::reach`]): the edge zone and one edge scroll step at its
+/// fastest, so the view can always scroll by the next step.
+const REACH: f32 = EDGE_ZONE + EDGE_SPEED * EDGE_FAST * EDGE_DT;
 
 /// Where the world lies on the screen.
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -97,6 +107,9 @@ pub struct View {
     pub offset: egui::Vec2,
     /// The part of the screen the world shows in.
     pub clip: egui::Rect,
+    /// The axes on which the view scrolls (the host's scroll area around the world): a frame moved or resized
+    /// near such an edge scrolls the view on ([`Shown::reach`]). Neither for a view that does not scroll.
+    pub scrolls: egui::Vec2b,
 }
 
 impl View {
@@ -226,6 +239,12 @@ pub struct Shown {
     /// their frame state. A host that keeps the frame states itself (and lends them to the slots) takes them
     /// over from here.
     pub resized: Vec<Resized>,
+    /// While a frame is moved or resized: the world point the host's scrolled canvas reaches at least, the held
+    /// frame (or the size its resize shows) and room past it (SETL-44). The pointer held near the edge of a view
+    /// that scrolls scrolls it that way; with the canvas this far the view has room to scroll on, so the frame
+    /// goes on past the old end in one hold instead of a few points per drag. It is never short of the end of the
+    /// view, so the canvas does not shrink under a frame moved back. `None` while nothing is held.
+    pub reach: Option<Vec2>,
 }
 
 /// What a resize with the handle in a frame's corner set (SETL-39, SETL-42), as on its frame state: a rectangle
@@ -1061,7 +1080,42 @@ impl<W> Frames<W> {
         let dt = ui.input(|i| i.stable_dt).min(0.1);
         self.pick_pass(world, dt);
         shown.moving = self.moving(world);
+        if self.edge_scroll(ui, world, view, &mut shown) {
+            shown.moving = true;
+        }
         shown
+    }
+
+    /// A frame held near the edge of a view that scrolls scrolls the view (SETL-44), and the canvas reaches past
+    /// it ([`Shown::reach`]). Whether the view scrolls this frame.
+    fn edge_scroll(&self, ui: &Ui, world: &World, view: View, shown: &mut Shown) -> bool {
+        let moved = self
+            .group
+            .iter()
+            .filter_map(|(m, _)| world.body(*m))
+            .filter(|b| b.dragged)
+            .map(|b| b.rect.max);
+        let resized = self
+            .cells
+            .values()
+            .filter_map(|c| c.resize)
+            .map(|r| view.to_world(r.max));
+        let Some(far) = moved.chain(resized).reduce(Vec2::max) else {
+            return false;
+        };
+        // never short of what is in view: a canvas that shrank under the view would scroll it back, the held
+        // frame with it, and on
+        shown.reach = Some((far + Vec2::new(REACH, REACH)).max(view.to_world(view.clip.max)));
+        let Some(p) = ui.input(|i| i.pointer.latest_pos()) else {
+            return false;
+        };
+        let dt = ui.input(|i| i.stable_dt).min(EDGE_DT);
+        let delta = edge_delta(view, p) * dt;
+        if delta == egui::Vec2::ZERO {
+            return false;
+        }
+        ui.scroll_with_delta_animation(delta, egui::style::ScrollAnimation::none());
+        true
     }
 
     /// Whether the pointer used last may move frames ([`Frames::hands`]).
@@ -1524,9 +1578,14 @@ fn resize_handle<W>(
     let hex = cell.seat.shape == Shape::Hex;
     let grip = egui::Rect::from_min_max(rect.max - vec2(RESIZE_GRIP, RESIZE_GRIP), rect.max);
     let seen = grip.intersect(view.clip);
-    if !seen.is_positive() {
+    // a resize under way keeps its handle when the view scrolls the corner out of sight (SETL-44)
+    let seen = if seen.is_positive() {
+        seen
+    } else if cell.resize.is_some() {
+        grip
+    } else {
         return None;
-    }
+    };
     let r = ui.interact(
         seen,
         Id::new(("ve_settle::resize", id.0)),
@@ -1648,6 +1707,30 @@ fn resize_handle<W>(
     Some(resized(id, &slot.frame))
 }
 
+/// The scroll a pointer at `p` asks of the view, points/s as egui's scroll delta takes it (positive shows what is
+/// before): nothing outside the edge zones or on an axis that does not scroll, faster the deeper toward and past
+/// the edge.
+pub fn edge_delta(view: View, p: egui::Pos2) -> egui::Vec2 {
+    let mut out = egui::Vec2::ZERO;
+    for d in 0..2 {
+        if !view.scrolls[d] {
+            continue;
+        }
+        let before = EDGE_ZONE - (p[d] - view.clip.min[d]);
+        let after = EDGE_ZONE - (view.clip.max[d] - p[d]);
+        let speed = |depth: f32| EDGE_SPEED * (depth / EDGE_ZONE).clamp(0.0, EDGE_FAST);
+        // a view smaller than both zones scrolls toward the nearer edge
+        out[d] = if after > 0.0 && after >= before {
+            -speed(after)
+        } else if before > 0.0 {
+            speed(before)
+        } else {
+            0.0
+        };
+    }
+    out
+}
+
 fn resized(slot: SlotId, frame: &ve_frame::FrameState) -> Resized {
     Resized {
         slot,
@@ -1755,6 +1838,33 @@ fn seat_body(world: &mut World, cell: &Cell, push: bool) -> BodyId {
 mod tests {
     use super::*;
     use crate::Params;
+
+    /// SETL-44: the edge zones scroll toward their edge, faster deeper in and past it, only on an axis that
+    /// scrolls; the middle of the view scrolls nothing.
+    #[test]
+    fn the_edge_zones_scroll_toward_their_edge() {
+        let view = View {
+            offset: egui::Vec2::ZERO,
+            clip: egui::Rect::from_min_size(pos2(0.0, 0.0), vec2(400.0, 300.0)),
+            scrolls: egui::Vec2b::new(false, true),
+        };
+        assert_eq!(edge_delta(view, pos2(200.0, 150.0)), egui::Vec2::ZERO);
+        let low = edge_delta(view, pos2(200.0, 290.0));
+        assert!(low.y < 0.0 && low.x == 0.0, "toward the bottom: {low:?}");
+        let deeper = edge_delta(view, pos2(200.0, 299.0));
+        assert!(deeper.y < low.y, "faster deeper: {deeper:?} {low:?}");
+        let past = edge_delta(view, pos2(200.0, 400.0));
+        assert_eq!(past.y, -EDGE_SPEED * EDGE_FAST, "capped past the edge");
+        assert!(
+            edge_delta(view, pos2(200.0, 10.0)).y > 0.0,
+            "toward the top"
+        );
+        assert_eq!(
+            edge_delta(view, pos2(5.0, 150.0)),
+            egui::Vec2::ZERO,
+            "x does not scroll"
+        );
+    }
 
     fn world() -> World {
         let bounds = Rect::from_min_size(Vec2::ZERO, Vec2::new(1000.0, 600.0));

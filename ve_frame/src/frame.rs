@@ -427,6 +427,10 @@ impl<'a> WidgetFrame<'a> {
             tokens.shadow.window
         });
         self.foldable = state.placement.floating || self.fold_in_grid;
+        if !self.foldable {
+            // a frame that can't fold here is not folded: a window folded and put back, or a saved fold, opens
+            state.collapsed = false;
+        }
         let salt = self.id_salt.unwrap_or_else(|| Id::new(&self.title));
         let mem = ui.id().with(("ve_frame::learned", salt));
         // What this frame took the last time it was drawn here; in a new place (just popped out, just put

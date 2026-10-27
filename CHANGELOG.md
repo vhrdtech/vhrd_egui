@@ -8,6 +8,11 @@ versions follow [Semantic Versioning](https://semver.org/). Feature IDs refer to
 ### Added
 
 - `ve_basics::ScrollStrip`: a row wider than its room scrolls in place, with left and right arrows that show it and are disabled with a reason at the ends (BAS-8).
+- ve_settle: a frame moved or resized with the pointer at the edge of a view that scrolls scrolls the view and goes on past the old end in one hold; `View::scrolls` says which axes scroll (a new field: hosts that build a `View` add it), `Shown::reach` how far the host's canvas reaches meanwhile (SETL-44).
+
+### Fixed
+
+- ve_frame: a frame that can't fold where it is drawn (in a layout without `fold_in_grid`) is not left folded; a window folded and put back opens (SETL-44).
 
 ## [0.32.9] - 2026-10-26
 

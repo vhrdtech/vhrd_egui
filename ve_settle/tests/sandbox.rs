@@ -110,7 +110,11 @@ impl Watch {
                     body.rect
                 );
             }
-            now.insert(body.id, body.rect);
+            // a held body goes where the pointer takes it, the view's scroll at an edge with it (SETL-44): its
+            // last step before it is let go is the pointer's too, so it is watched from where it was let go
+            if !body.dragged {
+                now.insert(body.id, body.rect);
+            }
         }
         self.seen = now;
     }
@@ -174,12 +178,17 @@ fn fresh(sideways: bool) -> App {
 
 /// `scene` in a window before its first frame; `sideways` turns it to grow to the right.
 fn fresh_in(scene: Scene, sideways: bool) -> App {
+    fresh_with(scene, move |s| s.sideways = sideways)
+}
+
+/// [`fresh_in`] with the sandbox's options set by `set` before the scene is seeded.
+fn fresh_with(scene: Scene, set: impl FnOnce(&mut Sandbox) + 'static) -> App {
     let h = Harness::builder()
         .with_size(vec2(1250.0, 800.0))
         .with_step_dt(1.0 / FPS)
         .build_eframe(move |cc| {
             let mut sandbox = Sandbox::with_scene(cc, scene);
-            sandbox.sideways = sideways;
+            set(&mut sandbox);
             sandbox.reset();
             sandbox
         });
@@ -195,7 +204,12 @@ fn sandbox() -> (App, Watch) {
 
 /// `scene` in a window, settled.
 fn sandbox_in(scene: Scene) -> (App, Watch) {
-    let mut h = fresh_in(scene, false);
+    sandbox_with(scene, |_| {})
+}
+
+/// [`sandbox_in`] with the sandbox's options set by `set` before the scene is seeded.
+fn sandbox_with(scene: Scene, set: impl FnOnce(&mut Sandbox) + 'static) -> (App, Watch) {
+    let mut h = fresh_with(scene, set);
     h.step();
     let mut watch = Watch {
         seen: HashMap::new(),
@@ -530,6 +544,33 @@ fn a_widget_put_back_out_of_view_is_followed_or_lands_where_its_window_is() {
     watch.rest(&mut h);
 }
 
+/// A frame in the layout has no fold arrow unless the host lets it fold there (SETL-44): without it only a
+/// floating window folds, and a saved fold of one in the layout opens.
+#[test]
+fn a_frame_in_the_layout_folds_only_when_the_host_lets_it() {
+    use egui_kittest::kittest::Queryable;
+    let (mut h, mut watch) = sandbox_with(Scene::Rectangles, |s| s.fold = false);
+    assert!(
+        h.query_by_label("collapse").is_none(),
+        "no fold arrow in the layout"
+    );
+    let slot = find(&h, |d| !d.opts.hex && d.title().starts_with("medium LISM"));
+    h.state_mut()
+        .frames
+        .dock
+        .get_mut(slot)
+        .expect("the widget")
+        .frame
+        .collapsed = true;
+    watch.frame(&mut h);
+    assert!(!frame_of(&h, slot).collapsed, "a fold it can't have opens");
+    let (h, _) = sandbox_with(Scene::Rectangles, |s| s.fold = true);
+    assert!(
+        h.query_all_by_label("collapse").next().is_some(),
+        "the host lets it fold"
+    );
+}
+
 #[test]
 fn a_folded_frame_is_a_body_as_small_as_its_header() {
     for hex in [false, true] {
@@ -538,6 +579,7 @@ fn a_folded_frame_is_a_body_as_small_as_its_header() {
         } else {
             Scene::Rectangles
         };
+        // the sandbox lets frames in the layout fold (SETL-44)
         let (mut h, mut watch) = sandbox_in(scene);
         let slot = find(&h, |d| {
             d.opts.hex == hex && d.title().starts_with("medium LISM")

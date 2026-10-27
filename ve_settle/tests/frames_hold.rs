@@ -58,6 +58,7 @@ impl Host {
         let view = View {
             offset: ui.max_rect().min.to_vec2(),
             clip: ui.clip_rect(),
+            scrolls: egui::Vec2b::FALSE,
         };
         self.offset = view.offset;
         let heights = self.heights.clone();

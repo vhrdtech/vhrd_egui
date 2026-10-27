@@ -1829,6 +1829,10 @@ fn a_frame_folds_in_a_grid_when_the_layout_asks_for_it() {
             assert_eq!(h.state().openness(), 0.0);
         } else {
             assert_eq!(folded, open);
+            assert!(
+                !h.state().collapsed,
+                "a frame that can't fold is not folded"
+            );
         }
         h.state_mut().collapsed = false;
         h.run();

@@ -202,6 +202,9 @@ pub struct Sandbox {
     /// put back out of view.
     pub look: FloatLook,
     pub land: LandMode,
+    /// A frame in the layout folds to its header too (`WidgetFrame::fold_in_grid`), on here to show the folded
+    /// body; off, as a host like tpm_mesh_dash has it, only a floating window folds (SETL-44).
+    pub fold: bool,
     /// The background behind the frames, and whether it is drawn.
     pub backdrop: Backdrop,
     pub backdrop_on: bool,
@@ -302,6 +305,7 @@ impl Sandbox {
             frames: Frames::new(),
             look: FloatLook::default(),
             land: LandMode::default(),
+            fold: true,
             backdrop,
             backdrop_on: true,
             lit: Vec::new(),
@@ -872,6 +876,13 @@ impl Sandbox {
         } else {
             LandMode::Stay
         };
+        let mut fold = self.fold;
+        ui.checkbox(&mut fold, "Fold in the layout")
+                .on_hover_text("A frame in the layout gets the fold arrow in its header and folds to it, its body as small as the header. Off: only a floating window folds; in the layout the arrow would hide the content and leave its room empty. Changing it seeds the scene again (every header changes).");
+        if fold != self.fold {
+            self.fold = fold;
+            self.reset();
+        }
         let mut sideways = self.sideways;
         ui.checkbox(&mut sideways, "Grow to the right")
                 .on_hover_text("Turn the scene a quarter: gravity pulls left, the left, top and bottom walls are hard edges, the right side is open and the arena scrolls sideways as the world grows there. Off: gravity pulls up, the bottom is open and it scrolls down. Changing it seeds the scene again.");
@@ -1329,7 +1340,7 @@ impl Sandbox {
         let arena = self.arena;
         let height = self.content_height();
         let moves = self.frames.dock.moves(None).close(Ok(()));
-        let (look, land) = (self.look, self.land);
+        let (look, land, fold) = (self.look, self.land, self.fold);
         // The pin (SETL-27): the sandbox's own item in each frame's header and entry in its menu, through the
         // frame's generic hooks; ve_frame knows nothing of pinning. The world is busy while the frames are
         // drawn, so clicks are collected and applied after.
@@ -1373,7 +1384,7 @@ impl Sandbox {
                 menu: Some(&mut pin_entry),
                 layout: true,
             };
-            playground::draw_hosted(ui, slot, (&moves, look, land, true), host).0
+            playground::draw_hosted(ui, slot, (&moves, look, land, fold), host).0
         };
         let mut picked = Vec::new();
         let mut clicked = None;
@@ -1408,8 +1419,14 @@ impl Sandbox {
             let view = View {
                 offset: vec2(-self.scroll_x, -self.scroll),
                 clip: arena.intersect(ui.clip_rect()),
+                scrolls: egui::Vec2b::new(!walls.right, !walls.bottom),
             };
             let shown = self.frames.show(ui, &mut self.world, view, &mut draw);
+            // a frame held at an open edge takes the scroll area on past the world's extent (SETL-44)
+            if let Some(reach) = shown.reach {
+                let far = egui::pos2(reach.x, reach.y) + view.offset;
+                ui.set_min_size((far - origin).max(vec2(width, height)));
+            }
             picked.extend(shown.picked);
             clicked = shown.clicked;
         });
