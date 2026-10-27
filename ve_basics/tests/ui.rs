@@ -466,28 +466,50 @@ fn a_scroll_strip_scrolls_with_its_arrows_and_disables_them_at_the_ends() {
         });
     h.run();
     let disabled = |h: &Harness, glyph: &str| h.get_by_label(glyph).accesskit_node().is_disabled();
-    assert!(disabled(&h, "◀"), "at the start");
-    assert!(!disabled(&h, "▶"), "more to the right");
+    assert!(disabled(&h, "⏴"), "at the start");
+    assert!(!disabled(&h, "⏵"), "more to the right");
     assert!(h.query_by_label("step-0").is_some());
     let x0 = h.get_by_label("step-0").rect().left();
-    h.get_by_label("▶").click();
+    h.get_by_label("⏵").click();
     h.run();
     assert!(
         h.get_by_label("step-0").rect().left() < x0,
         "the row moved left"
     );
-    assert!(!disabled(&h, "◀"), "more to the left now");
+    assert!(!disabled(&h, "⏴"), "more to the left now");
     for _ in 0..40 {
-        if disabled(&h, "▶") {
+        if disabled(&h, "⏵") {
             break;
         }
-        h.get_by_label("▶").click();
+        h.get_by_label("⏵").click();
         h.run();
     }
-    assert!(disabled(&h, "▶"), "at the end");
+    assert!(disabled(&h, "⏵"), "at the end");
     assert!(
         h.get_by_label("step-29").rect().right() <= 300.0,
         "the last item in sight"
+    );
+}
+
+/// BAS-8: in a room narrower than egui's smallest scroll area the strip still fits it, so the right arrow stays
+/// in sight instead of being pushed past the edge.
+#[test]
+fn a_scroll_strip_in_a_narrow_room_keeps_its_right_arrow_in_it() {
+    let mut h = Harness::builder()
+        .with_size(vec2(90.0, 60.0))
+        .build_ui(|ui| {
+            ve_basics::ScrollStrip::new("narrow").show(ui, |ui| {
+                for i in 0..10 {
+                    ui.label(format!("step-{i}"));
+                }
+            });
+        });
+    h.run();
+    h.run();
+    assert!(
+        h.get_by_label("⏵").rect().right() <= 90.0,
+        "the right arrow at {:?}",
+        h.get_by_label("⏵").rect()
     );
 }
 
@@ -503,7 +525,7 @@ fn a_scroll_strip_that_fits_disables_both_arrows() {
             });
         });
     h.run();
-    for g in ["◀", "▶"] {
+    for g in ["⏴", "⏵"] {
         assert!(h.get_by_label(g).accesskit_node().is_disabled(), "{g}");
     }
 }

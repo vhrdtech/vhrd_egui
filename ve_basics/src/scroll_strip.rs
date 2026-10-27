@@ -100,7 +100,7 @@ impl ScrollStrip {
             };
             let left = arrow(
                 ui,
-                "◀",
+                "⏴",
                 !fits && !at_start,
                 &texts.left,
                 reason(at_start, &texts.at_start),
@@ -108,7 +108,7 @@ impl ScrollStrip {
             // the right arrow's room is kept before the row takes the rest
             let glyph = ui.fonts_mut(|f| {
                 f.layout_no_wrap(
-                    "▶".into(),
+                    "⏵".into(),
                     egui::TextStyle::Small.resolve(ui.style()),
                     egui::Color32::WHITE,
                 )
@@ -122,11 +122,13 @@ impl ScrollStrip {
             let out = ScrollArea::horizontal()
                 .id_salt(id.with("area"))
                 .max_width(room)
+                // egui's floor (64) would push the right arrow out of a narrow room: the strip fits it
+                .min_scrolled_width(room)
                 .auto_shrink([true, true])
                 .show(ui, |ui| ui.horizontal(add).inner);
             let right = arrow(
                 ui,
-                "▶",
+                "⏵",
                 !fits && !at_end,
                 &texts.right,
                 reason(at_end, &texts.at_end),
