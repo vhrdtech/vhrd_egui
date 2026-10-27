@@ -450,3 +450,60 @@ fn copyable_region_selects_and_copies_its_labels() {
     h.run();
     assert_eq!(clicks.get(), 1);
 }
+
+/// BAS-8: a row wider than its room scrolls in place; the arrows say which way there is more and are disabled
+/// with a reason at the ends.
+#[test]
+fn a_scroll_strip_scrolls_with_its_arrows_and_disables_them_at_the_ends() {
+    let mut h = Harness::builder()
+        .with_size(vec2(300.0, 60.0))
+        .build_ui(|ui| {
+            ve_basics::ScrollStrip::new("strip").show(ui, |ui| {
+                for i in 0..30 {
+                    ui.label(format!("step-{i}"));
+                }
+            });
+        });
+    h.run();
+    let disabled = |h: &Harness, glyph: &str| h.get_by_label(glyph).accesskit_node().is_disabled();
+    assert!(disabled(&h, "◀"), "at the start");
+    assert!(!disabled(&h, "▶"), "more to the right");
+    assert!(h.query_by_label("step-0").is_some());
+    let x0 = h.get_by_label("step-0").rect().left();
+    h.get_by_label("▶").click();
+    h.run();
+    assert!(
+        h.get_by_label("step-0").rect().left() < x0,
+        "the row moved left"
+    );
+    assert!(!disabled(&h, "◀"), "more to the left now");
+    for _ in 0..40 {
+        if disabled(&h, "▶") {
+            break;
+        }
+        h.get_by_label("▶").click();
+        h.run();
+    }
+    assert!(disabled(&h, "▶"), "at the end");
+    assert!(
+        h.get_by_label("step-29").rect().right() <= 300.0,
+        "the last item in sight"
+    );
+}
+
+/// BAS-8: a row that fits shows both arrows disabled (never hidden).
+#[test]
+fn a_scroll_strip_that_fits_disables_both_arrows() {
+    let mut h = Harness::builder()
+        .with_size(vec2(400.0, 60.0))
+        .build_ui(|ui| {
+            ve_basics::ScrollStrip::new("short").show(ui, |ui| {
+                ui.label("a");
+                ui.label("b");
+            });
+        });
+    h.run();
+    for g in ["◀", "▶"] {
+        assert!(h.get_by_label(g).accesskit_node().is_disabled(), "{g}");
+    }
+}

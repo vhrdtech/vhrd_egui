@@ -5,6 +5,10 @@ versions follow [Semantic Versioning](https://semver.org/). Feature IDs refer to
 
 ## [Unreleased]
 
+### Added
+
+- `ve_basics::ScrollStrip`: a row wider than its room scrolls in place, with left and right arrows that show it and are disabled with a reason at the ends (BAS-8).
+
 ## [0.32.9] - 2026-10-26
 
 ### Added

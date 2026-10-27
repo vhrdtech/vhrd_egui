@@ -278,6 +278,7 @@ Small helpers every app uses, crate `ve_basics`. UI rules that go with them: AGE
   scrolls), `checklist_item(ui, &mut picked, &value, text)` for a plain row, `Checklist::is_open`. The rule:
   `egui_app_skill/references/ui-guide.md`. `ve_basics/src/checklist.rs`, kittest
   `checklist_stays_open_while_ticking_and_closes_outside_or_on_esc`. Used by tpm_mesh_dash's task filters.
+- ✅ **BAS-8 Scroll strip** (P2620#27oct-0830): `ScrollStrip::new(id).show(ui, |ui| ...)` lays a row out left to right in the width left and scrolls it sideways in place when it is wider, instead of wrapping it or cutting it to "+N" (`ve_basics/src/scroll_strip.rs`). An arrow on each side shows that it scrolls and moves it by 80% of a view; an arrow with nothing more on its side is disabled and says why (at the start, at the end, all of it fits), never hidden; `StripTexts` for the app's own words. Tests `a_scroll_strip_scrolls_with_its_arrows_and_disables_them_at_the_ends`, `a_scroll_strip_that_fits_disables_both_arrows` (`ve_basics/tests/ui.rs`).
 
 ## Theme (`THM`)
 

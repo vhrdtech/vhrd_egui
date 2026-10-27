@@ -7,6 +7,7 @@
 //!   copying is: one label (BAS-2) or a whole region (BAS-7).
 //! - [`hover_link`]: hovering one item highlights every item registered under the same key (BAS-3).
 //! - [`FoldRest`] / [`fold_rest`]: a list cut for room ends in a fold with the rest, never a bare "N more" (BAS-5).
+//! - [`ScrollStrip`]: a row wider than its room scrolls in place, with arrows that say so (BAS-8).
 //! - [`StartupGuard`]: a start that died before its first frame moves the persisted state aside (PLT-4).
 //!
 //! The UI guide rule behind these (tooltips everywhere, highlight related items, nothing hidden) is in the repo's `AGENTS.md`.
@@ -17,6 +18,7 @@ mod checklist;
 mod fold_rest;
 mod hover_link;
 mod labels;
+mod scroll_strip;
 mod startup_guard;
 
 pub use app_menu::{AppMenu, AppMenuAction, AppMenuResponse, BADGE_HOVER, reset_egui_memory};
@@ -25,4 +27,5 @@ pub use checklist::{Checklist, checklist_item};
 pub use fold_rest::{FoldRest, fold_rest};
 pub use hover_link::hover_link;
 pub use labels::{copyable, copyable_label, setup_labels};
+pub use scroll_strip::{ScrollStrip, StripTexts};
 pub use startup_guard::StartupGuard;
