@@ -24,7 +24,14 @@ mod settings;
 pub mod tonemap;
 mod widget;
 
-// TODO(PHOS-1): host, headless and demo modules (feature `host`), the `ve_phosphor` binary
+#[cfg(feature = "host")]
+pub mod demo;
+#[cfg(feature = "host")]
+pub mod headless;
+#[cfg(feature = "host")]
+pub mod host;
+#[cfg(feature = "host")]
+pub mod paint;
 
 pub use gpu::{Frame, Output, Phosphor, Stats};
 pub use settings::{Mode, Palette, Scene, Settings, Signal};

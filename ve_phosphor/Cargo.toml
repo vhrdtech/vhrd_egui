@@ -8,10 +8,19 @@ authors.workspace = true
 repository.workspace = true
 
 [features]
-default = []
+default = ["host"]
 # The window host (winit + wgpu + egui on an Rgba16Float extended-range surface when the platform offers one), the
 # headless renderer that saves PNGs, and the demo binary.
-host = ["dep:winit", "dep:egui-winit", "dep:pollster", "dep:image", "dep:ve_theme", "dep:ve_frame"]
+host = [
+    "dep:winit",
+    "dep:egui-winit",
+    "dep:pollster",
+    "dep:image",
+    "dep:ve_theme",
+    "dep:ve_frame",
+    "dep:clap",
+    "dep:clap_complete",
+]
 
 [dependencies]
 egui.workspace = true
@@ -25,3 +34,13 @@ pollster = { version = "1", optional = true }
 image = { version = "0.25", default-features = false, features = ["png"], optional = true }
 ve_theme = { path = "../ve_theme", version = "0.32", optional = true }
 ve_frame = { path = "../ve_frame", version = "0.32", optional = true }
+clap = { version = "4", features = ["derive"], optional = true }
+clap_complete = { version = "4", features = ["unstable-dynamic"], optional = true }
+
+[[bin]]
+name = "ve_phosphor"
+required-features = ["host"]
+
+[dev-dependencies]
+# Validates the WGSL in unit tests without a GPU (the same naga wgpu uses).
+naga = { version = "30", default-features = false, features = ["wgsl-in"] }

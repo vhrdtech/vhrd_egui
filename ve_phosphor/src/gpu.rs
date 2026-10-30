@@ -40,7 +40,7 @@ pub struct Stats {
     pub sweeps: u32,
     /// Seconds the last frame covered.
     pub dt: f32,
-    /// Size of the hit buffer, physical pixels.
+    /// Size of the hit buffer, physical pixels (half the view's width in the split mode).
     pub size: [u32; 2],
     /// Frames drawn since the picture was cleared.
     pub frames: u64,
@@ -141,8 +141,10 @@ pub(crate) fn params(
         next.burst_phase -= period;
         next.burst_index = next.burst_index.wrapping_add(1);
     }
+    // the HDR side ends here: the pane boundary of the split, the divider of the wipe
     let split = match s.mode {
-        Mode::Split => s.split * rect.w as f32,
+        Mode::Split => rect.w as f32,
+        Mode::Wipe => s.split * rect.w as f32,
         _ => 0.0,
     };
     let p = Params {
@@ -438,12 +440,7 @@ impl Sized {
         let n = rect.w as u64 * rect.h as u64 * 4;
         let rw = wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_DST;
         let hits = buffer(device, "ve_phosphor_hits", n, rw);
-        let density = buffer(
-            device,
-            "ve_phosphor_density",
-            n,
-            rw | wgpu::BufferUsages::COPY_SRC,
-        );
+        let density = buffer(device, "ve_phosphor_density", n, rw);
         let age = buffer(device, "ve_phosphor_age", n, rw);
         let bright = float_texture(device, "ve_phosphor_bright", rect.w, rect.h);
         let tmp = float_texture(device, "ve_phosphor_blur", rect.w, rect.h);
@@ -564,10 +561,15 @@ impl Phosphor {
         frame: &Frame,
     ) {
         let s = frame.settings.sanitized();
+        // the split draws the buffer twice, side by side: it is half the view's width
+        let w = match s.mode {
+            Mode::Split => rect[2] / 2,
+            _ => rect[2],
+        };
         let rect = PixelRect {
             x: rect[0],
             y: rect[1],
-            w: rect[2].clamp(1, 8192),
+            w: w.clamp(1, 8192),
             h: rect[3].clamp(1, 8192),
         };
         let mut st = self.state();
@@ -620,9 +622,15 @@ impl Phosphor {
         let (mut p, next) = params(&s, frame, rect, sweeps, &st.clock);
         p.misc[2] = stream_len;
         st.clock = next;
+        // a frame without time (a redraw of the same picture) keeps the rate of the last real one
+        let (sweeps_stat, dt_stat) = if frame.dt > 0.0 {
+            (sweeps, frame.dt)
+        } else {
+            (st.stats.sweeps, st.stats.dt)
+        };
         st.stats = Stats {
-            sweeps,
-            dt: frame.dt,
+            sweeps: sweeps_stat,
+            dt: dt_stat,
             size: [rect.w, rect.h],
             frames: st.stats.frames + 1,
             total_sweeps: st.stats.total_sweeps + sweeps as u64,
@@ -661,18 +669,6 @@ impl Phosphor {
             pass.set_bind_group(0, &sized.view, &[]);
             pass.draw(0..3, 0..1);
         }
-    }
-
-    #[allow(dead_code)] // TODO(PHOS-1): the headless GPU test reads it
-    /// The density buffer, for tests and captures: a copy is made with `COPY_SRC`.
-    pub(crate) fn with_density<R>(
-        &self,
-        f: impl FnOnce(&wgpu::Buffer, [u32; 2]) -> R,
-    ) -> Option<R> {
-        let st = self.state();
-        st.sized
-            .as_ref()
-            .map(|z| f(&z.density, [z.rect.w, z.rect.h]))
     }
 }
 
@@ -798,6 +794,36 @@ mod tests {
             ..Settings::default()
         };
         let (p, _) = params(&s, &frame(0.016, 8.0), RECT, 1, &Clock::default());
-        assert_eq!(p.view, [10.0, 20.0, 200.0, 2.0]);
+        assert_eq!(p.view, [10.0, 20.0, 800.0, 2.0]);
+        let wipe = Settings {
+            mode: Mode::Wipe,
+            ..s
+        };
+        let (p, _) = params(&wipe, &frame(0.016, 8.0), RECT, 1, &Clock::default());
+        assert_eq!(p.view, [10.0, 20.0, 200.0, 3.0]);
+    }
+}
+
+#[cfg(test)]
+mod shader_tests {
+    use super::COMMON;
+
+    fn validate(label: &str, body: &str) {
+        let src = format!("{COMMON}\n{body}");
+        let module = naga::front::wgsl::parse_str(&src)
+            .unwrap_or_else(|e| panic!("{label}: {}", e.emit_to_string(&src)));
+        naga::valid::Validator::new(
+            naga::valid::ValidationFlags::all(),
+            naga::valid::Capabilities::default(),
+        )
+        .validate(&module)
+        .unwrap_or_else(|e| panic!("{label}: {}", e.emit_to_string(&src)));
+    }
+
+    #[test]
+    fn the_shaders_compile() {
+        validate("compute", include_str!("compute.wgsl"));
+        validate("bloom", include_str!("bloom.wgsl"));
+        validate("view", include_str!("view.wgsl"));
     }
 }

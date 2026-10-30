@@ -46,14 +46,24 @@ fn graticule(q: vec2<i32>, size: vec2<f32>) -> f32 {
 fn fs_main(@builtin(position) pos: vec4<f32>) -> @location(0) vec4<f32> {
     let w = i32(p.size.x);
     let h = i32(p.size.y);
-    let q = vec2<i32>(floor(pos.xy - p.view.xy));
+    let v = vec2<i32>(floor(pos.xy - p.view.xy));
+    let mode = p.view.w;
+    // the buffer pixel and the side: the split shows the buffer twice, the wipe once with a divider
+    var q = v;
+    var hdr_side = mode < 0.5;
+    if mode > 1.5 && mode < 2.5 {
+        hdr_side = v.x < w;
+        if !hdr_side {
+            q.x = v.x - w;
+        }
+    } else if mode > 2.5 {
+        hdr_side = f32(v.x) < p.view.z;
+    }
     var c = vec3<f32>(0.0);
     if q.x >= 0 && q.y >= 0 && q.x < w && q.y < h {
         let i = u32(q.y * w + q.x);
         let d = density[i];
         let a = age[i];
-        let mode = p.view.w;
-        let hdr_side = mode < 0.5 || (mode > 1.5 && f32(q.x) < p.view.z);
         if hdr_side {
             c = shade(d, a, p.hdr);
             if p.look.y > 0.0 {

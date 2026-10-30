@@ -64,14 +64,16 @@ pub enum Mode {
     Hdr,
     /// The classic SDR tone map, clamped to SDR white.
     Sdr,
-    /// HDR on the left of the divider, SDR on the right: the same picture, side by side.
+    /// The same picture twice, side by side: HDR tone map on the left, SDR on the right.
     #[default]
     Split,
+    /// One picture, HDR left of a divider that can be dragged, SDR right of it.
+    Wipe,
 }
 
 impl Mode {
     /// Every mode, in menu order.
-    pub const ALL: [Self; 3] = [Self::Hdr, Self::Sdr, Self::Split];
+    pub const ALL: [Self; 4] = [Self::Hdr, Self::Sdr, Self::Split, Self::Wipe];
 
     /// Short name for a menu.
     pub fn label(self) -> &'static str {
@@ -79,6 +81,7 @@ impl Mode {
             Self::Hdr => "HDR",
             Self::Sdr => "SDR",
             Self::Split => "HDR | SDR",
+            Self::Wipe => "Wipe",
         }
     }
 
@@ -87,6 +90,7 @@ impl Mode {
             Self::Hdr => 0.0,
             Self::Sdr => 1.0,
             Self::Split => 2.0,
+            Self::Wipe => 3.0,
         }
     }
 }
@@ -184,8 +188,8 @@ impl Default for Signal {
     fn default() -> Self {
         Self {
             seed: 0x5eed_1636,
-            noise: 0.05,
-            jitter: 0.012,
+            noise: 0.02,
+            jitter: 0.004,
             period: 0.4,
             swing: 3.0,
             rise: 0.004,
@@ -211,7 +215,7 @@ pub struct Settings {
     pub scene: Scene,
     /// HDR, SDR or both side by side.
     pub mode: Mode,
-    /// Where the divider of the split view sits, fraction of the width from the left.
+    /// Where the divider of the wipe view sits, fraction of the width from the left.
     pub split: f32,
     /// Sweeps (waveforms) drawn per second; per frame at most [`Settings::MAX_SWEEPS_PER_FRAME`].
     pub sweeps_per_s: f32,

@@ -24,7 +24,7 @@ impl<'a> PhosphorView<'a> {
         Self { phosphor }
     }
 
-    /// Draw a frame of `dt` seconds into a rectangle of `size`. In the split mode the divider can be dragged,
+    /// Draw a frame of `dt` seconds into a rectangle of `size`. In the wipe mode the divider can be dragged,
     /// which moves `settings.split`. Asks for the next frame: the picture lives.
     pub fn show(
         self,
@@ -36,7 +36,7 @@ impl<'a> PhosphorView<'a> {
     ) -> Response {
         let (rect, response) = ui.allocate_exact_size(size, Sense::click_and_drag());
         let split_x = rect.left() + settings.split * rect.width();
-        if settings.mode == Mode::Split {
+        if settings.mode == Mode::Wipe {
             let grab = Rect::from_x_y_ranges(split_x - 6.0..=split_x + 6.0, rect.y_range());
             let near = response.hover_pos().is_some_and(|p| grab.contains(p));
             if near || response.dragged() {
@@ -72,7 +72,7 @@ impl<'a> PhosphorView<'a> {
         let font = FontId::monospace(11.0);
         let pad = 6.0;
         let peak = if output.is_hdr() {
-            format!("HDR peak {:.1}x", s.peak)
+            format!("HDR tone map, peak {:.1}x", s.peak)
         } else if s.fit_to_sdr {
             format!(
                 "HDR peak {:.1}x, shown at 1/{:.0} (SDR screen)",
@@ -81,63 +81,48 @@ impl<'a> PhosphorView<'a> {
         } else {
             format!("HDR peak {:.1}x, clipped at SDR white", s.peak)
         };
-        let split_x = rect.left() + s.split * rect.width();
+        let divider = |x: f32| {
+            painter.line_segment(
+                [pos2(x, rect.top()), pos2(x, rect.bottom())],
+                Stroke::new(1.0, ui.visuals().widgets.noninteractive.fg_stroke.color),
+            );
+        };
+        let label = |at: egui::Pos2, align: Align2, t: &str| {
+            painter.text(at, align, t, font.clone(), text);
+        };
+        let sdr = "SDR tone map, clamped at white";
+        // the panes' left edges, for the dBm scale
+        let mut panes = vec![rect.left()];
         match s.mode {
-            Mode::Hdr => {
-                painter.text(
-                    rect.left_top() + Vec2::splat(pad),
-                    Align2::LEFT_TOP,
-                    peak,
-                    font.clone(),
-                    text,
-                );
-            }
-            Mode::Sdr => {
-                painter.text(
-                    rect.right_top() + Vec2::new(-pad, pad),
-                    Align2::RIGHT_TOP,
-                    "SDR",
-                    font.clone(),
-                    text,
-                );
-            }
+            Mode::Hdr => label(rect.left_top() + Vec2::splat(pad), Align2::LEFT_TOP, &peak),
+            Mode::Sdr => label(rect.left_top() + Vec2::splat(pad), Align2::LEFT_TOP, sdr),
             Mode::Split => {
-                painter.line_segment(
-                    [pos2(split_x, rect.top()), pos2(split_x, rect.bottom())],
-                    Stroke::new(1.0, ui.visuals().widgets.noninteractive.fg_stroke.color),
-                );
-                painter.text(
-                    pos2(split_x - pad, rect.top() + pad),
-                    Align2::RIGHT_TOP,
-                    peak,
-                    font.clone(),
-                    text,
-                );
-                painter.text(
-                    pos2(split_x + pad, rect.top() + pad),
-                    Align2::LEFT_TOP,
-                    "SDR, clamped at white",
-                    font.clone(),
-                    text,
-                );
+                let mid = rect.center().x;
+                divider(mid);
+                label(rect.left_top() + Vec2::splat(pad), Align2::LEFT_TOP, &peak);
+                label(pos2(mid + pad, rect.top() + pad), Align2::LEFT_TOP, sdr);
+                panes.push(mid);
+            }
+            Mode::Wipe => {
+                let x = rect.left() + s.split * rect.width();
+                divider(x);
+                label(pos2(x - pad, rect.top() + pad), Align2::RIGHT_TOP, &peak);
+                label(pos2(x + pad, rect.top() + pad), Align2::LEFT_TOP, sdr);
             }
         }
         if s.scene == Scene::Spectrum {
-            for div in 0..=8 {
-                let y = rect.top() + rect.height() * div as f32 / 8.0;
-                let db = -15 * div;
-                let anchor = if div == 8 {
-                    Align2::LEFT_BOTTOM
-                } else {
-                    Align2::LEFT_TOP
-                };
-                painter.text(
-                    pos2(rect.left() + pad, y + if div == 8 { -2.0 } else { 2.0 }),
-                    anchor,
-                    format!("{db} dBm"),
-                    font.clone(),
-                    text,
-                );
+            for left in panes {
+                for div in 1..=8 {
+                    let y = rect.top() + rect.height() * div as f32 / 8.0;
+                    let db = -15 * div;
+                    let anchor = if div == 8 {
+                        Align2::LEFT_BOTTOM
+                    } else {
+                        Align2::LEFT_TOP
+                    };
+                    let dy = if div == 8 { -2.0 } else { 2.0 };
+                    label(pos2(left + pad, y + dy), anchor, &format!("{db} dBm"));
+                }
             }
         }
     }
@@ -148,8 +133,10 @@ fn hover_text(s: &Settings, output: Output) -> String {
         "{}\n\nBrightness is log(hits): a pixel every sweep goes through glows at the peak, a single hit is a faint ghost. ",
         s.scene.about()
     );
-    if s.mode == Mode::Split {
-        t.push_str("Left of the divider: HDR tone map; right: classic SDR, clamped at SDR white. Drag the divider to compare. ");
+    match s.mode {
+        Mode::Split => t.push_str("Left: the HDR tone map; right: the same picture with the classic SDR tone map, clamped at SDR white. "),
+        Mode::Wipe => t.push_str("Left of the divider: the HDR tone map; right: classic SDR, clamped at SDR white. Drag the divider to compare. "),
+        _ => {}
     }
     if !output.is_hdr() {
         t.push_str("This output can't show more than SDR white.");

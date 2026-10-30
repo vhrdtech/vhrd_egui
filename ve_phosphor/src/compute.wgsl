@@ -32,28 +32,42 @@ fn edge(x: f32, rise: f32, ring: f32) -> f32 {
     return e;
 }
 
-fn clock_edge_time(key: u32, n: i32, half: f32) -> f32 {
-    let jit = p.clock.y * p.clock.z * gauss(key ^ R_JIT, u32(n + 64)) * sqrt(f32(abs(n)));
-    return 0.5 + f32(n) * half + jit;
+// Edges further than this many rise times from a sample count as fully done (after) or not yet begun.
+const EDGE_REACH: f32 = 40.0;
+const MAX_EDGES: i32 = 24;
+
+// One sweep's clock: its edges (time, signed swing) and rare events, worked out once and sampled many times.
+struct Sweep {
+    t: array<f32, 24>,
+    amp: array<f32, 24>,
+    count: i32,
+    // the level before the first edge
+    start: f32,
+    // where the spike sits, or < 0 for none
+    spike_at: f32,
 }
 
-// The clock scene at screen position u (0..1), in divisions. The trigger is the rising edge at the centre.
-fn clock(u: f32, key: u32) -> f32 {
+// The clock scene's sweep. The trigger is the rising edge at the centre; edge n has the jitter of n periods.
+fn clock_sweep(key: u32) -> Sweep {
+    var c: Sweep;
     let period = p.clock.z;
     let swing = p.clock.w;
     let half = period * 0.5;
-    let rise = p.edge.x;
-    let ring = p.edge.y;
     let runt = rand(key, R_RUNT) < p.rare.x;
-    let spike = rand(key, R_SPIKE) < p.rare.y;
     let late = rand(key, R_LATE) < p.rare.z;
-    let reach = i32(ceil(0.5 / half)) + 2;
+    let reach = min(i32(ceil(0.5 / half)) + 2, (MAX_EDGES - 1) / 2);
     let first = -reach;
     // before the first edge (rising when even) the level is low, else high
-    var v = select(0.5 * swing, -0.5 * swing, (first & 1) == 0);
-    let t2 = clock_edge_time(key, 2, half);
-    for (var n = first; n <= reach; n++) {
-        var t = clock_edge_time(key, n, half);
+    c.start = select(0.5 * swing, -0.5 * swing, (first & 1) == 0);
+    c.count = 2 * reach + 1;
+    var t2 = 0.0;
+    for (var k = 0; k < c.count; k++) {
+        let n = first + k;
+        let jit = p.clock.y * period * gauss(key ^ R_JIT, u32(n + 64)) * sqrt(f32(abs(n)));
+        var t = 0.5 + f32(n) * half + jit;
+        if n == 2 {
+            t2 = t;
+        }
         var amp = swing;
         if late && n == 1 {
             t += p.edge.z * period;
@@ -64,50 +78,87 @@ fn clock(u: f32, key: u32) -> f32 {
                 t = t2 + half * 0.35;
             }
         }
-        let sign = select(-1.0, 1.0, (n & 1) == 0);
-        v += sign * amp * edge(u - t, rise, ring);
+        c.t[k] = t;
+        c.amp[k] = select(-amp, amp, (n & 1) == 0);
     }
-    if spike {
-        let at = 0.5 + half * (1.15 + 0.7 * rand(key, R_WHERE));
-        let w = 0.0012;
-        let x = (u - at) / w;
-        v += 1.1 * swing * exp(-x * x);
+    c.spike_at = -1.0;
+    if rand(key, R_SPIKE) < p.rare.y {
+        c.spike_at = 0.5 + half * (1.15 + 0.7 * rand(key, R_WHERE));
+    }
+    return c;
+}
+
+// The clock at screen position u (0..1), in divisions.
+fn clock_at(c: ptr<function, Sweep>, u: f32) -> f32 {
+    let rise = p.edge.x;
+    let ring = p.edge.y;
+    var v = (*c).start;
+    for (var k = 0; k < (*c).count; k++) {
+        let x = u - (*c).t[k];
+        var e: f32;
+        if x > EDGE_REACH * rise {
+            e = 1.0;
+        } else if x < -EDGE_REACH * 0.25 * rise {
+            e = 0.0;
+        } else {
+            e = edge(x, rise, ring);
+        }
+        v += (*c).amp[k] * e;
+    }
+    if (*c).spike_at >= 0.0 {
+        let x = (u - (*c).spike_at) / 0.0012;
+        v += 1.1 * p.clock.w * exp(-x * x);
     }
     return v;
 }
 
-// The eye scene: random NRZ bits, the eye centred, crossings at 1/4 and 3/4 of the screen.
-fn eye(u: f32, key: u32) -> f32 {
+// The eye scene's sweep: random NRZ bits, the eye centred, crossings at 1/4 and 3/4 of the screen.
+fn eye_sweep(key: u32) -> Sweep {
+    var c: Sweep;
     let ui = 0.5;
     let amp = 0.5 * p.clock.w;
+    let marginal = rand(key, R_RUNT) < p.rare.x;
+    var prev = select(-1.0, 1.0, rand(key ^ R_BITS, 0u) < 0.5);
+    c.start = prev * amp;
+    c.count = 4;
+    for (var k = 0; k < 4; k++) {
+        let bit = select(-1.0, 1.0, rand(key ^ R_BITS, u32(k + 7)) < 0.5);
+        var goal = bit;
+        if marginal && k == 1 {
+            // a bit that barely makes it: it starts the right way and stops short, inside the eye
+            goal = prev + 0.3 * (-prev - prev);
+        }
+        c.t[k] = 0.5 + (f32(k) - 1.5) * ui + p.clock.y * ui * gauss(key ^ R_JIT, u32(k + 7));
+        c.amp[k] = (goal - prev) * amp;
+        prev = goal;
+    }
+    c.spike_at = -1.0;
+    if rand(key, R_SPIKE) < p.rare.y {
+        c.spike_at = 0.5 + 0.12 * (rand(key, R_WHERE) - 0.5);
+        // the spike's sign rides in the swing of the unused last slot
+        c.amp[MAX_EDGES - 1] = select(-1.0, 1.0, rand(key, R_WHERE ^ 1u) < 0.5);
+    }
+    return c;
+}
+
+// The eye at u: each transition has a fast part and a slow tail (inter-symbol interference).
+fn eye_at(c: ptr<function, Sweep>, u: f32) -> f32 {
+    let ui = 0.5;
     let isi = 0.3;
     let tau = 0.3 * ui;
     let rise = 0.1 * ui;
-    let marginal = rand(key, R_RUNT) < p.rare.x;
-    let spike = rand(key, R_SPIKE) < p.rare.y;
-    var prev = select(-1.0, 1.0, rand(key ^ R_BITS, 0u) < 0.5);
-    var v = prev * amp;
-    for (var k = -1; k <= 2; k++) {
-        var bit = select(-1.0, 1.0, rand(key ^ R_BITS, u32(k + 8)) < 0.5);
-        var target = bit;
-        if marginal && k == 0 {
-            // a bit that barely makes it: it starts the right way and stops short, inside the eye
-            target = prev + 0.3 * (-prev - prev);
-        }
-        let t = 0.5 + (f32(k) - 0.5) * ui + p.clock.y * ui * gauss(key ^ R_JIT, u32(k + 8));
-        let x = u - t;
+    var v = (*c).start;
+    for (var k = 0; k < (*c).count; k++) {
+        let x = u - (*c).t[k];
         var resp = (1.0 - isi) * tanh_step(x / (rise * 0.55));
         if x > 0.0 {
             resp += isi * (1.0 - exp(-x / tau));
         }
-        v += (target - prev) * amp * resp;
-        prev = target;
+        v += (*c).amp[k] * resp;
     }
-    if spike {
-        let at = 0.5 + 0.12 * (rand(key, R_WHERE) - 0.5);
-        let x = (u - at) / 0.003;
-        let s = select(-1.0, 1.0, rand(key, R_WHERE ^ 1u) < 0.5);
-        v += s * 1.3 * amp * exp(-x * x);
+    if (*c).spike_at >= 0.0 {
+        let x = (u - (*c).spike_at) / 0.003;
+        v += (*c).amp[MAX_EDGES - 1] * 1.3 * 0.5 * p.clock.w * exp(-x * x);
     }
     return v;
 }
@@ -122,10 +173,27 @@ fn tone(d: f32) -> f32 {
     return exp(-1.5 * m * m) + 1.0e-8 / (1.0 + (d / 0.003) * (d / 0.003));
 }
 
+// Pixels per bin of the spectrum; pixels between bins are interpolated (lines between points). A whole
+// number, so bins and pixel columns don't beat.
+const PX_PER_BIN: f32 = 2.0;
+
+// Noise power of bin i, mean 1: two exponential draws averaged (a little video filtering).
+fn noise_bin(key: u32, i: u32) -> f32 {
+    let a = -log(max(rand(key ^ R_NOISE, i * 2u), 1.0e-7));
+    let b = -log(max(rand(key ^ R_NOISE, i * 2u + 1u), 1.0e-7));
+    return 0.5 * (a + b);
+}
+
+fn noise_at(key: u32, u: f32) -> f32 {
+    let f = clamp(u, 0.0, 1.0) * f32(p.size.x) / PX_PER_BIN;
+    let i = u32(f);
+    return mix(noise_bin(key, i), noise_bin(key, i + 1u), f - f32(i));
+}
+
 // The spectrum scene: power in dBm of bin u for the sweep at `phase` seconds into its burst period, as
 // divisions (0 dBm at the top, -120 dBm at the bottom, 15 dB per division).
-fn spectrum(u: f32, key: u32, n: u32, phase: f32, burst: u32) -> f32 {
-    let floor = db_to_mw(p.spec0.x) * -log(max(rand(key ^ R_NOISE, n), 1.0e-7));
+fn spectrum(u: f32, key: u32, phase: f32, burst: u32) -> f32 {
+    let floor = db_to_mw(p.spec0.x) * noise_at(key, u);
     let carrier = db_to_mw(p.spec0.y) * (1.0 + 0.05 * gauss(key, 1u));
     var mw = floor + carrier * tone(u - 0.3);
     mw += db_to_mw(p.spec0.y - 52.0) * tone(u - 0.6);
@@ -135,7 +203,7 @@ fn spectrum(u: f32, key: u32, n: u32, phase: f32, burst: u32) -> f32 {
         let f = 0.05 + 0.9 * rand(hash(burst ^ p.misc.x) ^ R_HOP, hop);
         let x = (u - f) / 0.006;
         let shape = exp(-x * x * x * x);
-        mw += db_to_mw(p.spec0.z) * shape * -log(max(rand(key ^ R_HOP, n), 1.0e-7));
+        mw += db_to_mw(p.spec0.z) * shape * noise_at(key ^ R_HOP, u);
     }
     let db = 10.0 * log(mw) / log(10.0);
     return db / 15.0 + 4.0;
@@ -174,6 +242,12 @@ fn sweep(@builtin(global_invocation_id) gid: vec3<u32>) {
         phase -= p.spec1.x;
         burst += 1u;
     }
+    var sw: Sweep;
+    if scene == 0u {
+        sw = clock_sweep(key);
+    } else if scene == 2u {
+        sw = eye_sweep(key);
+    }
     var lo = 1.0e9;
     var hi = -1.0e9;
     for (var j = 0u; j <= sub; j++) {
@@ -181,11 +255,11 @@ fn sweep(@builtin(global_invocation_id) gid: vec3<u32>) {
         let n = x * sub + j;
         var v: f32;
         if scene == 0u {
-            v = clock(u, key) + p.clock.x * gauss(key ^ R_NOISE, n);
+            v = clock_at(&sw, u) + p.clock.x * gauss(key ^ R_NOISE, n);
         } else if scene == 1u {
-            v = spectrum(u, key, n, phase, burst);
+            v = spectrum(u, key, phase, burst);
         } else if scene == 2u {
-            v = eye(u, key) + p.clock.x * gauss(key ^ R_NOISE, n);
+            v = eye_at(&sw, u) + p.clock.x * gauss(key ^ R_NOISE, n);
         } else {
             v = streamed(u, s);
         }
