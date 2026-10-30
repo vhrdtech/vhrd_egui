@@ -5,6 +5,10 @@ versions follow [Semantic Versioning](https://semver.org/). Feature IDs refer to
 
 ## [Unreleased]
 
+### Added
+
+- `ve_phosphor`, a new crate: a GPU digital-phosphor scope view for egui on wgpu (compute-shader sweeps, persistence, log tone map up to an HDR peak, split HDR | SDR view, clock / spectrum / eye / streamed scenes); the HDR host and the demo follow (PHOS-1).
+
 ## [0.32.10] - 2026-10-27
 
 ### Added

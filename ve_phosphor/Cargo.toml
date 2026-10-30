@@ -1,0 +1,27 @@
+[package]
+name = "ve_phosphor"
+description = "GPU digital-phosphor scope view for egui: many sweeps per frame rasterised into a hit buffer by a wgpu compute shader, persistence, log tone map up to an HDR peak; with an HDR host (Rgba16Float surface) and a demo"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+repository.workspace = true
+
+[features]
+default = []
+# The window host (winit + wgpu + egui on an Rgba16Float extended-range surface when the platform offers one), the
+# headless renderer that saves PNGs, and the demo binary.
+host = ["dep:winit", "dep:egui-winit", "dep:pollster", "dep:image", "dep:ve_theme", "dep:ve_frame"]
+
+[dependencies]
+egui.workspace = true
+egui-wgpu.workspace = true
+bytemuck = { version = "1.25", features = ["derive"] }
+# The backends for the host: Metal (macOS EDR), Vulkan (Linux), DX12 (Windows). egui-wgpu comes without defaults.
+wgpu = { version = "30", default-features = false, features = ["std", "parking_lot", "wgsl", "metal", "vulkan", "dx12"] }
+winit = { version = "0.30", optional = true }
+egui-winit = { version = "0.36", optional = true }
+pollster = { version = "1", optional = true }
+image = { version = "0.25", default-features = false, features = ["png"], optional = true }
+ve_theme = { path = "../ve_theme", version = "0.32", optional = true }
+ve_frame = { path = "../ve_frame", version = "0.32", optional = true }

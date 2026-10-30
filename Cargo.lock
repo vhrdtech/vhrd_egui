@@ -3633,7 +3633,7 @@ dependencies = [
 
 [[package]]
 name = "ve_app"
-version = "0.32.9"
+version = "0.32.10"
 dependencies = [
  "eframe",
  "egui",
@@ -3652,7 +3652,7 @@ dependencies = [
 
 [[package]]
 name = "ve_backdrop"
-version = "0.32.9"
+version = "0.32.10"
 dependencies = [
  "bytemuck",
  "eframe",
@@ -3668,7 +3668,7 @@ dependencies = [
 
 [[package]]
 name = "ve_basics"
-version = "0.32.9"
+version = "0.32.10"
 dependencies = [
  "egui",
  "egui_kittest",
@@ -3677,7 +3677,7 @@ dependencies = [
 
 [[package]]
 name = "ve_dash"
-version = "0.32.9"
+version = "0.32.10"
 dependencies = [
  "eframe",
  "egui",
@@ -3689,7 +3689,7 @@ dependencies = [
 
 [[package]]
 name = "ve_frame"
-version = "0.32.9"
+version = "0.32.10"
 dependencies = [
  "eframe",
  "egui",
@@ -3704,15 +3704,31 @@ dependencies = [
 
 [[package]]
 name = "ve_macro"
-version = "0.32.9"
+version = "0.32.10"
 dependencies = [
  "proc-macro2",
  "quote",
 ]
 
 [[package]]
+name = "ve_phosphor"
+version = "0.32.10"
+dependencies = [
+ "bytemuck",
+ "egui",
+ "egui-wgpu",
+ "egui-winit",
+ "image",
+ "pollster",
+ "ve_frame",
+ "ve_theme",
+ "wgpu",
+ "winit",
+]
+
+[[package]]
 name = "ve_settle"
-version = "0.32.9"
+version = "0.32.10"
 dependencies = [
  "eframe",
  "egui",
@@ -3729,7 +3745,7 @@ dependencies = [
 
 [[package]]
 name = "ve_template"
-version = "0.32.9"
+version = "0.32.10"
 dependencies = [
  "clap",
  "include_dir",
@@ -3742,7 +3758,7 @@ dependencies = [
 
 [[package]]
 name = "ve_theme"
-version = "0.32.9"
+version = "0.32.10"
 dependencies = [
  "eframe",
  "egui",
@@ -3753,7 +3769,7 @@ dependencies = [
 
 [[package]]
 name = "ve_widget"
-version = "0.32.9"
+version = "0.32.10"
 dependencies = [
  "eframe",
  "egui",

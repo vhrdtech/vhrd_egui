@@ -16,6 +16,7 @@ members = [
     "ve_basics",
     "ve_theme",
     "ve_backdrop",
+    "ve_phosphor",
     "ve_template",
     "ve_app",
 ]

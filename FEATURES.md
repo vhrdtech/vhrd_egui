@@ -38,6 +38,7 @@ in tpm (P2605). Statuses were checked against the code.
 | `ve_app` | The application shell: menu bar, tiles of framed widgets that can float or move to other OS windows, the app menu, Settings / Debug windows, persisted layout, quit dialog. |
 | `ve_dash` | btop-style dashboard building blocks: theme, sparkline, meter, status light, stat tile, titled panel. |
 | `ve_backdrop` | Animated app background: a grid of dots or squares reacting to the pointer and to widget frames; wgpu shader with a CPU-painted fallback. |
+| `ve_phosphor` | GPU digital-phosphor scope view (compute-shader sweeps, persistence, log tone map up to an HDR peak), an HDR host on an `Rgba16Float` surface, the demo. |
 | `ve_frame` | The frame every widget sits in: header (LED, title, ⓘ, width and height switches, menu), body scroll, footer, sides, hexagon shape, moves between grid, window, OS window and machine. |
 | `ve_settle` | Physics layout prototype: bodies that settle under gravity, home springs, walls and contacts; no dependencies. With the feature `frame`: `ve_frame` widgets on the bodies. |
 | `ve_template` | The app template as a command: `new`, `check-answers`, `compare`, `version` (`egui_app_skill/`). |
@@ -1548,6 +1549,12 @@ The app background as its own piece (tpm P2605#8oct-2316). Playground:
   fold forced red for the demo: the ring sweeps up through the gaps between panels, the arrow sits on the bottom
   edge under it, a click on the arrow scrolls the panel into view and both go; 18 Oct 2026). Not yet watched in a
   live window (the screen was locked then).
+
+## Phosphor (`PHOS`)
+
+A digital-phosphor scope view made to show what an HDR screen adds (hobby side quest, tpm P2540#30oct-1636).
+
+- 🚧 **PHOS-1 HDR phosphor scope**: `ve_phosphor::Phosphor` keeps a scope picture on the GPU: a compute shader rasterises the frame's sweeps (`Settings::sweeps_per_s`, up to 65 535 a frame) into atomic hit counts, a second pass folds them into a density that fades with the persistence (`d' = d·k + hits`, `k = exp(-dt/τ)`, or infinite) and an age (seconds since the last hit), a separable blur blooms what is above the threshold; `PhosphorView` draws it in an egui wgpu paint callback with a log tone map (`level = ln(1+d)/ln(1+full)`, luminance from the ghost floor to the side's peak, evenly in stops), the split mode HDR | SDR with a draggable divider, palettes phosphor / temperature / age, a dim dotted graticule. Scenes: clock with jitter, ringing, noise and rare runt (1e-5), spike (1e-6) and late edge (1e-4); spectrum persistence with a carrier 90 dB over the floor, harmonic, spur and a frequency-hopping burst every 3 s; eye diagram with ISI, marginal bits and spikes; streamed sweeps (`push_sweeps`). Tone map and decay maths in `tonemap.rs` (mirrored by `common.wgsl`, unit tests there), the parameter block in `gpu.rs` (tests). Missing: the host (winit + wgpu + egui on `Rgba16Float` + `SurfaceColorSpace::ExtendedSrgb`, EDR headroom from `display_hdr_info`, 8-bit fallback), headless PNG renders, the demo binary, a GPU test; the shaders are not run yet.
 
 ## Extracted from apps (`EXT`)
 
