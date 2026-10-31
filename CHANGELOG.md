@@ -7,7 +7,7 @@ versions follow [Semantic Versioning](https://semver.org/). Feature IDs refer to
 
 ### Added
 
-- `ve_phosphor`, a new crate: a GPU digital-phosphor scope view for egui on wgpu (compute-shader sweeps, persistence, log tone map up to an HDR peak, split HDR | SDR view, clock / spectrum / eye / streamed scenes); the HDR host and the demo follow (PHOS-1).
+- `ve_phosphor`, a new crate: a GPU digital-phosphor scope view for egui on wgpu (compute-shader sweeps, 330k to 1.1M waveforms/s on an M1 Max, persistence, log tone map up to an HDR peak, HDR | SDR side by side or a wipe, clock / spectrum / eye / streamed scenes), and the `ve_phosphor` demo: its own winit + wgpu + egui host on an `Rgba16Float` extended-sRGB surface (macOS EDR, with the display's headroom), an 8-bit fallback that says why, `--headless DIR` PNG renders and `--bench` (PHOS-1).
 
 ## [0.32.10] - 2026-10-27
 

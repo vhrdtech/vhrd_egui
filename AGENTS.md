@@ -53,6 +53,12 @@ Cargo workspace, edition 2024, one shared version (`[workspace.package]`).
   panel title bar, toolbar, muted label, badge), the gallery example.
 - `ve_dash/` — btop-style dashboard blocks (theme from `ve_theme` tokens, sparkline, meter with a fixed or
   auto block count, tiles) and day charts (`Day`, burndown, Gantt; every tunable in a `*Style` struct).
+- `ve_phosphor/` — the HDR digital-phosphor scope: `Phosphor` (GPU state: compute sweeps into atomic hit counts,
+  decay, bloom; `gpu.rs`, `compute.wgsl`, `bloom.wgsl`, `view.wgsl` on `common.wgsl`), `PhosphorView` and
+  `settings_ui` (`widget.rs`), the tone map and decay maths in `tonemap.rs` (mirrored by `common.wgsl`: change both
+  together); with the default feature `host`: `host.rs` (winit + wgpu + egui on an `Rgba16Float` extended-sRGB
+  surface, the 8-bit fallback), `paint.rs`, `headless.rs` (PNGs, bench), `demo.rs`, the `ve_phosphor` binary.
+  Not a web crate (winit, pollster, threads in the host).
 - `ve_backdrop/` — the animated app background: a grid of dots or squares reacting to the pointer and to widget
   frames (`Backdrop`, `Lit`, `Settings`), a wgpu shader (`backdrop.wgsl`) with a CPU-painted fallback; the
   math lives once in `field.rs` and the shader mirrors it, so change both together. Emulated transparency
