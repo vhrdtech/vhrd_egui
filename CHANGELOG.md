@@ -5,6 +5,8 @@ versions follow [Semantic Versioning](https://semver.org/). Feature IDs refer to
 
 ## [Unreleased]
 
+## [0.32.13] - 2026-11-03
+
 ### Added
 
 - `docs/ux-guide.md`, the UX guide for every GUI on vhrd_egui (egui apps, web builds and Mini Apps, bot buttons): each rule once with why, an example and its source; `## 2. Rules for every UI` holds the rules GUI and CLI share, linked from the vhrd_cli CLI guide. `egui_app_skill/references/ui-guide.md` is now its egui half (helper and snippet per rule, linking the guide's sections), and AGENTS.md "UI guide rules" points to both (PLT-10).
