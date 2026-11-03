@@ -137,5 +137,13 @@
     "blue": "#70aff4",
     "pink": "#ee97c9",
     "lime": "#a4c665"
+  },
+  "kicad-pin": {
+    "light": "#966c00",
+    "dark": "#e8c452"
+  },
+  "kicad-wire": {
+    "light": "#5a5a5a",
+    "dark": "#9a9a9a"
   }
 }

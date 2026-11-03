@@ -5,6 +5,10 @@ versions follow [Semantic Versioning](https://semver.org/). Feature IDs refer to
 
 ## [Unreleased]
 
+### Added
+
+- `ve_theme`: refreshed `brand/palette.json` from vhrd_brand (`just brand`), picking up two new groups, `kicad-pin` and `kicad-wire`, as `vhrd::kicad_pin::{LIGHT, DARK}` and `vhrd::kicad_wire::{LIGHT, DARK}` `Color32` constants (THM-11).
+
 ## [0.32.11] - 2026-10-31
 
 ### Added
