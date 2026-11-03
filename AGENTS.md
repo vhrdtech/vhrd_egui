@@ -122,46 +122,27 @@ Not web crates, and why: `ve_widget` (eframe with default features, tokio, `type
 
 ## UI guide rules
 
-Every app on vhrd_egui follows these (the helpers are in `ve_basics` and `ve_theme`; the full guide an agent
-reads before writing UI is `egui_app_skill/references/ui-guide.md`, kept in step with this list):
+Every app on vhrd_egui follows the house GUI guide, tpm `area/ops/gui-ux.md` (`~/git/tpm/area/ops/gui-ux.md`):
+each rule there has its reason, an example and its source. How to follow each one in egui, with code, is
+`egui_app_skill/references/ui-guide.md`. Read both before writing UI. Which helper carries which rule:
 
-- **Apps opt in to the theme with `ve_theme::setup(&cc.egui_ctx)`** at startup (fonts, dark and light styles
-  following the system). Colors, spacing and radii come from `Tokens` (`ui.tokens()` via `ve_theme::UiExt`),
-  not hex literals in app code; what `Style` can't express goes into a `UiExt` helper. Tune the look in the
-  gallery (`cargo run -p ve_theme --example gallery`) and update its snapshots.
-- **Generous tooltips** on every control, number, badge and abbreviation: what it is, its unit, what clicking it
-  does. If a user could ask "what is this?", hovering answers it. Build info shows version, SHA and build time
-  in full on hover (`build_info_label`, BAS-1 build-info); the version badge opens the app menu every app shares
-  (`AppMenu`: about, build, reset storage to defaults, BAS-4 app-menu).
-- **Highlight related items on hover**: when an item is hovered, everything that refers to the same thing (the
-  row, its chart, its status light, its name in a legend) lights up (`hover_link`, BAS-3 hover-link).
-- **Labels are not selectable** (`setup_labels(ctx)` at startup, BAS-2 label-select); text worth copying (ids,
-  paths, commands) uses `copyable_label`, a region of it (a detail panel, a log) `copyable` (BAS-7 copy-region).
-- **Percent bars use a fixed block count**, 10 by default, 20/25/50/100 when finer steps help
-  (`Meter::blocks(Blocks)`, DASH-13 seg-bar / DASH-4 meter); `Blocks::Auto` (grows with the width) only
-  where the width itself should carry meaning.
-- **Learned widths, never hard-coded ones**: a piece whose content changes length (live numbers, names,
-  columns across rows) keeps the widest it has been (`ve_dash::steady_width`, `StatTile::steady()`), so nothing
-  jumps; no fixed pixel widths in app code (user, 8 Oct 2026). Numbers use tabular digits.
-- **Disabled or unavailable things stay visible and say why**: never hide a control, row or action because it
-  can't be used now; show it disabled with a tooltip giving the reason ("not clickable: interactive session, no
-  transcript served"), and when the cause is on screen, highlight it on hover (`hover_link`) (user, 8 Oct 2026).
-- **Nothing is hidden: the rest goes under a fold, never a count**: a list cut for room (rows, subagents,
-  sessions, log lines, chips) never ends in "N more" or "…and N others" alone, and never drops items silently;
-  the rest sits under a fold, collapsed by default, whose header says what is in it ("3 more subagents, not busy
-  ▸"), and opening it shows every item (`FoldRest` / `fold_rest`, BAS-5 fold-rest). CLIs and bots, where nothing
-  folds, offer the rest (`--all`, a button). Built this way from the first version, not added on review (user,
-  20 Oct 2026).
-- **Categorical colours avoid red and orange**: labels, chips, tags, series, hosts and models never use red,
-  orange or red-ish brown hues (OKLCH 5°-85°, `ve_theme::hue::ALERT_HUES`); those are reserved for error and
-  warning (`crit`, `warn`, `red`). Colours that share a view must be clearly distinct (OKLab ΔE, hue gap), and a
-  unit test says so (`hue::is_alert_hue`, `hue::delta_e`, `hue::hue_gap`) in both themes (user, 9 Oct 2026).
-- **Every widget sits in the frame** (`ve_frame::WidgetFrame`, FRM-1 frame): no home-made title bars, panel
-  borders or size toggles in app code. What a widget has to say goes into the frame's parts: its state on the
-  LED, what it is and its stats in the ⓘ, its smallest fixed form and its normal and wide arrangements as
-  sizes, extra controls on the sides or in the footer. Widgets hosted by `ve_app` return a `FrameSpec`.
-- **Reusable UI lands here, not in the app**: a widget, layout helper or fix that another app could use goes into
-  vhrd_egui (ve_dash, ve_basics, ve_theme) with a doc example, and the app just calls it.
+- Theme: `ve_theme::setup(&cc.egui_ctx)` at startup; colours, spacing and radii from `Tokens` (`ui.tokens()`),
+  never hex literals; what `Style` can't express goes into a `UiExt` helper; tune in the gallery
+  (`cargo run -p ve_theme --example gallery`) and update its snapshots.
+- Tooltips on every control, number, badge and abbreviation; build info `build_info_label` (BAS-1); the app
+  menu on the version badge `AppMenu` (BAS-4).
+- Related items light up on hover: `hover_link` (BAS-3).
+- Labels not selectable: `setup_labels(ctx)` (BAS-2); text worth copying `copyable_label`, a region `copyable`
+  (BAS-7).
+- Percent bars: `Meter::blocks(Blocks)`, 10 blocks by default (DASH-4, DASH-13).
+- Learned widths: `ve_dash::steady_width`, `StatTile::steady()`; no fixed pixel widths; tabular digits.
+- Disabled things stay visible and say why: disabled with a tooltip, the cause highlighted with `hover_link`.
+- Nothing hidden, the rest under a fold: `FoldRest` / `fold_rest` (BAS-5).
+- Categorical colours avoid red and orange: `ve_theme::hue::ALERT_HUES`, unit tests with `hue::is_alert_hue`,
+  `hue::delta_e`, `hue::hue_gap` in both themes.
+- Every widget in the frame: `ve_frame::WidgetFrame` (FRM-1), a `FrameSpec` from `ve_app` widgets.
+- Checkbox lists stay open: `ve_basics::Checklist` (BAS-6); status glyphs in their tone: `status_icon` (THM-15).
+- Reusable UI lands here (ve_dash, ve_basics, ve_theme, ve_frame) with a doc example, not in the app.
 
 ## Code conventions
 

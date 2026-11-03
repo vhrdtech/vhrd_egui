@@ -1,6 +1,7 @@
 # UI guide for vhrd egui apps
 
-The rules every app on vhrd_egui follows (vhrd_egui `AGENTS.md` "UI guide rules"; helpers in `ve_basics`,
+The rules every app on vhrd_egui follows, in egui code (the rules with their reasons: tpm `area/ops/gui-ux.md`;
+the helper index: vhrd_egui `AGENTS.md` "UI guide rules"; helpers in `ve_basics`,
 `ve_dash`, `ve_theme`). Apply them to every widget you write or touch.
 
 ## Generous tooltips
