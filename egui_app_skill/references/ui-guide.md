@@ -1,42 +1,18 @@
-# UI guide for vhrd egui apps
+# UI guide for vhrd egui apps: the egui code
 
-The rules every app on vhrd_egui follows, in egui code (the rules with their reasons: tpm `area/ops/gui-ux.md`;
-the helper index: vhrd_egui `AGENTS.md` "UI guide rules"; helpers in `ve_basics`,
-`ve_dash`, `ve_theme`). Apply them to every widget you write or touch.
+The rules every app on vhrd_egui follows are in the UX guide,
+[`docs/ux-guide.md`](https://github.com/vhrdtech/vhrd_egui/blob/main/docs/ux-guide.md) in vhrd_egui: each rule once,
+with why, an example and its source. This page is its egui half: for each rule, the helper to call and a snippet
+(helpers in `ve_basics`, `ve_dash`, `ve_theme`, `ve_frame`). Read both before writing UI, and apply them to every
+widget you write or touch. The headings follow the guide's sections; a rule without egui code (bots, web pages,
+the keyboard layer still to come) is only in the guide.
 
-## Generous tooltips
+## Rules for every UI ([guide §2](https://github.com/vhrdtech/vhrd_egui/blob/main/docs/ux-guide.md#2-rules-for-every-ui))
 
-Every control, number, badge, status light and abbreviation gets a tooltip: what it is, its unit, what clicking or
-dragging does, and what the current value means when that is not obvious. If a user could ask "what is this?",
-hovering answers it. Multi-line is fine; say the unit (`ms`, `%`, `MiB/s`), the range, the source of the number.
+### Nothing is hidden: the rest goes under a fold
 
-```rust
-ui.button("Deploy")
-    .on_hover_text("Builds the release binary and installs it on this PC (just install); no server is touched");
-ui.label(format!("{rtt:.1} ms"))
-    .on_hover_text("Round trip to the node over the mesh, median of the last 10 pings");
-```
-
-Build info: `ve_basics::build_info_label(ui, &build_info!())` shows `version · sha · debug|release`, with the
-full version, SHA, build time and profile in its tooltip; the same data `--version` prints. The version badge of
-an app's top bar is the app menu, the same in every app: `ve_basics::AppMenu::badge` (or `attach` on a badge the
-app draws itself) opens name, description, build and *Reset storage to defaults…* (asks first; the app puts its
-saved state back to the defaults when it returns `AppMenuAction::ResetStorage`). `ve_app` has it in *Help* and on
-the status bar.
-
-## Disabled things say why
-
-Never hide a control, row or action because it can't be used right now. Show it disabled, and its tooltip
-says why and what would enable it. When the cause is visible on screen (a full login, a stopped node, a missing
-setting), hovering the disabled item highlights that cause (`hover_link`).
-
-## Nothing is hidden: the rest goes under a fold
-
-A list cut for room (rows, subagents, sessions, log lines, chips) never ends in "N more" or "…and N others"
-alone, and never drops items silently. The rest sits under a fold, collapsed by default, whose header says what
-is in it and how many ("3 more subagents, not busy ▸"); opening it shows every item. A tooltip listing them is a
-nice extra, not a replacement. CLIs and bots, where nothing folds, offer the rest (`--all`, a button). Build it
-this way from the first version, not on review.
+A list cut for room never ends in "N more" alone: the rest goes under a `FoldRest`, collapsed by default, whose
+header says what and how many (BAS-5). A tooltip listing the items is an extra, not a replacement.
 
 ```rust
 // header and rest in one call
@@ -60,17 +36,131 @@ In a grid or a table, put `fold.header(..)` in a row and draw the rest as rows o
 `fold.is_open()`. The open state lives in egui memory like a collapsing header's, so it persists and
 `reset_egui_memory` folds it again.
 
-A widget's smallest fixed form (`min` of its size switch) may sum a list up as a count ("usb 3 devices") when the
-count's tooltip lists the items and names the switch; every other form that cuts a list offers the fold.
-A popup on a `+N` is the fold's stand-in where a fixed-width cell has no room for rows below it.
+The two exceptions: a widget's smallest fixed form (`min` of its size switch) may sum a list up as a count
+("usb 3 devices") when the count's tooltip lists the items and names the switch; a popup on a `+N` is the fold's
+stand-in where a fixed-width cell has no room for rows below it.
 
-## A list of checkboxes stays open while it is ticked
+### Disabled things say why
 
-A dropdown whose items are checkboxes (a filter's values, the columns to show) stays open while they are ticked:
-only a click outside it, Esc or its button closes it. `ui.menu_button` closes after every click inside (egui
-0.36), so ticking three values takes three trips to the button: use `ve_basics::Checklist` (BAS-6) instead,
-with the rows your own (tooltips, a greyed row saying why, a fold with the rest) or `checklist_item` for a plain
-one:
+Show it disabled, never hide it; the tooltip says why and what would enable it, and when the cause is on screen
+the disabled item and the cause share a `hover_link` key:
+
+```rust
+let r = ui
+    .add_enabled(node.running, egui::Button::new("Deploy"))
+    .on_disabled_hover_text(format!("not clickable: {} is stopped; start it first", node.name));
+ve_basics::hover_link(ui, ("node", &node.name), &r); // the same key on the node's status light
+```
+
+## Look: theme, colour, type ([guide §3](https://github.com/vhrdtech/vhrd_egui/blob/main/docs/ux-guide.md#3-look-theme-colour-type))
+
+### Theme and tokens
+
+`ve_theme::setup(&cc.egui_ctx)` once at startup installs the fonts and the dark and light styles; egui follows
+the system preference. Colours, spacing, radii and type come from the tokens through `ve_theme::UiExt`:
+
+```rust
+use ve_theme::UiExt;
+let t = ui.tokens();
+ui.colored_label(t.colors.warn, "disk 91 %"); // never Color32::from_rgb(..) in app code
+```
+
+What `Style` can't express goes into a `UiExt` helper in `ve_theme` (primary / danger button, section header,
+muted label, badge). Tune the look in the gallery (`cargo run -p ve_theme --example gallery`) and update its
+snapshots.
+
+### Status colour never alone, categorical colours avoid red and orange
+
+Status colours (good / warn / crit / off) always come with a text label or icon; the two series accents get
+direct labels on charts. Categorical colours (labels, chips, tags, series, hosts, models) stay out of
+`ve_theme::hue::ALERT_HUES` (OKLCH 5°-85°), which belong to `crit`, `warn` and `red`; a unit test checks the
+colours of a view in dark and light with `hue::is_alert_hue`, `hue::delta_e` and `hue::hue_gap`.
+
+### A status glyph is drawn in its tone
+
+egui draws every glyph as a one-colour mask, so a status emoji (✅ 🚧 ⛔ ...) inside a label takes the text
+colour. In a `Ui`: `ve_theme::status_icon(ui, name, tooltip)` (THM-15). In a widget that paints its own labels (a
+`ve_dash::GanttRow`, a `BurnSeries` legend entry): the glyph goes in the item's `glyph` field as
+`ve_dash::Glyph::new(s.glyph, s.tone.ink(&tokens))` (DASH-25), not in its text; the status word goes in the
+item's hover.
+
+## Help and explanation ([guide §4](https://github.com/vhrdtech/vhrd_egui/blob/main/docs/ux-guide.md#4-help-and-explanation))
+
+### Generous tooltips
+
+Every control, number, badge, status light and abbreviation gets one, adding to the label rather than repeating
+it; multi-line is fine.
+
+```rust
+ui.button("Deploy")
+    .on_hover_text("Builds the release binary and installs it on this PC (just install); no server is touched");
+ui.label(format!("{rtt:.1} ms"))
+    .on_hover_text("Round trip to the node over the mesh, median of the last 10 pings");
+```
+
+### Build info and the app menu
+
+`ve_basics::build_info_label(ui, &build_info!())` at the right of the top bar shows `version · sha ·
+debug|release`, with the full version, SHA, build time and profile in its tooltip (BAS-1). The version badge is
+the app menu, the same in every app: `ve_basics::AppMenu::badge` (or `attach` on a badge the app draws itself)
+opens name, description, build and *Reset storage to defaults…* (asks first; the app puts its saved state back to
+the defaults when it returns `AppMenuAction::ResetStorage`, BAS-4). `ve_app` has it in *Help* and on the status
+bar. The window title shows the app name.
+
+## Hover, selection and copy ([guide §5](https://github.com/vhrdtech/vhrd_egui/blob/main/docs/ux-guide.md#5-hover-selection-and-copy))
+
+### Highlight related items on hover
+
+```rust
+let r = ui.label("eth0");
+ve_basics::hover_link(ui, "iface-eth0", &r);   // and the same key on the rx chart and the status light of eth0
+```
+
+`hover_link(ui, key, &response) -> bool` registers the item under the key and returns whether it is highlighted
+now (hovered itself or linked to the hovered one), so custom painters can draw the highlight (BAS-3).
+
+### Labels
+
+`ve_basics::setup_labels(ctx)` once at startup makes labels unselectable (BAS-2). Text worth copying (ids, paths,
+commands, SHAs) uses `ve_basics::copyable_label(ui, text)`; a region of it (a detail panel, a log) goes inside
+`ve_basics::copyable(ui, |ui| ..)` (BAS-7).
+
+## Lists, numbers and layout ([guide §6](https://github.com/vhrdtech/vhrd_egui/blob/main/docs/ux-guide.md#6-lists-numbers-and-layout))
+
+### Numbers and bars
+
+Percent bars are `ve_dash::Meter` with a fixed block count, 10 by default, `Meter::blocks(Blocks)` for 20, 25,
+50 or 100; `Blocks::Auto` grows the count with the width (DASH-4, DASH-13). Any non-zero value lights at least one
+block; the tooltip says the percentage and the block count (`"63 % (6 of 10 blocks)"`). Jumpy per-frame values go
+through `ve_dash::Decay` (fast attack, slow release) before they drive a bar.
+
+Widths are learned: live values, names and shared columns use `ve_dash::steady_width` or `StatTile::steady()`, or
+a learned-width helper in ve_dash; no fixed pixel widths in app code. Numbers use tabular digits.
+
+### Every widget sits in the frame
+
+`ve_frame::WidgetFrame` (FRM-1) has the parts; no home-made title bars, panel borders or size toggles. Its state
+goes on the LED (`.led(status, why)`), what it is and its stats into the ⓘ (`.about`, `.info`), its forms into
+the sizes (`.sizes(SizeHints::new(min, nom, wide))`: min is a fixed size, nom and wide are arrangements the body
+picks from the `Size` it is given; `.tall(h)` adds the height axis, read as `area.height` in `show_area`), extra
+controls on the sides or in the footer. Content that can outgrow its place scrolls (`.scroll(..)`; otherwise the
+frame scrolls it anyway and warns). A `ve_app` widget returns these from `Widget::frame_spec` and draws by size
+and height in `Widget::ui_sized`; the shell adds the menu (pop out, other window, other machine). Try:
+`cargo run -p ve_frame --example playground`.
+
+### Panels
+
+`egui::Panel::top(id).show(ui, ..)` / `Panel::left` and `CentralPanel::default().show(ui, ..)` inside
+`eframe::App::ui` (egui 0.34+; the old `TopBottomPanel` / `SidePanel` on a `Context` are gone, and 0.36
+deprecated `show_inside` in favour of `show` on a `Ui`).
+
+## Controls, menus and dialogs ([guide §7](https://github.com/vhrdtech/vhrd_egui/blob/main/docs/ux-guide.md#7-controls-menus-and-dialogs))
+
+### A list of checkboxes stays open while it is ticked
+
+`ui.menu_button` closes after every click inside (egui 0.36): use `ve_basics::Checklist` (BAS-6) for a dropdown
+of checkboxes, with the rows your own (tooltips, a greyed row saying why, a fold with the rest) or
+`checklist_item` for a plain one:
 
 ```rust
 ve_basics::Checklist::new(format!("tracks: {}", picked.len())).ui(ui, |ui| {
@@ -82,77 +172,27 @@ ve_basics::Checklist::new(format!("tracks: {}", picked.len())).ui(ui, |ui| {
 
 A menu of actions (one click does one thing) stays a `menu_button`.
 
-## A status glyph is drawn in its tone
+### Buttons, confirms and notices
 
-A status emoji (✅ 🚧 ⛔ ...) is painted in its tone's colour, never as a plain character inside a label, where it
-takes the text colour (egui draws every glyph as a one-colour mask). In a `Ui`: `ve_theme::status_icon(ui, name,
-tooltip)` (THM-15). In a widget that paints its own labels (a `ve_dash::GanttRow`, a `BurnSeries` legend entry):
-the glyph goes in the item's `glyph` field as `ve_dash::Glyph::new(s.glyph, s.tone.ink(&tokens))` (DASH-25),
-not in its text; the status word goes in the item's hover.
+The guide's rules for button labels, prominence, confirms, undo, toasts and alerts, and messages next to a field
+have no helper of their own yet: label buttons with a verb (`"Reset storage to defaults…"`), use
+`ve_theme::UiExt`'s primary and danger buttons for the prominent and the destructive one, and keep a validation
+message right under its field in `ui.tokens().colors.warn`.
 
-## Highlight related items on hover
-
-When something refers to something else (a session to its PC, a lane count to its sessions, a graph line to its
-legend entry, a row to its chart and status light), hovering one highlights the others at once:
-
-```rust
-let r = ui.label("eth0");
-ve_basics::hover_link(ui, "iface-eth0", &r);   // and the same key on the rx chart and the status light of eth0
-```
-
-`hover_link(ui, key, &response) -> bool` registers the item under the key and returns whether it is highlighted
-now (hovered itself or linked to the hovered one), so custom painters can draw the highlight.
-
-## Labels
-
-Labels are not selectable: `ve_basics::setup_labels(ctx)` once at startup (selectable labels swallow clicks meant
-for the widget under them and show a text cursor everywhere). Text worth copying (ids, paths, commands, SHAs)
-uses `ve_basics::copyable_label(ui, text)`.
-
-## Numbers and bars
-
-Percent bars use a fixed block count, 10 by default (`ve_dash::Meter`, `Meter::blocks(Blocks)`): 20, 25, 50 or
-100 when finer steps help, so bars across an app stay comparable; `Blocks::Auto` grows the count with the
-width (the old always-grows behaviour) and is for the rare case where the width itself should carry meaning,
-not for ordinary load bars. Any non-zero value lights at least one block; the tooltip says the percentage and
-the block count (`"63 % (6 of 10 blocks)"`). Live values that change length use `ve_dash::steady_width` /
-`StatTile::steady()` so what follows does not jump. Jumpy per-frame values go through `ve_dash::Decay` before
-they drive a bar.
-
-Widths are learned, never hard-coded: anything whose content changes length (numbers, names, a column shared by
-rows) keeps the widest it has been, via `steady_width` or a learned-width helper in ve_dash; no fixed pixel widths
-in app code. Numbers use tabular digits so they don't shift.
-
-## Colours and theme
-
-Colours, spacing, radii and type come from `ve_theme` tokens (`ve_theme::setup(ctx)` at startup installs the dark
-and light styles; egui follows the system preference). No hard-coded `Color32` in widgets. Status colours (good /
-warn / crit / off) always come with a text label or icon, never as the only carrier of meaning; the two series
-accents need direct labels on charts (their colour-vision separation sits in the labels-required band).
-
-Categorical colours (labels, chips, tags, series, hosts, models) never use red, orange or red-ish brown hues
-(OKLCH 5°-85°, `ve_theme::hue::ALERT_HUES`): those are reserved for error and warning. Colours that share a view
-must be clearly distinct, and a unit test checks both in dark and light (`hue::is_alert_hue`, `hue::delta_e`,
-`hue::hue_gap`).
-
-## Layout and state
+## Speed, state and errors ([guide §9](https://github.com/vhrdtech/vhrd_egui/blob/main/docs/ux-guide.md#9-speed-state-and-errors))
 
 - Keep the UI thread free: no blocking I/O or long computation inside `ui()`; workers send results through a
-  channel and call `ctx.request_repaint()`; the UI polls per frame.
-- Three kinds of state: *settings* (what the user configured, serialized), *visual* (layout, view state,
-  serialized), *transient* (connections, caches, rebuilt at start, never serialized).
-- Window title shows the app name; the top bar carries the build info at the right.
-- Panels: `egui::Panel::top(id).show(ui, ..)` / `Panel::left` and `CentralPanel::default().show(ui, ..)` inside
-  `eframe::App::ui` (egui 0.34+; the old `TopBottomPanel` / `SidePanel` on a `Context` are gone, and 0.36
-  deprecated `show_inside` in favour of `show` on a `Ui`).
-- No `unwrap` / `expect` on data from disk, the network or the user.
-- Every widget sits in the frame (`ve_frame::WidgetFrame`): no home-made title bars, panel borders or size
-  toggles. Its state goes on the LED (`.led(status, why)`), what it is and its stats into the ⓘ (`.about`,
-  `.info`), its forms into the sizes (`.sizes(SizeHints::new(min, nom, wide))`: min is a fixed size, nom and
-  wide are arrangements the body picks from the `Size` it is given; `.tall(h)` adds the height axis, read as
-  `area.height` in `show_area`), extra controls on the sides or in the footer. Content that can outgrow its
-  place scrolls (`.scroll(..)`; otherwise the frame scrolls it anyway and warns). A `ve_app` widget returns
-  these from `Widget::frame_spec` and draws by size and height in `Widget::ui_sized`;
-  the shell adds the menu (pop out, other window, other machine). Try: `cargo run -p ve_frame --example playground`.
-- A widget or layout helper another app could use goes into vhrd_egui (ve_frame, ve_dash, ve_basics, ve_theme),
-  not the app.
+  channel and call `ctx.request_repaint()`; the UI polls per frame. A worker that fails sends its error too.
+- Three kinds of state: *settings* or *seed* (what the user configured, serialized), *visual* (layout, view
+  state, serialized), *transient* (connections, caches, rebuilt at start, in `Widget::init` for a `ve_app`
+  widget, never serialized). Saved structs carry `#[serde(default)]` so new fields load from old files;
+  transient fields are `#[serde(skip)]`, e.g. `conn: Option<Device>`.
+- No `unwrap` / `expect` on data from disk, the network or the user: show the error in the UI with the next
+  step.
+- `ve_basics::StartupGuard` moves the saved state aside when the last start died (PLT-4); the template wires it
+  in `main.rs`.
+
+## Where the code lives ([guide §12](https://github.com/vhrdtech/vhrd_egui/blob/main/docs/ux-guide.md#12-where-the-code-lives-and-how-it-is-checked))
+
+A widget or layout helper another app could use goes into vhrd_egui (ve_frame, ve_dash, ve_basics, ve_theme)
+with a doc example, not the app. UI behaviour is tested headless with egui_kittest (`kittest.md`).

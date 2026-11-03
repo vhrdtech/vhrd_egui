@@ -122,27 +122,11 @@ Not web crates, and why: `ve_widget` (eframe with default features, tokio, `type
 
 ## UI guide rules
 
-Every app on vhrd_egui follows the house GUI guide, tpm `area/ops/gui-ux.md` (`~/git/tpm/area/ops/gui-ux.md`):
-each rule there has its reason, an example and its source. How to follow each one in egui, with code, is
-`egui_app_skill/references/ui-guide.md`. Read both before writing UI. Which helper carries which rule:
-
-- Theme: `ve_theme::setup(&cc.egui_ctx)` at startup; colours, spacing and radii from `Tokens` (`ui.tokens()`),
-  never hex literals; what `Style` can't express goes into a `UiExt` helper; tune in the gallery
-  (`cargo run -p ve_theme --example gallery`) and update its snapshots.
-- Tooltips on every control, number, badge and abbreviation; build info `build_info_label` (BAS-1); the app
-  menu on the version badge `AppMenu` (BAS-4).
-- Related items light up on hover: `hover_link` (BAS-3).
-- Labels not selectable: `setup_labels(ctx)` (BAS-2); text worth copying `copyable_label`, a region `copyable`
-  (BAS-7).
-- Percent bars: `Meter::blocks(Blocks)`, 10 blocks by default (DASH-4, DASH-13).
-- Learned widths: `ve_dash::steady_width`, `StatTile::steady()`; no fixed pixel widths; tabular digits.
-- Disabled things stay visible and say why: disabled with a tooltip, the cause highlighted with `hover_link`.
-- Nothing hidden, the rest under a fold: `FoldRest` / `fold_rest` (BAS-5).
-- Categorical colours avoid red and orange: `ve_theme::hue::ALERT_HUES`, unit tests with `hue::is_alert_hue`,
-  `hue::delta_e`, `hue::hue_gap` in both themes.
-- Every widget in the frame: `ve_frame::WidgetFrame` (FRM-1), a `FrameSpec` from `ve_app` widgets.
-- Checkbox lists stay open: `ve_basics::Checklist` (BAS-6); status glyphs in their tone: `status_icon` (THM-15).
-- Reusable UI lands here (ve_dash, ve_basics, ve_theme, ve_frame) with a doc example, not in the app.
+Every app on vhrd_egui follows the UX guide, [docs/ux-guide.md](docs/ux-guide.md): each rule once, with why, an
+example and its source (nothing hidden, disabled things say why, tooltips, hover links, theme tokens and colours,
+learned widths, the frame, and the rest). Its egui half,
+[egui_app_skill/references/ui-guide.md](egui_app_skill/references/ui-guide.md), has the helper and a snippet for
+each rule; read both before writing UI. Change a rule in the guide, its code in ui-guide.md.
 
 ## Code conventions
 

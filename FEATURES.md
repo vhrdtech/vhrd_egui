@@ -71,6 +71,7 @@ in tpm (P2605). Statuses were checked against the code.
   (`references/kittest.md`: it clicks, types and snapshots headless), the version policy (`references/stack.md`),
   the launcher icon / app id pattern and the upgrade flow (`references/upgrade.md`). Symlink it into
   `~/.claude*/skills/` like `firmware_template_skill`.
+- ✅ **PLT-10 UX guide as a docs page** (ops#3nov-0804b): `docs/ux-guide.md`, every UI rule once (what, why, example, source), section 2 the rules every UI shares (linked from the vhrd_cli CLI twin); `egui_app_skill/references/ui-guide.md` holds the egui code per rule and links back; AGENTS.md "UI guide rules" points to both.
 - 🚧 **PLT-6 Windows console output**: the template's `--version` calls `AttachConsole(ATTACH_PARENT_PROCESS)`
   (windows-sys) before printing, so the text reaches the terminal although release builds hide the console window.
   Written, not yet run on Windows.
