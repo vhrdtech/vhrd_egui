@@ -406,7 +406,7 @@ fn copyable_region_selects_and_copies_its_labels() {
             setup_labels(ui.ctx());
             ui.label("outside");
             ve_basics::copyable(ui, |ui| {
-                ui.label("P2620#26oct-0758 log line");
+                ui.label(" log line");
                 if ui.button("open").clicked() {
                     clicks.set(clicks.get() + 1);
                 }
@@ -415,7 +415,7 @@ fn copyable_region_selects_and_copies_its_labels() {
     });
     h.run();
     let outside = h.get_by_label("outside").rect();
-    let line = h.get_by_label("P2620#26oct-0758 log line").rect();
+    let line = h.get_by_label(" log line").rect();
     h.drag_at(outside.left_center() + vec2(1.0, 0.0));
     h.run();
     h.drop_at(outside.right_center());
@@ -445,7 +445,7 @@ fn copyable_region_selects_and_copies_its_labels() {
             OutputCommand::CopyText(t) => Some(t.clone()),
             _ => None,
         });
-    assert_eq!(copied.as_deref(), Some("P2620#26oct-0758 log line"));
+    assert_eq!(copied.as_deref(), Some(" log line"));
     h.get_by_label("open").click();
     h.run();
     assert_eq!(clicks.get(), 1);

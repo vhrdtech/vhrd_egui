@@ -17,7 +17,7 @@ use ve_dash::{
 use ve_frame::{FrameState, WidgetFrame};
 
 /// Snapshots are compared with a small budget of failing pixels: the wgpu renderers of the PCs differ in a
-/// handful of anti-aliased pixels (2-9 on omarchy-m1, DASH-21). A real change moves far more than that.
+/// handful of anti-aliased pixels (2-9 on one of our dev PCs, DASH-21). A real change moves far more than that.
 fn tolerant() -> egui_kittest::SnapshotOptions {
     egui_kittest::SnapshotOptions::new().max_failed_pixels(20)
 }
@@ -164,10 +164,10 @@ fn dash_panel_snapshot() {
                 ui.spacing_mut().item_spacing.x = 28.0;
                 ui.add(StatTile::new("nodes online", "3/3").value_color(theme.good));
                 ui.add(StatTile::new("worst rtt", "4.2").unit("ms"));
-                ui.add(StatTile::new("this pc", "omarchy-m1"));
+                ui.add(StatTile::new("this pc", "dev-pc-a"));
             });
             ui.add_space(8.0);
-            WidgetFrame::new("gpd-omarchy").show(ui, &mut frame, |ui, _| {
+            WidgetFrame::new("dev-pc-b").show(ui, &mut frame, |ui, _| {
                 ui.add(StatusLight::new(Status::Good, "connected"));
                 ui.add_space(6.0);
                 ui.add(Sparkline::new(&rtt).height(42.0).color(theme.accent));

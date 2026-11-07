@@ -28,7 +28,7 @@ impl Default for Gallery {
             radio: 1,
             slider: 63.0,
             drag: 42,
-            text: "omarchy-m1".to_owned(),
+            text: "dev-pc-a".to_owned(),
             combo: 0,
             toggle: true,
             selected: 1,

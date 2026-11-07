@@ -3,8 +3,8 @@
 //! A btop-style node dashboard built from the ve_dash blocks: stat tiles,
 //! status lights, sparklines, meters and fed by a small
 //! simulation; below it a task burndown and a Gantt chart of made-up releases
-//! (wheel over the Gantt zooms, drag scrolls in time, a click names the row). The real mesh dashboard (live `tpm_mesh` data) lives in the
-//! tpm_mesh_dash repo; this demo stays here so the crate shows off and
+//! (wheel over the Gantt zooms, drag scrolls in time, a click names the row). The real mesh dashboard (live
+//! data) lives in its own private app; this demo stays here so the crate shows off and
 //! exercises every block without external dependencies.
 //!
 //! Renders through wgpu and repaints continuously: vsync paces the loop at the

@@ -253,7 +253,7 @@ fn slack(w: &World, id: BodyId, side: ve_settle::Side, wall: Option<f32>) -> Opt
     gaps.chain(wall).reduce(f32::min)
 }
 
-/// P2605#18oct-1409 (SETL-43): a tidy up toward each side packs every body that way (against the wall, or
+/// (SETL-43): a tidy up toward each side packs every body that way (against the wall, or
 /// against what lies before it), then the world holds again and nothing moves; the dash's world is open at the
 /// bottom, so down packs against the lowest body's edge.
 #[test]

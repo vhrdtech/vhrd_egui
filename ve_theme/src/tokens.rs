@@ -144,7 +144,7 @@ pub struct Palette {
     pub focus: Color32,
     /// Identifier text: an agent session's slug (`sajiv`). Distinct from every series, status and model color.
     pub slug: Color32,
-    /// Identifier text: a task name or id (`P2605#8oct-1139`). Distinct from `slug` and from every series color.
+    /// Identifier text: a task name or id. Distinct from `slug` and from every series color.
     pub task: Color32,
 }
 

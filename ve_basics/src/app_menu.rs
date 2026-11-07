@@ -22,7 +22,7 @@ pub enum AppMenuAction {
 /// [`AppMenu::contents`] and calls [`AppMenu::dialog`] once per frame.
 ///
 /// ```ignore
-/// let menu = AppMenu::new(&build_info).title("TPM mesh").description("Live dashboard of the PC mesh");
+/// let menu = AppMenu::new(&build_info).title("Mesh Dash").description("Live dashboard of the PC mesh");
 /// if menu.badge(ui).action == Some(AppMenuAction::ResetStorage) {
 ///     self.settings = Settings::default();
 ///     ve_basics::reset_egui_memory(ui.ctx());
@@ -62,7 +62,7 @@ impl<'a> AppMenu<'a> {
         }
     }
 
-    /// The app's name as people know it ("TPM mesh", not `tpm_mesh_dash`).
+    /// The app's name as people know it ("Mesh Dash", not the crate name).
     pub fn title(mut self, title: &'a str) -> Self {
         self.title = title;
         self

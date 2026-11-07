@@ -5,7 +5,7 @@ and AI agents alike. [CHANGELOG.md](CHANGELOG.md) records what changed and when;
 state.
 
 Last full review: 3 Oct 2026 (commit `46db291`, 0.1.0). Built from the code and the extraction candidates collected
-in tpm (P2605). Statuses were checked against the code.
+in our internal tracker. Statuses were checked against the code.
 
 ## How to use this file
 
@@ -46,8 +46,8 @@ in tpm (P2605). Statuses were checked against the code.
 ## Platform (`PLT`)
 
 - 🚧 **PLT-1 One egui version across the stack**: `[workspace.dependencies]` here is the pin (egui / eframe /
-  egui_kittest 0.36, the latest release on 8 Oct 2026); vhrd_egui, egui_tabular 0.2, mx3 and tpm_mesh_dash are on
-  it. eventfull, IOWeaver and RockFace are on 0.33 and are being ported (P2605#8oct-1139, 8 Oct 2026). Policy and
+  egui_kittest 0.36, the latest release on 8 Oct 2026); vhrd_egui, egui_tabular 0.2, and another in-house app and the mesh dashboard app are on
+  it. eventfull, one sibling GUI app and another sibling GUI app are on 0.33 and are being ported (8 Oct 2026). Policy and
   porting notes for apps: `egui_app_skill/references/stack.md`.
 - ✅ **PLT-2 App template as a skill**: `egui_app_skill/` (SKILL.md, `templates/`, `references/`) and the
   `ve_template` command (`new`, `new --answers`, `check-answers`, `compare`, `version`): generates an app with
@@ -57,7 +57,7 @@ in tpm (P2605). Statuses were checked against the code.
   and adoption. `ve_template/src/`, unit tests there. Verified 8 Oct 2026: a generated app with the theme on
   builds, passes clippy -D warnings, fmt and its three kittest tests (wgpu snapshot). Missing: the `shell`
   layout (unblocked: the shell is now `ve_app`, WID-8), verified Windows console output (PLT-6 untested on
-  Windows). Supersedes eframe_template (P2542).
+  Windows). Supersedes eframe_template.
 - 🚧 **PLT-3 Tests and CI**: `ve_dash` has unit tests (history, heat gradient) and egui_kittest UI tests
   (`ve_dash/tests/ui.rs`): AccessKit queries for labels and tooltips plus a wgpu-rendered image snapshot
   (`tests/snapshots/dash_panel.png`, update with `UPDATE_SNAPSHOTS=1`). `ve_app/tests/ui.rs` covers the shell
@@ -131,8 +131,8 @@ in tpm (P2605). Statuses were checked against the code.
   rebuilds transient state in `init`, and the demo `Note` widget uses it; re-exported from `ve_app::prelude`.
   Still hard-codes the field names.
 - ⬜ **WID-6 `util` module**: `ve_widget/src/util.rs` is empty.
-- 💡 **WID-7 Widget grid / canvas and indicator / gauge widgets**: from IOWeaver (Widget Canvas, Indicators and
-  gauges) and RockFace (Widget grid). Basic indicators now exist in `ve_dash` (DASH area); this item keeps the
+- 💡 **WID-7 Widget grid / canvas and indicator / gauge widgets**: from one sibling GUI app (Widget Canvas, Indicators and
+  gauges) and another sibling GUI app (Widget grid). Basic indicators now exist in `ve_dash` (DASH area); this item keeps the
   grid / canvas part and richer gauges.
 - ✅ **WID-8 App shell and its windows**: crate `ve_app`. `Shell::new(cc, cx, ShellOptions)` turns on
   `ve_theme::setup` and `ve_basics::setup_labels`, implements `eframe::App` (`Shell::ui` for apps that wrap
@@ -155,8 +155,8 @@ in tpm (P2605). Statuses were checked against the code.
 
 ## Dashboard building blocks (`DASH`)
 
-btop-style pieces for status dashboards, crate `ve_dash`. First consumer: the tpm mesh node dashboard
-(P2620, own repo `tpm_mesh_dash`, reads `tpm_mesh status --json`). The in-repo demo is
+btop-style pieces for status dashboards, crate `ve_dash`. First consumer: a mesh node dashboard
+(its own private app, reads our internal tooling's status data). The in-repo demo is
 `ve_dash/examples/dash_demo.rs`, synthetic data only; it renders through wgpu with continuous
 vsync-paced repaint, 60 fps. Dark-first: the dark theme is the VHRD brand dark variant (vhrd_brand
 `web/palette.json`), with the series accents derived from the brand CAN-teal / analog-purple signal hues,
@@ -194,13 +194,13 @@ chart must carry a direct text label (they all do); status colors always ship wi
   had (grow at once; shrink only by compaction, DASH-20), so live values changing length don't move what follows.
   `ve_dash/src/steady.rs`, kittest in `ve_dash/tests/ui.rs`.
 
-- ✅ **DASH-13 Segmented bar folded into Meter** (user, 15 Oct 2026, P2605): `SegBar` and `Segments` (exactly 5
+- ✅ **DASH-13 Segmented bar folded into Meter** (user, 15 Oct 2026): `SegBar` and `Segments` (exactly 5
   or 10 segments) are now one widget with `Meter` and its `Blocks` count (DASH-4): `Segments::Five` is
   `Blocks::Custom(5)`, `Segments::Ten` is `Blocks::Ten`. `SegBar` / `Segments` / `lit_segments` stay as
   `#[deprecated]` thin forwards to `Meter` / `Blocks`, so existing callers keep compiling; new code uses
   `Meter::blocks` directly. `ve_dash/src/segbar.rs`, `ve_dash/src/meter.rs`. Not changed in this session:
-  tpm_mesh_dash, which still calls `Meter::new` on auto in `usage.rs`, `machine.rs`, `cluster.rs` — a tpm task
-  tracks which of those should move to `.blocks(Blocks::Ten)` vs stay `Auto` (P2605).
+  the mesh dashboard app, which still calls `Meter::new` on auto in `usage.rs`, `machine.rs`, `cluster.rs` — a
+  tracked task there covers which of those should move to `.blocks(Blocks::Ten)` vs stay `Auto`.
 
 ## Basics (`BAS`)
 
@@ -235,37 +235,37 @@ Small helpers every app uses, crate `ve_basics`. UI rules that go with them: AGE
   widest forever: after `COMPACT_AFTER` (3 min) without growth the width glides (`animate_value`) down to the
   widest the content needed since, never while the content's width is still changing (5 s), and growth stays
   immediate; `reset_steady` still forgets everything. `ve_dash/src/steady.rs`, unit tests for the policy.
-- ✅ **DASH-21 Snapshots differ on omarchy-m1**: `sparkline_gradient`, `sparkline_axis` and `dash_panel` differed
-  by 2-9 pixels on omarchy-m1 (aarch64, its wgpu renderer). The three snapshots are now compared with a budget of
+- ✅ **DASH-21 Snapshots differ on one of our dev PCs**: `sparkline_gradient`, `sparkline_axis` and `dash_panel` differed
+  by 2-9 pixels on one of our dev PCs (aarch64, its wgpu renderer). The three snapshots are now compared with a budget of
   20 failing pixels (`tolerant()` in `ve_dash/tests/ui.rs`, egui_kittest `SnapshotOptions::max_failed_pixels`).
-- ✅ **DASH-22 Burndown chart** (P2620#21oct-1114b, for the tpm_mesh_dash tasks view): `Burndown` over `Day`s with several `BurnSeries` (name, colour, open per day as a line with a fading area, closed per day as bars side by side, ideas open as a band above the line, an ideal and a trend line dashed, each per series as `tpm burndown --json` gives them), a value axis in round steps, a day axis with month, week and day ticks by zoom (`AxisStyle`, `day_ticks`), a today line, a legend with the latest counts, a hover tooltip per day naming every series' values and `BurndownResponse::hovered`. Plain painter, no plotting crate; every size, dash and strength is a field of `BurndownStyle`. `Day`: civil dates without a date crate (`from_ymd`, `parse` incl. month-only, `month_end`, `weekday`, `label`). `ve_dash/src/burndown.rs`, `ve_dash/src/day.rs` (unit tests), kittest `burndown_snapshot_and_hover`, in `dash_demo`.
-- ✅ **DASH-23 Gantt chart** (P2620#21oct-1114b): `Gantt` of `GanttRow`s grouped under headers (in the order given), each with `GanttBar`s (start, end, colour, soft end for month-only dates: fades out, `~Nov 2026` in the tooltip) and `GanttMilestone` diamonds, dependency arrows (`GanttLink`, finish to start, elbow-routed, round when the next starts earlier, highlighted when either end is hovered), a today line, a fixed label column as wide as the widest label (learned) up to a share, the day axis on top. Wheel over the time area zooms around the pointer (consumed, so a scroll area around it doesn't scroll), drag and horizontal wheel pan; the range is a `GanttView` the caller keeps and persists (`span <= 0` fits the data). Tooltip per item or row; `GanttResponse` answers the clicked and hovered row and item ids and `view_changed`. All sizes, zoom limits and speeds in `GanttStyle`. `ve_dash/src/gantt.rs` (unit tests), kittests `gantt_snapshot`, `gantt_clicks_zooms_and_pans`, in `dash_demo`.
-- ✅ **DASH-24 Gantt schedule overlay** (P2620#21oct-2047d, after DASH-23, for the tpm schedule engine's CPM output): `GanttMarker`, a dated vertical line across the whole chart with a label, coloured `GanttStyle::risk_color` or `met_color` by its `at_risk` flag — a milestone's forecast. A `GanttBar` carries `latest_start` (a tick on the bar), `latest_finish` (a lighter slack tail from `end` to there, or — finishing later than that allows — the overrun past it painted in `risk_color`) and `critical` (a stroke in `critical_color`); the tooltip spells out the latest start, the slack or overrun days, and the critical flag. A `GanttLink`'s `to` may now name a marker, so a critical bar can point at the milestone it drives. Every new size and colour (`marker_width`, `marker_font_size`, `risk_color`, `met_color`, `critical_width`, `critical_color`, `tick_color`, `tick_width`, `tick_overhang`, `slack_alpha`) is a `GanttStyle` field, not the `Theme`'s — this overlay's colours are the chart's to pick. `ve_dash/src/gantt.rs` (unit tests `data_range_includes_markers`, `schedule_overrun_detection`), kittest `gantt_schedule_snapshot`, in `dash_demo`.
-- ✅ **DASH-25 Status glyph in its tone on Gantt rows and the burndown legend** (P2605#21oct-2048, P2620#26oct-0459): `Glyph { glyph, color }` and `Glyph::job`, a layout job with the glyph in its colour, a space and the label in the text colour; `GanttRow::glyph` and `BurnSeries::glyph` (both `Option`) put it before the row label (the label column measures it too) and the legend entry. egui paints every glyph as a one-colour coverage mask, so a status emoji written into the label took the label's colour: the tpm_mesh_dash Gantt and burndown stayed plain after THM-15 coloured its table. `ve_dash/src/glyph.rs` (unit test), kittest `glyphs_take_their_own_colour` (reads the painted text shapes' colours), snapshots `gantt`, `burndown`; UI guide rule "A status glyph is drawn in its tone".
+- ✅ **DASH-22 Burndown chart** (for the mesh dashboard app tasks view): `Burndown` over `Day`s with several `BurnSeries` (name, colour, open per day as a line with a fading area, closed per day as bars side by side, ideas open as a band above the line, an ideal and a trend line dashed, each per series as our internal tracker's burndown data gives them), a value axis in round steps, a day axis with month, week and day ticks by zoom (`AxisStyle`, `day_ticks`), a today line, a legend with the latest counts, a hover tooltip per day naming every series' values and `BurndownResponse::hovered`. Plain painter, no plotting crate; every size, dash and strength is a field of `BurndownStyle`. `Day`: civil dates without a date crate (`from_ymd`, `parse` incl. month-only, `month_end`, `weekday`, `label`). `ve_dash/src/burndown.rs`, `ve_dash/src/day.rs` (unit tests), kittest `burndown_snapshot_and_hover`, in `dash_demo`.
+- ✅ **DASH-23 Gantt chart** : `Gantt` of `GanttRow`s grouped under headers (in the order given), each with `GanttBar`s (start, end, colour, soft end for month-only dates: fades out, `~Nov 2026` in the tooltip) and `GanttMilestone` diamonds, dependency arrows (`GanttLink`, finish to start, elbow-routed, round when the next starts earlier, highlighted when either end is hovered), a today line, a fixed label column as wide as the widest label (learned) up to a share, the day axis on top. Wheel over the time area zooms around the pointer (consumed, so a scroll area around it doesn't scroll), drag and horizontal wheel pan; the range is a `GanttView` the caller keeps and persists (`span <= 0` fits the data). Tooltip per item or row; `GanttResponse` answers the clicked and hovered row and item ids and `view_changed`. All sizes, zoom limits and speeds in `GanttStyle`. `ve_dash/src/gantt.rs` (unit tests), kittests `gantt_snapshot`, `gantt_clicks_zooms_and_pans`, in `dash_demo`.
+- ✅ **DASH-24 Gantt schedule overlay** (after DASH-23, for our internal scheduling engine's CPM output): `GanttMarker`, a dated vertical line across the whole chart with a label, coloured `GanttStyle::risk_color` or `met_color` by its `at_risk` flag — a milestone's forecast. A `GanttBar` carries `latest_start` (a tick on the bar), `latest_finish` (a lighter slack tail from `end` to there, or — finishing later than that allows — the overrun past it painted in `risk_color`) and `critical` (a stroke in `critical_color`); the tooltip spells out the latest start, the slack or overrun days, and the critical flag. A `GanttLink`'s `to` may now name a marker, so a critical bar can point at the milestone it drives. Every new size and colour (`marker_width`, `marker_font_size`, `risk_color`, `met_color`, `critical_width`, `critical_color`, `tick_color`, `tick_width`, `tick_overhang`, `slack_alpha`) is a `GanttStyle` field, not the `Theme`'s — this overlay's colours are the chart's to pick. `ve_dash/src/gantt.rs` (unit tests `data_range_includes_markers`, `schedule_overrun_detection`), kittest `gantt_schedule_snapshot`, in `dash_demo`.
+- ✅ **DASH-25 Status glyph in its tone on Gantt rows and the burndown legend** : `Glyph { glyph, color }` and `Glyph::job`, a layout job with the glyph in its colour, a space and the label in the text colour; `GanttRow::glyph` and `BurnSeries::glyph` (both `Option`) put it before the row label (the label column measures it too) and the legend entry. egui paints every glyph as a one-colour coverage mask, so a status emoji written into the label took the label's colour: the mesh dashboard app Gantt and burndown stayed plain after THM-15 coloured its table. `ve_dash/src/glyph.rs` (unit test), kittest `glyphs_take_their_own_colour` (reads the painted text shapes' colours), snapshots `gantt`, `burndown`; UI guide rule "A status glyph is drawn in its tone".
 - ✅ **BAS-1 Build info**: `BuildInfo`, `build_info!()` (captures the *calling* crate's name, version,
   `GIT_SHA`, `BUILD_TIME` and `cfg!(debug_assertions)`) and `build_info_label` — `version · sha · debug|release`
   with an orange debug marker and a tooltip spelling everything out. The app's `build.rs` sets `GIT_SHA` /
-  `BUILD_TIME` (model: tpm_mesh_dash/build.rs, snippet in the macro docs). `ve_basics/src/build_info.rs`,
+  `BUILD_TIME` (model: the mesh dashboard app/build.rs, snippet in the macro docs). `ve_basics/src/build_info.rs`,
   `ve_basics/tests/ui.rs`.
 - ✅ **BAS-2 Label selection**: `setup_labels(ctx)` turns `selectable_labels` off app-wide, `copyable_label`
   opts a label back in for ids, paths, commands. `ve_basics/src/labels.rs`, tested.
-- ✅ **BAS-7 Copyable region** (P2620#26oct-0758): `copyable(ui, |ui| ..)` makes every label drawn inside
+- ✅ **BAS-7 Copyable region** : `copyable(ui, |ui| ..)` makes every label drawn inside
   selectable, for a region worth copying from (a detail panel, a log) in an app with labels off (BAS-2); widgets
   inside keep their clicks. `ve_basics/src/labels.rs`, tested.
 - ✅ **BAS-3 Hover link**: `hover_link(ui, key, &response)` — hovering one item highlights every item registered
   under the same key from the next frame; state in ctx memory, no repaint while the pointer rests.
   `ve_basics/src/hover_link.rs`, tested.
-- ✅ **BAS-4 App menu** (P2605#18oct-1206): one menu every vhrd egui app shares, opened from its version badge:
+- ✅ **BAS-4 App menu** : one menu every vhrd egui app shares, opened from its version badge:
   name, description, the build in full (version, commit, build time, profile; copyable), built with egui, and *Reset storage to
   defaults…*, which asks first (Cancel / Esc / a click outside keep everything) and returns
   `AppMenuAction::ResetStorage`; the app puts its saved state back to the defaults, `reset_egui_memory` forgets
   egui's window positions, scroll offsets and folds but keeps the styles, fonts, zoom and theme preference.
   `AppMenu::badge` draws the badge (as `build_info_label`), `attach` puts the menu on a badge the app draws
   itself, `contents` + `dialog` go into an existing menu. `ve_app` has it in *Help* and on the status bar's badge
-  (WID-8), the template's top bar uses it (PLT-2), tpm_mesh_dash on its `v…` badge (APP-116).
+  (WID-8), the template's top bar uses it (PLT-2), the mesh dashboard app on its `v…` badge (APP-116).
   `ve_basics/src/app_menu.rs`, kittests and snapshot `app_menu` in `ve_basics/tests/ui.rs`.
 
-- ✅ **BAS-5 Fold rest** (P2605#20oct-1628): nothing is hidden: a list cut for room ends in a fold with the rest,
+- ✅ **BAS-5 Fold rest** : nothing is hidden: a list cut for room ends in a fold with the rest,
   never a bare "N more". `FoldRest` (header in the caller's own row, body below; collapsed by default,
   `default_open`, `is_open`; in a grid the header alone, the caller draws the rest as rows while open) and
   `fold_rest` (both in one call): the header is the caller's text with a small
@@ -273,14 +273,14 @@ Small helpers every app uses, crate `ve_basics`. UI rules that go with them: AGE
   slides open like a collapsing header and its state lives in egui memory (`reset_egui_memory` folds it again).
   The rule: AGENTS.md "UI guide rules", `egui_app_skill/references/ui-guide.md`. Shown in the ve_theme gallery
   (Containers). `ve_basics/src/fold_rest.rs`, kittests (folded, open, split header, grid) and snapshots
-  `fold_rest_folded` / `fold_rest_open` in `ve_basics/tests/ui.rs`. Used by tpm_mesh_dash (P2620#20oct-1628).
-- ✅ **BAS-6 Checklist** (P2620#26oct-0459): a dropdown of checkboxes that stays open while they are ticked;
+  `fold_rest_folded` / `fold_rest_open` in `ve_basics/tests/ui.rs`. Used by the mesh dashboard app.
+- ✅ **BAS-6 Checklist** : a dropdown of checkboxes that stays open while they are ticked;
   only a click outside it, Esc or its button closes it (`ui.menu_button` closes after every click inside in egui
   0.36). `Checklist::new(text).ui(ui, |ui| rows)` (`from_button` for a styled button, `max_height`; the list
   scrolls), `checklist_item(ui, &mut picked, &value, text)` for a plain row, `Checklist::is_open`. The rule:
   `egui_app_skill/references/ui-guide.md`. `ve_basics/src/checklist.rs`, kittest
-  `checklist_stays_open_while_ticking_and_closes_outside_or_on_esc`. Used by tpm_mesh_dash's task filters.
-- ✅ **BAS-8 Scroll strip** (P2620#27oct-0830): `ScrollStrip::new(id).show(ui, |ui| ...)` lays a row out left to right in the width left and scrolls it sideways in place when it is wider, instead of wrapping it or cutting it to "+N" (`ve_basics/src/scroll_strip.rs`). An arrow on each side shows that it scrolls and moves it by 80% of a view; an arrow with nothing more on its side is disabled and says why (at the start, at the end, all of it fits), never hidden; `StripTexts` for the app's own words. The arrows are egui's own ⏴ ⏵ (▶ is a picture in the emoji subset, ◀ is not, so they would not match), and the strip fits a room narrower than egui's smallest scroll area (64) so the right arrow is never pushed past the edge. Tests `a_scroll_strip_scrolls_with_its_arrows_and_disables_them_at_the_ends`, `a_scroll_strip_that_fits_disables_both_arrows`, `a_scroll_strip_in_a_narrow_room_keeps_its_right_arrow_in_it` (`ve_basics/tests/ui.rs`).
+  `checklist_stays_open_while_ticking_and_closes_outside_or_on_esc`. Used by the mesh dashboard app's task filters.
+- ✅ **BAS-8 Scroll strip** : `ScrollStrip::new(id).show(ui, |ui| ...)` lays a row out left to right in the width left and scrolls it sideways in place when it is wider, instead of wrapping it or cutting it to "+N" (`ve_basics/src/scroll_strip.rs`). An arrow on each side shows that it scrolls and moves it by 80% of a view; an arrow with nothing more on its side is disabled and says why (at the start, at the end, all of it fits), never hidden; `StripTexts` for the app's own words. The arrows are egui's own ⏴ ⏵ (▶ is a picture in the emoji subset, ◀ is not, so they would not match), and the strip fits a room narrower than egui's smallest scroll area (64) so the right arrow is never pushed past the edge. Tests `a_scroll_strip_scrolls_with_its_arrows_and_disables_them_at_the_ends`, `a_scroll_strip_that_fits_disables_both_arrows`, `a_scroll_strip_in_a_narrow_room_keeps_its_right_arrow_in_it` (`ve_basics/tests/ui.rs`).
 
 ## Theme (`THM`)
 
@@ -344,14 +344,15 @@ on every background (unit-tested), status colors always come with a text label.
   apart from brand red, warning apart from power orange, the copy equal to the sibling export.
 - ✅ **THM-14 emoji-fallback**: `install_fonts` adds `NOTO_EMOJI` (`fonts/NotoEmoji-subset.ttf`, 35 KB, Noto Emoji Regular
   monochrome, OFL, licence in `fonts/LICENSE-NotoEmoji.txt`) right after Plex and ahead of egui's built-in emoji fonts,
-  so 🧪 and 📋 and every tpm status, project, board and log emoji draw their own glyph (egui 0.36's NotoEmoji lacks
-  newer emoji, emoji-icon-font draws 📋 as a tag). The code points are in `fonts/emoji-glyphs.txt`; `just emoji-font`
-  downloads the current release and regenerates the subset (fonttools). Add a line there when an app needs another
-  emoji. Snapshot `tpm_status_emoji`. Not covered: ✓ ✗ (not in Noto Emoji; egui's fonts still draw them).
-- ✅ **THM-15 status colour**: `ve_theme::status` maps tpm's status words (`[task_status]`, `[project_status]`,
-- ✅ **THM-16 Status glyphs are legible in the neutral tone** (P2620#26oct-0459): `Tone::ink(tokens)`, the colour of text or a glyph in a tone: `Tone::color` except `Neutral`, which inks in `text_muted` (a neutral badge's text) rather than its base `line_strong` (a hairline, 2.2:1 on the background in both themes, against 6.8:1 and 5.3:1 for `text_muted`). `status_icon` and `status_icon_with` draw with it. Cause: THM-15 painted every glyph in `Tone::color`, so 📋 planned, 💡 idea and ⬜ stub, most rows of a tpm task list, nearly vanished and the tpm_mesh_dash table looked uncoloured. Kittest `status_glyphs_stand_out_in_both_themes` (the painted colour, at least 3:1 on the background in dark and light), snapshot `tpm_status_color`.
+  so 🧪 and 📋 and every one of our internal tracker's status, project, board and log emoji draw their own glyph
+  (egui 0.36's NotoEmoji lacks newer emoji, emoji-icon-font draws 📋 as a tag). The code points are in
+  `fonts/emoji-glyphs.txt`; `just emoji-font` downloads the current release and regenerates the subset
+  (fonttools). Add a line there when an app needs another emoji. Snapshot `status_vocab_emoji`. Not covered: ✓ ✗
+  (not in Noto Emoji; egui's fonts still draw them).
+- ✅ **THM-15 status colour**: `ve_theme::status` maps our internal tracker's status words (`[task_status]`, `[project_status]`,
+- ✅ **THM-16 Status glyphs are legible in the neutral tone** : `Tone::ink(tokens)`, the colour of text or a glyph in a tone: `Tone::color` except `Neutral`, which inks in `text_muted` (a neutral badge's text) rather than its base `line_strong` (a hairline, 2.2:1 on the background in both themes, against 6.8:1 and 5.3:1 for `text_muted`). `status_icon` and `status_icon_with` draw with it. Cause: THM-15 painted every glyph in `Tone::color`, so 📋 planned, 💡 idea and ⬜ stub, most rows of a task list, nearly vanished and the mesh dashboard app table looked uncoloured. Kittest `status_glyphs_stand_out_in_both_themes` (the painted colour, at least 3:1 on the background in dark and light), snapshot `status_vocab_color`.
   `[log_kinds]`) onto a glyph (THM-14's font) and a `Tone`; `status_icon(ui, name, tooltip)` looks a status up
-  by tpm's config.toml key and draws it (an unknown name still draws the bare word, neutral tone, rather than
+  by its config key and draws it (an unknown name still draws the bare word, neutral tone, rather than
   nothing), `status_icon_with(ui, glyph, tone, tooltip)` draws any glyph for an app's own vocabulary.
   egui 0.36 (epaint's `skrifa` outline rasteriser) has no COLR/CPAL or CBDT colour-glyph support — every glyph
   is one coverage mask tinted by the text colour, so tinting a status glyph is exactly colouring a label, the
@@ -361,23 +362,23 @@ on every background (unit-tested), status colors always come with a text label.
   re_ui's `hot_reload_design_tokens` does, so tuning doesn't need a rebuild. Needs serde on the token types.
 
 - 🐛 **THM-12 Palette copy test fails beside this vhrd_brand checkout**: `tokens::tests::palette_copy_matches_the_sibling_export`
-  compares `ve_theme/brand/palette.json` with `../vhrd_brand/web/palette.json` byte for byte. On omarchy-m1
+  compares `ve_theme/brand/palette.json` with `../vhrd_brand/web/palette.json` byte for byte. On one of our dev PCs
   (11 Oct 2026) the two differ (the sibling export has no `status` block, the copy here has one), so the test
   says "stale: run `just brand`" and `just test` is red; not looked into which side is right, since
   `just brand` would change colours every app and snapshot uses.
 
 ## Widget frame (`FRM`)
 
-One frame every widget sits in, crate `ve_frame` (user, 11 Oct 2026, P2605#11oct-1154): header, body, optional
+One frame every widget sits in, crate `ve_frame` (user, 11 Oct 2026): header, body, optional
 footer and sides, a size switch and a menu that moves the widget between the grid, an egui `Window`, another OS
 window and another machine. It is built on the pieces that existed apart and takes their place for new code:
 `Panel` (DASH-17), the status light (DASH-5), the `Widget` trait (WID-1), floating windows (WID-10) and the size
-switch (P2605#8oct-1205). ve_settle (SETL-5, SETL-7) later reads the same shapes and sizes.
+switch. ve_settle (SETL-5, SETL-7) later reads the same shapes and sizes.
 
 ### Plan (11 Oct 2026)
 
 - **Crate**: a new `ve_frame`, on `egui`, `ve_theme`, `ve_dash` and `serde`. Not inside `ve_widget`: a dashboard
-  such as tpm_mesh_dash wants the frame without `typetag`, `inventory` and tokio. The order is
+  such as the mesh dashboard app wants the frame without `typetag`, `inventory` and tokio. The order is
   `ve_theme` ← `ve_dash` ← `ve_frame` ← `ve_widget` ← `ve_app`.
 - **Builder** (draws one frame, owns nothing):
   `WidgetFrame::new(title).led(status, why).about(text).info(|ui| ..).sizes(hints).moves(&moves).menu(|ui| ..)`
@@ -405,13 +406,13 @@ switch (P2605#8oct-1205). ve_settle (SETL-5, SETL-7) later reads the same shapes
   `send(machine, Parcel) -> Result<(), String>`), handed in through `Moves::remote`. Without it the menu entry
   stays visible, disabled, with the reason in its tooltip; a machine that is known but unreachable is a disabled
   entry with its own reason.
-- **Fold-in without breaking tpm_mesh_dash**: `ve_dash::Panel`, `PanelSize` and `StatusLight` keep their API and
-  look (no `#[deprecated]`, tpm_mesh_dash lints with `-D warnings`). The frame draws its LED with `StatusLight`
+- **Fold-in without breaking the mesh dashboard app**: `ve_dash::Panel`, `PanelSize` and `StatusLight` keep their API and
+  look (no `#[deprecated]`, the mesh dashboard app lints with `-D warnings`). The frame draws its LED with `StatusLight`
   and its ⓘ and size chip with `info_icon` / `ActionChip`; `SizeMode: From<PanelSize>` (compact = min) lets a
   dash move over panel by panel. `Widget` gains frame hooks with defaults (`frame_spec`, `ui_sized`), so
   existing widgets compile unchanged, and `ve_app` puts every pane into the frame: WID-10 becomes the frame's
   pop-out. (As built, the stats are rows in `FrameSpec::stats` rather than a closure: the ⓘ closure would
-  borrow the widget while its body is drawn.) Porting tpm_mesh_dash is its own step (FRM-8), after the user has seen the playground.
+  borrow the widget while its body is drawn.) Porting the mesh dashboard app is its own step (FRM-8), after the user has seen the playground.
 
 ### Items
 
@@ -579,7 +580,7 @@ switch (P2605#8oct-1205). ve_settle (SETL-5, SETL-7) later reads the same shapes
   `widget_pops_out_of_the_tiles_and_back`, `widget_goes_to_another_os_window_and_is_restored_there`,
   `widget_goes_to_another_machine_and_is_received`, `unavailable_menu_entries_stay_visible_and_disabled` in
   `ve_app/tests/ui.rs`. Not checked on a real second monitor: the tests run with egui's embedded viewports.
-- ✅ **FRM-8 drop-panel, port tpm_mesh_dash to the frame**: its `Panel`s became `WidgetFrame`s (tpm_mesh_dash 0.63.0,
+- ✅ **FRM-8 drop-panel, port the mesh dashboard app to the frame**: its `Panel`s became `WidgetFrame`s (the mesh dashboard app 0.63.0,
   APP-108); then `ve_dash::Panel`, `PanelSize`, `panel()` and `SizeMode: From<PanelSize>` were dropped (DASH-7,
   DASH-17 below). `ve_dash`'s demo (`dash_demo`) and its `dash_panel` snapshot now use `WidgetFrame`, so ve_dash
   dev-depends on ve_frame (a dev-dependency cycle, fine for cargo).
@@ -591,7 +592,7 @@ switch (P2605#8oct-1205). ve_settle (SETL-5, SETL-7) later reads the same shapes
   kittest `an_apps_header_item_works`; the playground's `draw_hosted` / `Host` let a hosting app (the ve_settle
   sandbox) add its own. The layout hooks added for ve_settle (`set_auto_pick`, `body_rect`, `open_size`,
   `is_hex`, `set_layout_size`, `fold_in_grid`) are about laying frames out, not about settle, and stay.
-- ✅ **FRM-11 Height switch and painted switches** (user, 15 Oct 2026, P2605#15oct-1516): height has the model
+- ✅ **FRM-11 Height switch and painted switches** (user, 15 Oct 2026): height has the model
   width has. `HeightMode` (auto / min / nom / tall) beside `SizeMode` in `FrameState.height` (saved, auto in
   older saves; it travels in a `Parcel` too, `Parcel::frame_state()`); the body is told `Height` beside `Size`
   (`BodyArea::height`, `FrameResponse::height`, `FrameState::shown_height`; `show` keeps passing the `Size`
@@ -617,7 +618,7 @@ switch (P2605#8oct-1205). ve_settle (SETL-5, SETL-7) later reads the same shapes
   `vertical_auto_follows_the_room_height_without_flipping`, `a_hexagon_picks_its_height_too`,
   `pinned_tall_and_min_heights_hold`, `the_pair_of_switches_cycles_independently`,
   `without_heights_the_height_switch_is_disabled_and_says_why`, snapshots `switch_pair_dark` / `_light`.
-- ✅ **FRM-16 Red frames out of view notify** (P2605#18oct-0755, user, 18 Oct 2026): a frame in a grid whose LED
+- ✅ **FRM-16 Red frames out of view notify** (user, 18 Oct 2026): a frame in a grid whose LED
   is `Status::Crit` (or `Warn`, shown when the backdrop's `notify_warn` is on) while it is out of view (the
   `in_view` test of FRM landing: its middle or half of it in the `Ui`'s clip) raises a `ve_backdrop::Notice`
   each frame until it was seen: scrolled into view or its ring or arrow clicked, which scrolls to it (also
@@ -627,7 +628,7 @@ switch (P2605#8oct-1205). ve_settle (SETL-5, SETL-7) later reads the same shapes
   kittest `tests/notice.rs` (red out of view noticed with an arrow, red in view not, the arrow scrolls there and
   it goes quiet, scrolled into view and away again stays quiet).
 - ✅ **FRM-18 Tidy up has a direction** (with ve_settle SETL-43, 18 Oct 2026): `Toward` (up, left, down, right; `label`, `from_label`, `arrow`, serde), `FrameAction::Tidy(Toward)` and `Applied::Tidy(Toward)`; `WidgetFrame::layout_menu`'s "Tidy up" is a submenu of the four ways, and `tidy_ui` draws the same entries for a host's own menus (a chip, a page's background).
-- ✅ **FRM-17 Right click on a size switch picks a mode** (user, P2605#18oct-1407, 18 Oct 2026): a right click on the width switch opens a small list of its four modes (auto, min, nom, wide), on the height switch of its own (auto, min, nom, tall), the one set marked and each with a tooltip; a pick jumps straight there, no cycling (`switch::pick_list`, egui's context menu on the switch). A left click still steps to the next mode; the tooltip's first line says both (`width: nom, click for wide, right-click to pick one`). A disabled height switch opens no list. Kittest `a_right_click_on_a_switch_picks_a_mode_straight`; snapshot `switch_pair_hovered`.
+- ✅ **FRM-17 Right click on a size switch picks a mode** (user, 18 Oct 2026): a right click on the width switch opens a small list of its four modes (auto, min, nom, wide), on the height switch of its own (auto, min, nom, tall), the one set marked and each with a tooltip; a pick jumps straight there, no cycling (`switch::pick_list`, egui's context menu on the switch). A left click still steps to the next mode; the tooltip's first line says both (`width: nom, click for wide, right-click to pick one`). A disabled height switch opens no list. Kittest `a_right_click_on_a_switch_picks_a_mode_straight`; snapshot `switch_pair_hovered`.
 - ✅ **FRM-15 A width of the user's in a grid** (with ve_settle SETL-42, 18 Oct 2026): `FrameState::grid_width` (saved; `None` in older saves) beside `grid_height`: a rectangle in a grid is that wide whatever its layout's room, and with a held size it fills it (the body scrolls where its content wants more, the switches on auto pick by that room).
 - ✅ **FRM-14 One row of header icons** (user, 15 Oct 2026 16:13 and 16:14): the header's icons are one family
   (`ve_dash::ICON` 13 pt box, `ICON_STROKE` 1.2 pt, `icon_ink` muted / lit, `icon_center` pixel-snapped): the ⓘ
@@ -669,12 +670,12 @@ switch (P2605#8oct-1205). ve_settle (SETL-5, SETL-7) later reads the same shapes
   what is open between the two is SETL-18.) A control added to the playground's control row made 20 of its
   kittests fail (clicks no longer arrived), so the row's layout is something they depend on: not looked into.
 
-- ✅ **FRM-19 Playground snapshots differ on omarchy-m1**: `playground_pair_dark` / `_light` (269 and 285 pixels over the 0.6 threshold) and `tab_hexagons` (54) failed on omarchy-m1 on a clean main as of 0.32.0. Cause: egui_kittest draws with a CPU rasteriser only where wgpu offers one; omarchy-m1 has lavapipe, gpd-omarchy only RADV, so pictures written there were drawn by its GPU, whose edge antialiasing differs by a level or two (at most 3 of 255 per channel here, scattered edge pixels, no change of content). Fix at the cause, as tpm_mesh_dash APP-105: `.cargo/config.toml` sets `LIBGL_ALWAYS_SOFTWARE=1`, so Mesa offers llvmpipe on a PC without lavapipe and every PC draws on a CPU; the three pictures redrawn on it (the example windows paint through wgpu on Vulkan, untouched). The pixel budgets of DASH-21 (`ve_dash` `tolerant()`) and `ve_frame`'s `tolerant()` answer the same cause and can likely go once their pictures are redrawn on a CPU too (P2605#20oct-1628).
+- ✅ **FRM-19 Playground snapshots differ on one of our dev PCs**: `playground_pair_dark` / `_light` (269 and 285 pixels over the 0.6 threshold) and `tab_hexagons` (54) failed on one of our dev PCs on a clean main as of 0.32.0. Cause: egui_kittest draws with a CPU rasteriser only where wgpu offers one; one of our dev PCs has lavapipe, another of our dev PCs only RADV, so pictures written there were drawn by its GPU, whose edge antialiasing differs by a level or two (at most 3 of 255 per channel here, scattered edge pixels, no change of content). Fix at the cause, as the mesh dashboard app APP-105: `.cargo/config.toml` sets `LIBGL_ALWAYS_SOFTWARE=1`, so Mesa offers llvmpipe on a PC without lavapipe and every PC draws on a CPU; the three pictures redrawn on it (the example windows paint through wgpu on Vulkan, untouched). The pixel budgets of DASH-21 (`ve_dashtolerant()`) and `ve_frame`'s `tolerant()` answer the same cause and can likely go once their pictures are redrawn on a CPU too.
 
 ## Physics layout (`SETL`)
 
 Dash panels laid out by a small physics sim instead of a grid, crate `ve_settle`: a prototype (user, 10 Oct 2026;
-background in tpm P2620 `notes.md` "Physics dash layout"). Built fresh; tpm_mesh_dash's `masonry.rs` (APP-29) was
+background in our internal design notes "Physics dash layout"). Built fresh; the mesh dashboard app's `masonry.rs` (APP-29) was
 read only for its lessons (panels must not wander, no re-plan jumps). The UX to match is Gridstack.js with gravity
 up and Packery's "others flow around the dragged one". No app uses it yet.
 
@@ -725,7 +726,7 @@ up and Packery's "others flow around the dragged one". No app uses it yet.
   line to the target). `snap_pass` in `ve_settle/src/world.rs`, 6 tests in `tests/core.rs`, a drag-and-drop
   check in `tests/sandbox.rs`. Not done: snapping a corner to a wall *edge* or to a neighbour's edge away from
   its corners, and snapping while dragging (it acts after the drop).
-- ✅ **SETL-9 One polygon solver, rectangles as its limit** (user, 10 Oct 2026, P2605#10oct-1622): every contact
+- ✅ **SETL-9 One polygon solver, rectangles as its limit** (user, 10 Oct 2026): every contact
   goes through convex polygons (`Poly`, at most 12 vertices on the stack; own separating axis test `sat`, so
   hexagons, SETL-4, are a shape away). A body's shape is the *pillow* of its rectangle (`Body::shape`): a vertex in
   the middle of each edge pushed out by a bulge; two bulged edges meet at one ridge, unstable, so bodies pressed
@@ -789,7 +790,7 @@ up and Packery's "others flow around the dragged one". No app uses it yet.
   not packed tight (10 rows where 8 would do): holes beside a panel that has another under it stay. Tests:
   `a_packed_field_gives_way_row_by_row_without_crushing` in `tests/pillow.rs`, the full-scene kittest checks no
   squeeze.
-- ✅ **SETL-12 Vertex attraction aligns sizes** (user, 10 Oct 2026, P2605#10oct-1727): a widget very close in size or
+- ✅ **SETL-12 Vertex attraction aligns sizes** (user, 10 Oct 2026): a widget very close in size or
   position to its neighbours resizes so their edges line up. Vertices pull on what is within `attract_range` (16),
   and the pull moves the edges that meet at the vertex, not the body (`World::attract_pass`): the body is resized
   within its minimum and maximum size (`Body::stretch_lo`, `stretch_hi`), at `attract_strength` (12, the share of
@@ -835,7 +836,7 @@ up and Packery's "others flow around the dragged one". No app uses it yet.
   overlap only, so rigid bodies piled on one spot (8 of them added on a diagonal) parted into a column longer than
   the world and stuck out past the walls. Fixed by the pillow (SETL-9): the jammed bodies bulge and spill sideways;
   `a_rigid_pile_spills_sideways_and_stays_inside_the_walls` in `tests/pillow.rs`.
-- ✅ **SETL-7 egui adapter: `ve_frame` widgets on the bodies** (user, 11 Oct 2026, P2605#11oct-2050):
+- ✅ **SETL-7 egui adapter: `ve_frame` widgets on the bodies** (user, 11 Oct 2026):
   `ve_settle::frames` behind the feature `frame` (the core stays without dependencies; the feature pulls in egui
   and `ve_frame`, not `ve_backdrop`). `Frames<W>` owns the widgets (a `ve_frame::Dock`) and keeps one body per
   widget that sits in the layout; the `World` stays the host's (it sets the bounds, steps it, may keep other
@@ -916,9 +917,9 @@ up and Packery's "others flow around the dragged one". No app uses it yet.
     for real (round 2's hover failed because the slider was below the fold of the panel, not a bug). Not done:
     stiffness and damping as colour on the contacts.
   - *Grow to the right*: the scene turned a quarter (gravity left, the right side open, scrolling sideways),
-    for the hard-edge rule of SETL-19; the scroll area follows the world's extent on whichever side is open. Not done: porting tpm_mesh_dash from `masonry.rs` (P2605#7oct-1717); the open ends
+    for the hard-edge rule of SETL-19; the scroll area follows the world's extent on whichever side is open. Not done: porting the mesh dashboard app from `masonry.rs`; the open ends
   are SETL-18. Not seen in a real window by the user yet: checked headless only.
-- ✅ **SETL-4 Convex polygon bodies** (P2620#9oct-1721, P2605#10oct-1656; user, 10 Oct 2026: convex only for now, a
+- ✅ **SETL-4 Convex polygon bodies** (; user, 10 Oct 2026: convex only for now, a
   dragged vertex is clamped to keep the shape convex): a body can have an *outline*, a convex polygon of up to 12
   vertices in unit coordinates of its rectangle (`Body::outline`, `BodyDesc::outline`, `World::set_outline`), so
   size, minimum, squeeze and walls keep working on the rectangle and the outline is resized with it. Shapes:
@@ -946,7 +947,7 @@ up and Packery's "others flow around the dragged one". No app uses it yet.
   an app (the sandbox draws the polygon and grabs by the rectangle); concave shapes; into-line pulls for outline
   vertices other than face to face (SETL-20); snapping outline vertices (SETL-20 slides along faces instead); an outline whose vertex was dragged off a side no longer
   touches its rectangle there, and walls and rectangle neighbours still see the rectangle.
-- ✅ **SETL-13 Sandbox: shape tiles and outline editing** (P2605#10oct-1656): "Add hexagon", "Add half hexagon" and
+- ✅ **SETL-13 Sandbox: shape tiles and outline editing** : "Add hexagon", "Add half hexagon" and
   "Add triangle" add tiles with a convex outline (the half hexagon and the triangle turn a quarter with each
   click); the *shapes* scene seeds a row of hexagons closed by half hexagons, triangles for the notches above and
   below it, a second row and two panels, which close up into a honeycomb. The selected body's outline can be
@@ -990,7 +991,7 @@ up and Packery's "others flow around the dragged one". No app uses it yet.
   `a_full_field_runs_past_the_open_bottom_lines_up_and_sleeps`, `a_honeycomb_rests_and_tiles_dropped_on_it_glide_in`). Sandbox: "friction" slider under "Outlines". Known: on ice
   (friction 0) the tight scene with tiles dropped on it did not come to rest before the sleep rule; not rechecked.
 - 🚧 **SETL-5 Sizes chosen by the layout**: a body offers several sizes (auto / compact / normal / wide,
-  P2605#8oct-1205) and the layout picks the one that fits best, instead of only squeezing.
+  ) and the layout picks the one that fits best, instead of only squeezing.
   Round 2: stepping down no longer waits for the row to stand still (a row too full between two hard walls
   never does); stepping up still does.
   First cut, for `ve_frame` widgets (SETL-7), outside the solver: `Frames::pick_pass` in
@@ -1123,7 +1124,7 @@ up and Packery's "others flow around the dragged one". No app uses it yet.
   blocked). A honeycomb under gravity needs attraction as a force that can hold a body off the wall, as the
   rectangles' corner snap (1500) holds against gravity (600); open question for the user. Answered by SETL-28:
   the honeycomb is laid out cell by cell, and the solver holds it.
-- ✅ **SETL-38 Settle on demand** (user, P2605#18oct-1205, 18 Oct 2026: "gravity is on by default and panels
+- ✅ **SETL-38 Settle on demand** (user, 18 Oct 2026: "gravity is on by default and panels
   jump all over the place"): a `World` holds by default (`Settling::Hold`): no gravity, corner snap, vertex
   attraction or grid pull (`Params::held`); bodies stay where they are put (drag, resize, add) and contacts only
   keep them apart. Settling is an action: `World::settle_once` (a "Tidy up") runs every force of the `Params` until
@@ -1132,7 +1133,7 @@ up and Packery's "others flow around the dragged one". No app uses it yet.
   up" (and "Push neighbours", SETL-40) in the ☰ menu; `ve_settle::frames::Frames::tidy_up` for a page's own
   entry, `Frames::apply` carries the ☰ one out. Sandbox: "Settle all the time" (on there), "Tidy up". Tests
   `tests/hold.rs`, `tests/frames_hold.rs`; the older tests settle all the time (`Settling::Always`).
-- ✅ **SETL-39 Resize handle on frames in a world** (user, P2605#18oct-1205c; the snapping is superseded by SETL-42): every frame `Frames` draws has a
+- ✅ **SETL-39 Resize handle on frames in a world** (user; the snapping is superseded by SETL-42): every frame `Frames` draws has a
   handle in its bottom right corner (`RESIZE_GRIP`): dragged, a preview follows the pointer (up to the
   neighbours' edge for a frame that does not push them, `room_from`); let go, the width snaps to the nearest of
   its min / nom / wide (a frame without a size switch takes it as its room), the height to its height steps
@@ -1140,7 +1141,7 @@ up and Packery's "others flow around the dragged one". No app uses it yet.
   or warns where its content wants more), back to its own within 8 points. Double click: auto again.
   `Shown::resized` reports it for hosts that keep the frame states themselves. A hexagon keeps its shape (width
   form only). Kittest `the_resize_handle_snaps_the_width_and_frees_the_height`.
-- ✅ **SETL-40 Push neighbours, per frame, off by default** (user, P2605#18oct-1205b): `Body::pushes`
+- ✅ **SETL-40 Push neighbours, per frame, off by default** (user): `Body::pushes`
   (`BodyDesc::pushes`, `World::set_pushes`; on by default in the core). A body that does not push floats over the
   others while dragged (they stay), and dropped on them or growing into them it takes the whole contact
   (`moves_alone`): it is put out of them as a place, not speed, and stops at their edge; it grows only into the
@@ -1150,10 +1151,10 @@ up and Packery's "others flow around the dragged one". No app uses it yet.
   where it was picked up (`a_body_that_does_not_push_and_finds_no_room_goes_back`). `FrameState::push` (saved, off by default) is the frame's setting,
   the ☰ "Push neighbours" toggle (`WidgetFrame::layout_menu`); `Frames` gives each body its frame's. Sandbox: "New
   widgets push their neighbours" (on there).
-- ✅ **SETL-43 Tidy up toward a side** (user, P2605#18oct-1409, 18 Oct 2026: "'tidy up' becomes a choice of direction: up / left / down / right"): `World::settle_once_toward(side)` settles once with gravity pulling to that side whatever `Params::gravity_side` says, then holds again (SETL-41); where that side has no wall (a page open at the bottom) the bodies' farthest edge that way stands in for one while it settles. It first packs at once (`World::pack_toward`: from the body nearest that side on, each slides that way to the gap from the wall or from what lies before it across its width; pinned ones stay and stop the others; nothing moves away from the side; sizes and limits kept), so a long way is not cut short when a glide cools to rest half way (it was: the far body of a tidy up to the right stopped 26 points short). `Frames::tidy_up(world, toward)` and the ☰'s `FrameAction::Tidy(Toward)` (FRM-18) carry the way; `frames::side_of`. Sandbox: "Tidy up" is a menu of the four ways. Tests `a_tidy_up_toward_each_side_packs_that_way_and_holds` (`tests/hold.rs`: each way packs, holds, nothing moves after), tpm_mesh_dash `a_tidy_up_toward_each_side_packs_that_way_and_holds`, `a_tidy_up_is_picked_from_the_background_the_chip_and_the_menu`.
-- ✅ **SETL-44 A held frame scrolls the view at its edge** (P2620#27oct-0830, user 27 Oct 2026: "scrolling while you hold the widget to put it farther away; also when resizing against a scrollable edge it should allow to go beyond and let it grow, now you can do it, but in very small increments like 50 times in a row; also allow moving beyond scrollable edge"): a frame moved or resized with the pointer within `EDGE_ZONE` (40 points) of the edge of a view that scrolls scrolls the view that way (`Ui::scroll_with_delta` to the host's scroll area, no animation), 900 points/s at the edge, up to twice that past it (`frames::edge_delta`), and the frame goes on with it. `View::scrolls` (new field) says on which axes the host's view scrolls; `Shown::reach` is the world point the host's canvas reaches while a frame is held, the frame (or its resize's preview) plus the zone and one scroll step, never short of the view's end, so the scroll area has room to go on and the canvas does not shrink under a frame moved back (it ran away upward before that). A resize keeps its handle when the view scrolls the corner out of sight. Before, the view could only go as far as the canvas, which ended at the lowest frame: each drag added the few points the pointer got past it. Fold arrow: a frame in the layout folds only where the host asks for it (`WidgetFrame::fold_in_grid`); a frame that can't fold where it is drawn is not folded (ve_frame clears `FrameState::collapsed`: a window folded and put back, or a saved fold, opens). The sandbox's "Fold in the layout" switch (on there, to show the folded body; changing it seeds the scene again); tpm_mesh_dash no longer folds panels in its world. Tests `the_edge_zones_scroll_toward_their_edge` (frames.rs), `a_panel_held_at_the_bottom_edge_scrolls_the_page_on_past_its_end`, `a_panel_resized_at_the_bottom_edge_grows_past_it` (`tests/dash.rs`), `a_frame_in_the_layout_folds_only_when_the_host_lets_it` (`tests/sandbox.rs`), ve_frame `a_frame_folds_in_a_grid_when_the_layout_asks_for_it`; the sandbox's `Watch` watches a held body from where it is let go (its last step is the pointer's, the scroll with it).
-- ✅ **SETL-42 A resize keeps the size it is let go at** (user, P2605#18oct-1407b, 18 Oct 2026: "resizing is strange: the handle snaps to other modes and hardly lets anything be resized"): SETL-39's handle snapped the width to the nearest of min / nom / wide and the height to a height step or back to the content's within 8 points. Now a rectangle keeps exactly the size it was let go at (`FrameState::grid_width`, FRM-15, and `grid_height`; `Resized::grid_width`), its body is rigid at that size (`Frames` gives the world `Limits::rigid`), and both switches go to auto: auto shows the forms that fit that size (`Frames` leaves the pick to the frame's room, `set_auto_pick(None)`), and the body scrolls where its content wants more (ve_frame's scroll fallback). Auto, not a fixed form kept with a scroll area: after a drag the panel shows what fits the size the user chose, not a form cut off and scrolled; a fixed form picked on the switch afterwards keeps the size and scrolls. The preview shows the size in points; the corner follows the pointer from where it took the handle. Double click: auto and the frame's own size again. A hexagon keeps its shape: its width still snaps to a form. Kittest `the_resize_handle_keeps_the_size_it_was_let_go_at` (in place of `the_resize_handle_snaps_the_width_and_frees_the_height`), tpm_mesh_dash `a_resize_keeps_its_size_and_moves_nothing_else`.
-- ✅ **SETL-41 Nothing moves by itself while a world holds** (user, P2605#18oct-1407c, 18 Oct 2026: "after a drag and drop panels still slide, gravity seems to pull downwards now"): SETL-38 took gravity and the pulls away, but contacts still moved, squeezed and sped up bodies nobody touched (a drop next to the dash's right wall squeezed a machine panel from 390 to 298 points and sent the panels under the gossip strip up at 80 points/s; tpm_mesh_dash's page moved others by 11 and 100 points after two drops). Now, while a world holds, a body nobody moves is `Body::still`: held, let go and not yet landed, gliding into a cell, a body that pushes (moving or growing) and what it reaches are not; every other body is a wall to the solver as a pinned one is (not moved, squeezed or given speed). `Params::held` has no squeeze (`tension` 0): a dropped body that does not fit is put out of what it lies in alone, or goes back where it was picked up (SETL-40), and nothing coasts after it is let go. Walls still bring in a body outside them. Tests `tests/still.rs` (a drop into free room, onto a neighbour, onto a full-width one, a resize, a body that pushes: nothing else moves over 1200 steps; the resize one failed before), tpm_mesh_dash `a_drop_moves_no_other_panel`.
+- ✅ **SETL-43 Tidy up toward a side** (user, 18 Oct 2026: "'tidy up' becomes a choice of direction: up / left / down / right"): `World::settle_once_toward(side)` settles once with gravity pulling to that side whatever `Params::gravity_side` says, then holds again (SETL-41); where that side has no wall (a page open at the bottom) the bodies' farthest edge that way stands in for one while it settles. It first packs at once (`World::pack_toward`: from the body nearest that side on, each slides that way to the gap from the wall or from what lies before it across its width; pinned ones stay and stop the others; nothing moves away from the side; sizes and limits kept), so a long way is not cut short when a glide cools to rest half way (it was: the far body of a tidy up to the right stopped 26 points short). `Frames::tidy_up(world, toward)` and the ☰'s `FrameAction::Tidy(Toward)` (FRM-18) carry the way; `frames::side_of`. Sandbox: "Tidy up" is a menu of the four ways. Tests `a_tidy_up_toward_each_side_packs_that_way_and_holds` (`tests/hold.rs`: each way packs, holds, nothing moves after), the mesh dashboard app `a_tidy_up_toward_each_side_packs_that_way_and_holds`, `a_tidy_up_is_picked_from_the_background_the_chip_and_the_menu`.
+- ✅ **SETL-44 A held frame scrolls the view at its edge** (user 27 Oct 2026: "scrolling while you hold the widget to put it farther away; also when resizing against a scrollable edge it should allow to go beyond and let it grow, now you can do it, but in very small increments like 50 times in a row; also allow moving beyond scrollable edge"): a frame moved or resized with the pointer within `EDGE_ZONE` (40 points) of the edge of a view that scrolls scrolls the view that way (`Ui::scroll_with_delta` to the host's scroll area, no animation), 900 points/s at the edge, up to twice that past it (`frames::edge_delta`), and the frame goes on with it. `View::scrolls` (new field) says on which axes the host's view scrolls; `Shown::reach` is the world point the host's canvas reaches while a frame is held, the frame (or its resize's preview) plus the zone and one scroll step, never short of the view's end, so the scroll area has room to go on and the canvas does not shrink under a frame moved back (it ran away upward before that). A resize keeps its handle when the view scrolls the corner out of sight. Before, the view could only go as far as the canvas, which ended at the lowest frame: each drag added the few points the pointer got past it. Fold arrow: a frame in the layout folds only where the host asks for it (`WidgetFrame::fold_in_grid`); a frame that can't fold where it is drawn is not folded (ve_frame clears `FrameState::collapsed`: a window folded and put back, or a saved fold, opens). The sandbox's "Fold in the layout" switch (on there, to show the folded body; changing it seeds the scene again); the mesh dashboard app no longer folds panels in its world. Tests `the_edge_zones_scroll_toward_their_edge` (frames.rs), `a_panel_held_at_the_bottom_edge_scrolls_the_page_on_past_its_end`, `a_panel_resized_at_the_bottom_edge_grows_past_it` (`tests/dash.rs`), `a_frame_in_the_layout_folds_only_when_the_host_lets_it` (`tests/sandbox.rs`), ve_frame `a_frame_folds_in_a_grid_when_the_layout_asks_for_it`; the sandbox's `Watch` watches a held body from where it is let go (its last step is the pointer's, the scroll with it).
+- ✅ **SETL-42 A resize keeps the size it is let go at** (user, 18 Oct 2026: "resizing is strange: the handle snaps to other modes and hardly lets anything be resized"): SETL-39's handle snapped the width to the nearest of min / nom / wide and the height to a height step or back to the content's within 8 points. Now a rectangle keeps exactly the size it was let go at (`FrameState::grid_width`, FRM-15, and `grid_height`; `Resized::grid_width`), its body is rigid at that size (`Frames` gives the world `Limits::rigid`), and both switches go to auto: auto shows the forms that fit that size (`Frames` leaves the pick to the frame's room, `set_auto_pick(None)`), and the body scrolls where its content wants more (ve_frame's scroll fallback). Auto, not a fixed form kept with a scroll area: after a drag the panel shows what fits the size the user chose, not a form cut off and scrolled; a fixed form picked on the switch afterwards keeps the size and scrolls. The preview shows the size in points; the corner follows the pointer from where it took the handle. Double click: auto and the frame's own size again. A hexagon keeps its shape: its width still snaps to a form. Kittest `the_resize_handle_keeps_the_size_it_was_let_go_at` (in place of `the_resize_handle_snaps_the_width_and_frees_the_height`), the mesh dashboard app `a_resize_keeps_its_size_and_moves_nothing_else`.
+- ✅ **SETL-41 Nothing moves by itself while a world holds** (user, 18 Oct 2026: "after a drag and drop panels still slide, gravity seems to pull downwards now"): SETL-38 took gravity and the pulls away, but contacts still moved, squeezed and sped up bodies nobody touched (a drop next to the dash's right wall squeezed a machine panel from 390 to 298 points and sent the panels under the gossip strip up at 80 points/s; the mesh dashboard app's page moved others by 11 and 100 points after two drops). Now, while a world holds, a body nobody moves is `Body::still`: held, let go and not yet landed, gliding into a cell, a body that pushes (moving or growing) and what it reaches are not; every other body is a wall to the solver as a pinned one is (not moved, squeezed or given speed). `Params::held` has no squeeze (`tension` 0): a dropped body that does not fit is put out of what it lies in alone, or goes back where it was picked up (SETL-40), and nothing coasts after it is let go. Walls still bring in a body outside them. Tests `tests/still.rs` (a drop into free room, onto a neighbour, onto a full-width one, a resize, a body that pushes: nothing else moves over 1200 steps; the resize one failed before), the mesh dashboard app `a_drop_moves_no_other_panel`.
 - ✅ **SETL-37 A seat put back gave speed** (found by the width sweep, SETL-36's test, 15 Oct 2026): contacts
   that put an outline back onto a slope it sits on (SETL-15) gave it the speed of that move, up to a seat's
   (`SEAT_SPEED`, 60 points/s). A seat pressed deeper by a neighbour (one rising under gravity into it) was let
@@ -1214,7 +1215,7 @@ up and Packery's "others flow around the dragged one". No app uses it yet.
   sends the yielder out, and the body grows on once there is room. Test `tests/robust.rs`
   `a_body_growing_in_a_full_row_never_overlaps_its_neighbours` (fifteen widths), kittest
   `the_size_switch_changes_the_body_and_the_neighbours_make_room`.
-- ✅ **SETL-29 Frames for a dashboard** (P2605#13oct-1130b, dash-egui plan 2/6, for tpm_mesh_dash APP-109):
+- ✅ **SETL-29 Frames for a dashboard** (dash-egui plan 2/6, for the mesh dashboard app APP-109):
   what `ve_settle::frames` lacked before a live dashboard can sit on it, found by reading the dash's
   `masonry.rs` and `app.rs` against frames.rs 0.23.0. (a) `Frames::hands`: `Hands::All` (default), `MouseOnly`
   (a frame senses clicks only while the last pointer was a touch, so a finger's drag over it goes to the scroll
@@ -1429,7 +1430,7 @@ up and Packery's "others flow around the dragged one". No app uses it yet.
 
 ## Backdrop (`BACK`)
 
-The app background as its own piece (tpm P2605#8oct-2316). Playground:
+The app background as its own piece. Playground:
 `cargo run -p ve_backdrop --example backdrop_playground`.
 
 - ✅ **BACK-1 Animated grid backdrop**: `ve_backdrop::Backdrop` draws a calm grid of dots or small squares
@@ -1451,7 +1452,7 @@ The app background as its own piece (tpm P2605#8oct-2316). Playground:
   `tests/snapshots/`); `playground::Playground` and the `backdrop_playground` example. Limits: at most
   `MAX_LIT` (32) frames reach the renderer (the strongest), `MAX_RIPPLES` (4) rings; one `Backdrop` is painted
   once per frame (one uniform buffer); the picture is checked headless (wgpu test renderer) and was
-  seen by the user in a window on the GPD (Hyprland, 11 Oct 2026). Shader squares have their edges on pixel
+  seen by the user in a window on one of our dev PCs (Hyprland, 11 Oct 2026). Shader squares have their edges on pixel
   boundaries, so they read as squares at 2 pt too (test `squares_differ_from_dots`). Not wired into `ve_app` or the template yet.
 - 🚧 **BACK-2 Emulated transparency**: `Settings::glass` draws a blurred copy of the desktop wallpaper under the
   grid, dimmed by the theme's background (`glass_dim`, `glass_blur`), so a window looks like frosted glass also
@@ -1483,9 +1484,9 @@ The app background as its own piece (tpm P2605#8oct-2316). Playground:
   Tests: parsers, blur, UV mapping, the working-resolution formula at no blur vs the old default blur, a fake
   Hyprland on Unix sockets (`hyprland.rs`), egui_kittest for fitted, lined up, unreadable wallpaper, the glass
   texture at no blur being at least the monitor's width, and two snapshots; `real_hyprland` and `real_desktop`
-  (ignored) ran against gpd-omarchy (Hyprland, rotated 2x panel, omarchy wallpaper: 0.1 s to read in release,
+  (ignored) ran against another of our dev PCs (Hyprland, rotated 2x panel, omarchy wallpaper: 0.1 s to read in release,
   4 s in debug), and the playground with `--glass` showed the blurred wallpaper under the grid there
-  (screenshot, 11 Oct 2026); defaults and the low-resolution look were tried again on the GPD and an M1 and
+  (screenshot, 11 Oct 2026); defaults and the low-resolution look were tried again on other dev PCs and
   adjusted from that (user, 11 Oct 2026).
   Missing: Windows and macOS lookups are written but never ran; swww / awww and sway position are not there;
   a changed wallpaper is only picked up by `reload_wallpaper` (or a move to another output); whether the
@@ -1495,7 +1496,7 @@ The app background as its own piece (tpm P2605#8oct-2316). Playground:
   monitor's physical pixel count is only an estimate (the position provider's or the viewport's monitor size
   times `pixels_per_point`), not read from the display hardware directly.
 
-- ✅ **BACK-3 Backdrop on the web** (P2605#13oct-1154, dash-egui plan): `ve_backdrop` is a web crate (PLT-9);
+- ✅ **BACK-3 Backdrop on the web** (dash-egui plan): `ve_backdrop` is a web crate (PLT-9);
   only its `glass` feature is native (wallpaper files, Hyprland sockets) and that was already cfg'd off on wasm32.
   - *Shader on WebGPU*: with `--features wgpu` on wasm32 the crate gives wgpu its WebGPU backend (a wasm32 target
     section in `ve_backdrop/Cargo.toml`: `fragile-send-sync-non-atomic-wasm`, `std`, `webgpu`, `wgsl`, as a
@@ -1513,7 +1514,7 @@ The app background as its own piece (tpm P2605#8oct-2316). Playground:
     60 frames a second with the pointer resting over a lit frame (neither from the backdrop nor in egui's
     output, after egui's own one pass that follows any input).
   - *CPU painter cost* (`cargo run --release -p ve_backdrop --example backdrop_bench`, one egui shape per mark,
-    12 lit frames and the pointer, mean of 200 frames, release, Ryzen AI 9 HX 370 (GPD), 13 Oct 2026):
+    12 lit frames and the pointer, mean of 200 frames, release, Ryzen AI 9 HX 370 (one of our dev PCs), 13 Oct 2026):
 
     | rect | marks | build | tessellate | vertices | indices |
     |---|---|---|---|---|---|
@@ -1526,7 +1527,7 @@ The app background as its own piece (tpm P2605#8oct-2316). Playground:
     `Mesh`. The larger cost is *build*, sampling the field once per mark (`field.rs`), 1.5 ms at 1920 x 1200;
     in wasm expect a few times that. Not measured in a browser yet.
 
-- ✅ **BACK-4 Notice ripples** (P2605#18oct-0755, user, 18 Oct 2026): a widget that needs a look while it is out of
+- ✅ **BACK-4 Notice ripples** (user, 18 Oct 2026): a widget that needs a look while it is out of
   view (`Notice`: id, rect, `Severity` `Crit` or `Warn`, title) sends rings across the backdrop from its centre,
   so the curve of a ring shows which way to scroll; they reuse the click ripples' field math, now per ring
   (`Ring`: width, light, grow, push and colour, mirrored in `backdrop.wgsl` with `MAX_RINGS` 8 = 4 click + 4
@@ -1546,14 +1547,14 @@ The app background as its own piece (tpm P2605#8oct-2316). Playground:
   per-pass store), `field.rs` test `a_notice_ring_tints_marks_in_its_colour` (colour and curvature),
   `tests/notice.rs` (kittest: the red ring in both renderers, shader and painter agree, off draws nothing,
   reduced motion arrow only, click on arrow and ring, snapshot `backdrop_notice_ring`). Seen in the real dash
-  (tpm_mesh_dash's own `App` fixture rendered through wgpu at 1240 × 640, backdrop *still*, a PC panel below the
+  (the mesh dashboard app's own `App` fixture rendered through wgpu at 1240 × 640, backdrop *still*, a PC panel below the
   fold forced red for the demo: the ring sweeps up through the gaps between panels, the arrow sits on the bottom
   edge under it, a click on the arrow scrolls the panel into view and both go; 18 Oct 2026). Not yet watched in a
   live window (the screen was locked then).
 
 ## Phosphor (`PHOS`)
 
-A digital-phosphor scope view made to show what an HDR screen adds (hobby side quest, tpm P2540#30oct-1636).
+A digital-phosphor scope view made to show what an HDR screen adds (hobby side quest).
 
 - ✅ **PHOS-1 HDR phosphor scope**: `ve_phosphor::Phosphor` keeps a scope picture on the GPU: a compute shader rasterises the frame's sweeps (`Settings::sweeps_per_s`, up to 65 535 a frame) into atomic hit counts, a second pass folds them into a density that fades with the persistence (`d' = d·k + hits`, `k = exp(-dt/τ)`, or infinite) and an age (seconds since the last hit), a separable blur blooms what is above the threshold; `PhosphorView` draws it in an egui wgpu paint callback with a log tone map (`level = ln(1+d)/ln(1+full)`, luminance from the ghost floor to the side's peak, evenly in stops), HDR | SDR side by side (`Mode::Split`, the buffer at half width) or a draggable divider (`Mode::Wipe`), palettes phosphor / temperature / age, a dim dotted graticule. Scenes: clock with jitter, ringing, noise and rare runt (1e-5), spike (1e-6) and late edge (1e-4); spectrum persistence with a carrier 90 dB over the floor, harmonic, spur and a frequency-hopping burst every 3 s; eye diagram with ISI, marginal bits and spikes; streamed sweeps (`push_sweeps`). Tone map and decay maths in `tonemap.rs` (mirrored by `common.wgsl`, unit tests there), the parameter block in `gpu.rs` (tests). The demo (`ve_phosphor` binary, feature `host`, default on): `host.rs` drives winit + wgpu + `egui_wgpu::Renderer` itself (eframe's surface is always 8-bit) on `Rgba16Float` + `SurfaceColorSpace::ExtendedSrgb`, which holds what egui's gamma path writes, so egui is unchanged; a linear-only (scRGB) surface goes through an offscreen float target and `paint::Present`; no float surface falls back to egui's 8-bit format and says why (`choose`, unit tests); the headroom from `display_hdr_info` (EDR current, else potential while it ramps up; `--headroom`; assumed 8x where unknown), re-read every 0.5 s; `demo.rs` puts the scope and the controls in `ve_frame` frames, the mode in the status line; `headless.rs` renders PNGs and `--bench` (clock 679k, spectrum 331k, eye 1.1M waveforms/s on the M1 Max under Asahi Vulkan); `tests/gpu.rs` checks HDR > 1 and SDR ≤ 1 on a real GPU (skips without one); naga validates the WGSL in unit tests. Not run in a window yet: the macOS EDR check is by hand (README).
 
@@ -1561,21 +1562,21 @@ A digital-phosphor scope view made to show what an HDR screen adds (hobby side q
 
 Code that lives in an app today and belongs here. Port the app in the same piece of work.
 
-- 📋 **EXT-1 Device watcher**: USB device discovery and hotplug list from `io_weaver/crates/device_watcher_ui`
-  (~500 lines). IOWeaver and RockFace then depend on it from here.
-- 📋 **EXT-2 Bit-field editor**: `bit_coder_ui` + `bit_coder_core` from `io_weaver/crates` (~1.8k lines). See also
-  the bitfield_introspect idea.
-- 📋 **EXT-3 Demo / tutorial overlay player**: scripted cursor, arrows and fading text over the app, from
-  `rockface/src/demo` (~470 lines).
-- 💡 **EXT-4 Promise**: one design from the two latest, `mx3/mx3_api/src/promise.rs` and
-  `wire_weaver_client/src/client/promise.rs` (RockFace's `src/promise.rs` with `UiRepainter` is older). Decide where
+- 📋 **EXT-1 Device watcher**: USB device discovery and hotplug list (`device_watcher_ui`, ~500 lines), ported in
+  from a sibling app. Two other in-house GUI apps then depend on it from here.
+- 📋 **EXT-2 Bit-field editor**: `bit_coder_ui` + `bit_coder_core`, ported in from a sibling app (~1.8k lines). See
+  also the bitfield_introspect idea.
+- 📋 **EXT-3 Demo / tutorial overlay player**: scripted cursor, arrows and fading text over the app, ported in
+  from a sibling app's `src/demo` (~470 lines).
+- 💡 **EXT-4 Promise**: one design from the two latest, a sibling app's `promise.rs` and
+  `wire_weaver_client/src/client/promise.rs` (another sibling GUI app's `src/promise.rs` with `UiRepainter` is older). Decide where
   the shared one lives once they converge.
-- 💡 **EXT-5 Byte array view / editor**: `byte_array_ui` from `io_weaver/crates`, barely developed, stays there for
+- 💡 **EXT-5 Byte array view / editor**: `byte_array_ui`, ported in from a sibling app, barely developed, stays there for
   now.
-- 💡 **EXT-6 Small helpers**: `PersistentFileDialog`, `label_click_tooltip` and similar from `rockface/src/util.rs`.
+- 💡 **EXT-6 Small helpers**: `PersistentFileDialog`, `label_click_tooltip` and similar, ported in from a sibling app's `util.rs`.
 
 ## Dropped and superseded
 
 - **DASH-7 Titled panel** (`ve_dash::panel()`): replaced by `ve_frame::WidgetFrame` (FRM-1, FRM-8).
 - **DASH-17 Panel header** (`ve_dash::Panel`, `PanelSize`, `SizeMode: From<PanelSize>`): replaced by
-  `WidgetFrame` with `.info`, `.about` and `.sizes` (FRM-1, FRM-2); tpm_mesh_dash moved over in 0.63.0 (FRM-8).
+  `WidgetFrame` with `.info`, `.about` and `.sizes` (FRM-1, FRM-2); the mesh dashboard app moved over in 0.63.0 (FRM-8).

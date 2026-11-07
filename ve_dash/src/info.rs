@@ -30,7 +30,7 @@ pub fn icon_center(painter: &Painter, rect: Rect) -> Pos2 {
 /// returned response (`.on_hover_ui(..)` for rich content).
 ///
 /// ```ignore
-/// info_icon(ui, &theme, 12.0).on_hover_text("plan: max 5x\nread by: gpd, m1");
+/// info_icon(ui, &theme, 12.0).on_hover_text("plan: max 5x\nread by: pc-a, pc-b");
 /// ```
 pub fn info_icon(ui: &mut Ui, theme: &Theme, size: f32) -> Response {
     let (rect, response) = ui.allocate_exact_size(vec2(size, size), Sense::hover());

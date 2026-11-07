@@ -152,10 +152,10 @@ fn number_font_digits_are_tabular() {
     );
 }
 
-/// Every emoji tpm shows for a task or project status, a board or a log kind draws the Noto Emoji glyph, not a
-/// box or egui's tag-like pictogram (THM-14).
+/// Every emoji our internal tracker shows for a task or project status, a board or a log kind draws the Noto
+/// Emoji glyph, not a box or egui's tag-like pictogram (THM-14).
 #[test]
-fn tpm_status_emoji_snapshot() {
+fn status_vocab_emoji_snapshot() {
     let emoji = [
         "✅", "🚧", "🧪", "🐛", "⬜", "📋", "💡", "⛔", "⏳", "🔍", "❌", // task_status
         "🔬", "🛠️", "🏗️", "🚀", "🔧", "⏸️", "🗄️", // project_status
@@ -177,14 +177,14 @@ fn tpm_status_emoji_snapshot() {
     ve_theme::setup(&h.ctx);
     h.fit_contents();
     h.run();
-    h.snapshot("tpm_status_emoji");
+    h.snapshot("status_vocab_emoji");
 }
 
-/// Every tpm status tinted by its tone (THM-15): the same glyphs as `tpm_status_emoji_snapshot`, now in
+/// Every status tinted by its tone (THM-15): the same glyphs as `status_vocab_emoji_snapshot`, now in
 /// colour. `status_icon_with` adds nothing egui's text painting didn't already do: the glyph takes the
 /// colour it is drawn with, the same as any other character (no colour-glyph font support to lose).
 #[test]
-fn tpm_status_color_snapshot() {
+fn status_vocab_color_snapshot() {
     let mut h = Harness::builder()
         .with_size(vec2(420.0, 420.0))
         .with_theme(Theme::Dark)
@@ -209,10 +209,10 @@ fn tpm_status_color_snapshot() {
     ve_theme::setup(&h.ctx);
     h.fit_contents();
     h.run();
-    h.snapshot("tpm_status_color");
+    h.snapshot("status_vocab_color");
 }
 
-/// `status_icon` looks a tpm status up by name; a name outside `STATUS_GLYPHS` still shows the bare word
+/// `status_icon` looks a status up by name; a name outside `STATUS_GLYPHS` still shows the bare word
 /// (neutral tone) rather than disappearing, and every icon carries its tooltip.
 #[test]
 fn status_icon_shows_tooltip_and_falls_back_for_unknown_names() {
@@ -220,12 +220,12 @@ fn status_icon_shows_tooltip_and_falls_back_for_unknown_names() {
         .with_size(vec2(300.0, 120.0))
         .build_ui(|ui| {
             ve_theme::status_icon(ui, "done", "finished, believed correct");
-            ve_theme::status_icon(ui, "not-a-tpm-status", "an app's own status");
+            ve_theme::status_icon(ui, "not-a-known-status", "an app's own status");
         });
     ve_theme::setup(&h.ctx);
     h.run();
     hover_tooltip(&mut h, "✅", "finished, believed correct");
-    h.get_by_label("not-a-tpm-status");
+    h.get_by_label("not-a-known-status");
 }
 
 /// Every status glyph stands out from the background it is drawn on, in both themes (THM-16): the neutral

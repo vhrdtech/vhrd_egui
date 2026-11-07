@@ -15,8 +15,8 @@ IDs per area (`APP-1`, ...).
 - Name IDs with a short slug when talking to the user (`APP-3 settings-window`, never a bare `APP-3`). Commit
   messages, CHANGELOG and code `TODO`s keep the bare ID.
 - Update it in the same commit as the code: mark items ✅/🚧/🐛 with a pointer to the code, add bugs you find but
-  don't fix (next free ID of the area, `tpm work claim APP` in a session), move obsolete items to *Dropped and
-  superseded*. Never renumber or reuse IDs.
+  don't fix (the next free ID of the area, claimed so two agents never pick the same one), move obsolete items to
+  *Dropped and superseded*. Never renumber or reuse IDs.
 - Don't track status anywhere else. Code `TODO`s that matter reference an ID: `// TODO(APP-3): ...`.
 
 ## CHANGELOG.md records every change
@@ -24,7 +24,7 @@ IDs per area (`APP-1`, ...).
 Every change a user would notice gets an entry under `## [Unreleased]` in the same commit: `### Added`,
 `### Changed`, `### Fixed`, `### Removed`, short, with the feature ID in parentheses. Record egui / vhrd_egui
 bumps. Pure refactors and typo fixes don't need an entry. Landing a session branch turns `[Unreleased]` into the
-next version's section (`tpm land`); work commits never bump the version.
+next version's section; work commits never bump the version.
 
 ## Commands
 
@@ -84,13 +84,13 @@ starts with a failing test when the bug can be reproduced in one.
 ## Commits
 
 Conventional Commits: `feat: ...`, `fix: ...`, `build: ...`, `docs: ...`. Short imperative summary, blank line,
-body with what and why; reference feature IDs (`feat: settings window (APP-3)`). Work happens on a session branch
-(`tpm work new SLUG`), each finished step is one commit with FEATURES.md and CHANGELOG.md updated in it; landing is
+body with what and why; reference feature IDs (`feat: settings window (APP-3)`). Work happens on a session branch,
+each finished step is one commit with FEATURES.md and CHANGELOG.md updated in it; landing is
 the user's call. Deploys that reach other people wait for the user's OK.
 
 ## Versions
 
-Landing bumps the version (`tpm land`), not each work commit. `--version` prints version, git SHA and build time
+Landing bumps the version, not each work commit. `--version` prints version, git SHA and build time
 (`build.rs` sets `GIT_SHA` / `BUILD_TIME`; `-dirty` with local changes), the same data the build-info label shows.
 
 ## Template upgrades

@@ -1,7 +1,7 @@
 # Code points kept in NotoEmoji-subset.ttf (`just emoji-font` regenerates it). One per line, `#` starts a comment.
 # Add a line here when an app needs another emoji, then run the recipe.
 
-# tpm task_status (~/git/tpm/config.toml)
+# our internal task-tracker's task_status vocabulary
 U+2705   # done
 U+1F6A7  # partial
 U+1F9EA  # testing, validation
@@ -14,7 +14,7 @@ U+23F3   # waiting
 U+1F50D  # verify
 U+274C   # dropped
 
-# tpm project_status
+# our internal task-tracker's project_status
 U+1F52C  # research
 U+1F6E0  # prototype
 U+1F3D7  # development
@@ -23,11 +23,11 @@ U+1F527  # maintenance
 U+23F8   # paused
 U+1F5C4  # archived
 
-# tpm board_status
+# our internal task-tracker's board_status
 U+1F3ED  # fabbed
 U+1F4D0  # designed
 
-# tpm log_kinds
+# our internal task-tracker's log_kinds
 U+1F4BB  # code
 U+2696   # decision
 U+2139   # info

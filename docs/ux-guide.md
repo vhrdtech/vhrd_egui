@@ -10,7 +10,7 @@ How to read it:
 - Each rule is a bold line, then its parts, then why, then an example, then its source in brackets.
 - "House rule" means a rule all our projects share; "user, date" is the owner's own word in a task or note.
 - 🔜 marks a part that is planned and not built yet.
-- Feature IDs (`BAS-5`, `FRM-1`, ...) point into [FEATURES.md](../FEATURES.md); task ids like `P2605#27oct-1009` are references into our project tracker.
+- Feature IDs (`BAS-5`, `FRM-1`, ...) point into [FEATURES.md](../FEATURES.md); task ids like are references into our project tracker.
 
 ## 1. The short version
 
@@ -20,7 +20,7 @@ How to read it:
 4. **Related things light up together on hover.** [vhrd_egui]
 5. **Colours and sizes come from the theme**, dark and light; red and orange mean trouble only. [vhrd_egui]
 6. **Nothing jumps**: learned widths, fixed bar steps, tabular digits. [vhrd_egui]
-7. **Feedback is near what it is about** and matches its weight: a status line, a toast, an alert only for real danger. [io_weaver, Apple HIG]
+7. **Feedback is near what it is about** and matches its weight: a status line, a toast, an alert only for real danger. [another in-house app, Apple HIG]
 8. **Actions are named as actions**, and a tap that throws work away asks first or can be undone. [user, Apple HIG]
 9. **The UI never freezes**: slow work runs off the UI thread and shows progress. [vhrd_egui]
 10. **Errors say what happened and what to do**, in the UI, never as a panic. [UX checklist, Nielsen 9]
@@ -44,7 +44,7 @@ These hold in a GUI, a web page, a bot and a CLI alike. The CLI guide links here
   - Never hide a control, row or action because it can't be used now. Show it disabled.
   - Its tooltip says why it is disabled and what would enable it. Where there is no hover (a phone, a bot), a short line next to it says it.
   - When the cause is on screen (a full login, a stopped node, a missing setting), hovering the disabled item highlights the cause.
-  - Why: a UI that changes shape with state surprises people; they look for a button that vanished and don't learn when it comes back. [io_weaver "Minimize surprises"]
+  - Why: a UI that changes shape with state surprises people; they look for a button that vanished and don't learn when it comes back. [another in-house app "Minimize surprises"]
   - Example: a greyed "Open transcript" whose tooltip reads "not clickable: interactive session, no transcript served"; hovering a greyed "Deploy" lights up the stopped node it waits on (`hover_link`).
 - **Measure the input, then let the person confirm.** [house rule, user 30 Oct 2026]
   - Setup that isn't obvious (axis mapping, calibration, which button is which, sensor orientation) is a guided recording: a few motions one at a time, the raw input recorded, the mapping worked out from the data, then a table of expected behaviour to confirm.
@@ -54,8 +54,8 @@ These hold in a GUI, a web page, a bot and a CLI alike. The CLI guide links here
 - **Say why when doing something non-obvious.** [vhrd_egui design notes, 8 Oct 2026]
   - Why: an action with no reason looks like a bug. [Nielsen 1]
   - Example: "Installing ve_theme 0.32, because the gallery needs THM-15".
-- **Text a person reads is in their language and in plain words.** [tpm_core AGENTS.md, UX checklist]
-  - Labels, notices and button texts come from locale files, never from strings in the code (tpm_core: `locales/<lang>/*.ftl`).
+- **Text a person reads is in their language and in plain words.** [our policy-engine app AGENTS.md, UX checklist]
+  - Labels, notices and button texts come from locale files, never from strings in the code (our policy-engine app: `locales/<lang>/*.ftl`).
   - Words are the person's, not our internal names. [Nielsen 2]
   - Why: a Russian-speaking user should not meet English labels, and an internal id on a button means nothing to anyone.
   - Example: a bot button reads "Остановить наблюдение" for a Russian chat, "Stop watching" for an English one.
@@ -93,7 +93,7 @@ These hold in a GUI, a web page, a bot and a CLI alike. The CLI guide links here
   - Every control, number, badge, status light and abbreviation has one: what it is, its unit, what clicking or dragging does, and what the value means when that isn't obvious.
   - Multi-line is fine. Name the unit (`ms`, `%`, `MiB/s`), the range and where the number comes from.
   - If a user could ask "what is this?", hovering answers it.
-  - Why: our apps are dense engineering screens; the tooltip is the manual, one hover away. [io_weaver "Help is one click away"; Nielsen 10]
+  - Why: our apps are dense engineering screens; the tooltip is the manual, one hover away. [another in-house app "Help is one click away"; Nielsen 10]
   - Example: "12.4 ms" → "Round trip to the node over the mesh, median of the last 10 pings".
 - **A tooltip adds to the label, it doesn't repeat it.** [GNOME HIG Tooltips]
   - Why: "Deploy" with the tooltip "Deploy" wastes the hover.
@@ -108,7 +108,7 @@ These hold in a GUI, a web page, a bot and a CLI alike. The CLI guide links here
   - The window title shows the app name.
   - Why: a bug report needs the exact build, and every app should answer "which one is this?" the same way.
   - Example: `ve_basics::build_info_label(ui, &build_info!())` at the right of the top bar.
-- 🔜 **Context help on F1 and help searched in the app.** [P2490 UX sweep of CAD tools: Altium, COMSOL; Nielsen 10]
+- 🔜 **Context help on F1 and help searched in the app.** [ UX sweep of CAD tools: Altium, COMSOL; Nielsen 10]
   - Why: the docs page that explains a panel should be one key away from it.
   - Example: F1 over the meter opens its section of the app's help.
 
@@ -123,7 +123,7 @@ These hold in a GUI, a web page, a bot and a CLI alike. The CLI guide links here
   - Ids, paths, commands and SHAs are copyable; so is a region worth copying, such as a detail panel or a log.
   - Why: selectable labels swallow clicks meant for the widget under them and show a text cursor everywhere.
   - Example: a task id in the dash copies on click; the word "status" next to it does not.
-- 🔜 **Shift-hover shows the equivalent command.** [P2490#31oct-2308]
+- 🔜 **Shift-hover shows the equivalent command.**
   - Any element hovered with a modifier shows the Rust call, Python statement, CLI command or file text it would produce, each with a copy button.
   - Why: what the person clicked becomes a script or an agent's step without reverse engineering. It is planned for one CAD app first; a general `ve_app` version is an idea.
   - Example: Shift-hover on "Export STEP" shows the CLI command that writes the same `part.step`.
@@ -147,11 +147,11 @@ These hold in a GUI, a web page, a bot and a CLI alike. The CLI guide links here
   - Content that can outgrow its place scrolls.
   - Why: every panel in every app has the same handles, so people learn them once. [Nielsen 4]
   - Example: a `ve_app` widget returns a `FrameSpec` from `Widget::frame_spec`; try `cargo run -p ve_frame --example playground`.
-- **The UI keeps its shape.** [io_weaver "Minimize surprises"]
+- **The UI keeps its shape.** [another in-house app "Minimize surprises"]
   - Prefer all options shown, some greyed out with a reason, over a UI that changes shape with state.
   - Why: people find things where they were last time.
   - Example: the toolbar of a disconnected device keeps every button, greyed, with "connect a device first".
-- **Big data stays fast.** [io_weaver AGENTS.md]
+- **Big data stays fast.** [another in-house app AGENTS.md]
   - Segment and decimate what is drawn, never walk a whole track per frame, and cap tooltips on overlapping events.
   - Why: a frame that takes 200 ms makes every hover feel broken.
   - Example: a 10-million-sample trace draws one min-max pair per pixel column.
@@ -169,7 +169,7 @@ These hold in a GUI, a web page, a bot and a CLI alike. The CLI guide links here
   - A menu of actions, where one click does one thing, closes after the click.
   - Why: a menu that closes after every click makes ticking three values three trips.
   - Example: "tracks: 3 ▾" stays open while the person ticks dev, gui and dash (`ve_basics::Checklist`).
-- **Buttons are labelled as actions.** [user, P2618#7oct-2123; Apple HIG Buttons "start the label with a verb"]
+- **Buttons are labelled as actions.** [user; Apple HIG Buttons "start the label with a verb"]
   - A button says what it does, starting with a verb. It never reads like a link or a heading.
   - A button that opens another window or dialog ends in "…". [Apple HIG Buttons]
   - Why: "⏹️ messages from kicad-textconv" was tapped to read the messages and stopped the watch instead.
@@ -179,17 +179,17 @@ These hold in a GUI, a web page, a bot and a CLI alike. The CLI guide links here
   - A destructive action never gets the primary, Return-key role, even when it is the likely choice.
   - Why: people press the prominent button without reading it.
   - Example: in "Delete 3 layouts?" the prominent button is "Keep", and "Delete" is plain with the crit tone.
-- **A tap that throws work away asks first, or can be undone for a few seconds.** [user 11 Oct 2026, P2618#11oct-1546; Apple HIG Feedback]
+- **A tap that throws work away asks first, or can be undone for a few seconds.** [user 11 Oct 2026; Apple HIG Feedback]
   - The question says in plain words what will be lost. On touch screens the confirm step is the default, since a mis-tap is easy.
   - Where an action can be undone for a few seconds, that can replace the question.
   - After the action, say what it meant.
   - Why: one stray tap on Undo silently dropped an agent's file edits in a group chat.
   - Example: "Undo this turn? The 3 files the assistant changed go back to how they were." then "↩️ undone by Alex".
-- **Undo covers every edit and names what it undoes.** [Apple HIG Undo and Redo; P2490 UX sweep: undo in every CAD tool surveyed; egui_tabular AGENTS.md]
+- **Undo covers every edit and names what it undoes.** [Apple HIG Undo and Redo; UX sweep: undo in every CAD tool surveyed; egui_tabular AGENTS.md]
   - Many steps, not one. The menu item names the step ("Undo Move 3 parts"). After an undo, the restored thing is shown, scrolled into view if needed.
   - Why: people press undo until something changes; if they can't see what changed they press too often.
   - Example: egui_tabular keeps each command's inverse for undo.
-- **Interruptions match their weight.** [io_weaver AGENTS.md; Apple HIG Feedback]
+- **Interruptions match their weight.** [another in-house app AGENTS.md; Apple HIG Feedback]
   - No banners or windows popping up over the work. Short notices are toasts; things that need attention blink in place; changes fade with smooth colour or opacity transitions.
   - An alert is only for something critical and actionable, such as data loss the person didn't expect.
   - Why: an app that cries wolf trains people to close alerts unread.
@@ -198,30 +198,30 @@ These hold in a GUI, a web page, a bot and a CLI alike. The CLI guide links here
   - An entry that doesn't validate shows its message beside the field, for as long as it is wrong.
   - Why: a warning in a status bar far away is not connected to the field by the eye.
   - Example: "1.2.3.4.5 is not an IPv4 address" in warn colour right under the field.
-- **Nothing updates itself unasked.** [io_weaver AGENTS.md]
+- **Nothing updates itself unasked.** [another in-house app AGENTS.md]
   - Updates install only when the person asks, and older versions stay selectable.
   - Why: a bench tool that changes mid-measurement ruins the measurement.
   - Example: the app menu says "0.33 is out: Update…" and the version list keeps 0.31 and 0.32.
-- 🔜 **One modal layer.** [P2605#27oct-1935, from Zed's workspace modal layer]
+- 🔜 **One modal layer.** [from Zed's workspace modal layer]
   - A dialog, picker or confirm shows on top in one place, takes keyboard focus, closes with Escape or a click outside, and returns a typed result.
   - Why: every app builds its own modal today, each closing differently.
   - Example: `ve_app` opens a confirm and gets back `Confirm::Yes`.
-- 🔜 **Settings forms are made from the settings schema.** [P2605#27oct-1423c; house rule "every tunable is a setting"]
-  - Typed layered settings in `ve_settings`, the form generated from the schema with the disabled-says-why and nothing-hidden rules, the same schema the config portal (P2619) uses.
+- 🔜 **Settings forms are made from the settings schema.** [; house rule "every tunable is a setting"]
+  - Typed layered settings in `ve_settings`, the form generated from the schema with the disabled-says-why and nothing-hidden rules, the same schema the config portal uses.
   - Why: no form written by hand per setting, and the app and the portal never disagree.
   - Example: a `max_rows: u32` field with its doc line becomes a number box with that tooltip in both places.
 
 ## 8. Keyboard
 
-All 🔜: these come from the owner's own wish and GNOME HIG, and the egui layer for them is not built yet (P2605#27oct-1009).
+All 🔜: these come from the owner's own wish and GNOME HIG, and the egui layer for them is not built yet.
 
-- 🔜 **Every part of the UI works without a mouse.** [user 27 Oct 2026, P2605#27oct-1009; GNOME HIG Keyboard "every action should also be possible with the keyboard"]
+- 🔜 **Every part of the UI works without a mouse.** [user 27 Oct 2026; GNOME HIG Keyboard "every action should also be possible with the keyboard"]
   - Focus moves with Tab and Shift+Tab between panes and with arrows inside lists and tables. A visible focus ring shows where it is.
   - Return activates, Space toggles, Escape backs out of menus and dialogs. [GNOME HIG Keyboard]
   - It is tested headless with egui_kittest.
-  - Why: keyboard-first speed is what makes tools like Linear and Zed feel fast; and some people can't use a mouse. [P2490 UX review]
+  - Why: keyboard-first speed is what makes tools like Linear and Zed feel fast; and some people can't use a mouse. [ UX review]
   - Example: Tab from the session list into the detail panel, arrows down three rows, Escape back.
-- 🔜 **Named actions, a keymap file and a command palette from one registry.** [P2605#27oct-1009, Zed; P2490 UX sweep: command palette and remappable hotkeys]
+- 🔜 **Named actions, a keymap file and a command palette from one registry.** [Zed; UX sweep: command palette and remappable hotkeys]
   - Each action has a name; keys bind to actions in a user-editable keymap file, chords included; the command palette lists every action with its key.
   - Standard keys keep their standard meaning (Ctrl+Z, Ctrl+Shift+Z, Ctrl+F). [GNOME HIG Keyboard, Apple HIG Undo]
   - Why: a person learns the palette once and finds every key from it. [Nielsen 7]
@@ -232,7 +232,7 @@ All 🔜: these come from the owner's own wish and GNOME HIG, and the egui layer
 
 ## 9. Speed, state and errors
 
-- **The UI thread stays free.** [vhrd_egui AGENTS.md, io_weaver AGENTS.md]
+- **The UI thread stays free.** [vhrd_egui AGENTS.md, another in-house app AGENTS.md]
   - No blocking I/O or long computation inside `ui()`. Long work runs elsewhere, and the UI polls for its result per frame.
   - A crashed worker reports its error to the UI instead of vanishing.
   - Why: a frozen window looks like a crashed app.
@@ -241,7 +241,7 @@ All 🔜: these come from the owner's own wish and GNOME HIG, and the egui layer
   - Anything that can take more than a few seconds shows what runs and how far; a button that started it shows that it is working.
   - Why: without feedback people click again.
   - Example: "Deploy" turns into "Deploying… 2 of 5 PCs".
-- **Three kinds of state, kept apart.** [vhrd_egui AGENTS.md, io_weaver AGENTS.md]
+- **Three kinds of state, kept apart.** [vhrd_egui AGENTS.md, another in-house app AGENTS.md]
   - Settings or seed (what the person configured) and visual state (layout, view) are saved; transient state (connections, caches, devices) is rebuilt at start (`Widget::init` in `ve_app`) and never saved.
   - Saved state loads from older files: new fields get defaults.
   - Why: an app must open after an update, and a saved socket is meaningless.
@@ -253,7 +253,7 @@ All 🔜: these come from the owner's own wish and GNOME HIG, and the egui layer
 - **The app checks itself after an update and can go back.** [house rule "Everything recovers by itself"; PLT-4]
   - A GUI runs its own self-check after an install; if it fails, the previous release comes back by itself, and a person can roll back by hand.
   - A start that died is noticed at the next start, and the saved state that caused it is moved aside (`ve_basics::StartupGuard`).
-  - Example: the release tool's rollback (`tpm rollback tpm_mesh_dash`).
+  - Example: our internal release tool's per-app rollback command.
 - 🔜 **A web build checks the browser before a big download.** [vhrd_egui design notes]
   - Why: a 20 MB wasm bundle that can't run in this browser wastes the download and shows a blank page.
   - Example: "This browser has no WebGPU: the 3D view won't work. Open anyway?" before fetching the bundle.
@@ -263,13 +263,13 @@ All 🔜: these come from the owner's own wish and GNOME HIG, and the egui layer
 Everything above applies; these are the differences.
 
 - **No hover: reasons and explanations are visible lines.** See [section 4](#4-help-and-explanation). [GNOME HIG Tooltips; house rule]
-- **Page text is built safely.** [cat_portal AGENTS.md]
+- **Page text is built safely.** [a third in-house app AGENTS.md]
   - Build the DOM with `textContent`, never `innerHTML` with data. Plain JS, no build step, no outside libraries beyond Telegram's `telegram-web-app.js`.
   - Why: data from people and mail is untrusted, and a page that runs it is a hole.
   - Example: `row.textContent = task.title`.
-- **Forms come from the schema.** [cat_portal AGENTS.md; house rule "every tunable is a setting"]
+- **Forms come from the schema.** [a third in-house app AGENTS.md; house rule "every tunable is a setting"]
   - The portal's forms are generated from each tool's typed settings schema, never written by hand per setting.
-- **What the page asks of Telegram lives in one place.** [tpm_mesh_dash AGENTS.md]
+- **What the page asks of Telegram lives in one place.** [the mesh dashboard app AGENTS.md]
   - Colours and the back button come from Telegram through one module (in the dash: `src/telegram.rs` and `web/boot.js`).
   - Why: the Mini App should look like part of the chat and follow its theme.
 
@@ -280,25 +280,25 @@ A bot has no hover and no fold. The [section 2](#2-rules-for-every-ui) rules sti
 - **The rest is a button, not a count.** [house rule "Nothing is hidden"]
   - Example: a list of 40 tasks shows 10 and a "Show all 40" button.
 - **A button that can't be used now stays, with a short line that says why.** [house rule "Disabled things say why"]
-  - A used button stays visible in its used state instead of disappearing. [user, P2618#11oct-1546]
+  - A used button stays visible in its used state instead of disappearing. [user]
   - Example: "↩️ undone by Alex" where the Undo button was.
-- **A button is offered, never told.** [tpm_core AGENTS.md]
+- **A button is offered, never told.** [our policy-engine app AGENTS.md]
   - A release note gets one quiet line with a button, once; texts never say "then /new".
   - Why: a person chooses; the bot doesn't give orders.
-- **A button's text is built from known values, never from model output.** [tpm_core policy model]
+- **A button's text is built from known values, never from model output.** [our policy-engine app policy model]
   - Example: "Always for Alex" is built from the rule's key and the person, not from what the model wrote.
-- **A wall has no button.** [tpm_core policy model]
+- **A wall has no button.** [our policy-engine app policy model]
   - A refusal that nobody can lift from the chat says it is a wall and offers nothing to press.
   - Why: a button that can't work trains people to press buttons blindly.
-- **Labels are actions, risky taps ask first, and each tap is logged with who pressed it.** See [section 7](#7-controls-menus-and-dialogs). [user, P2618#7oct-2123, P2618#11oct-1546]
-- **Every button a person can see is tested.** [tpm_core AGENTS.md]
+- **Labels are actions, risky taps ask first, and each tap is logged with who pressed it.** See [section 7](#7-controls-menus-and-dialogs). [user]
+- **Every button a person can see is tested.** [our policy-engine app AGENTS.md]
   - Each user-visible behaviour (a command, a button, a file) gets a named end-to-end scenario against a fake Telegram server in the test run, and on Telegram where Telegram itself could refuse it.
 
 ## 12. Where the code lives and how it is checked
 
 - **Reusable UI lands in vhrd_egui, not in the app.** [vhrd_egui AGENTS.md; house rule "egui stack"]
   - A widget, layout helper or fix another app could use goes into vhrd_egui (ve_frame, ve_dash, ve_basics, ve_theme) with a doc example; the app calls it. A big one gets its own crate (egui_tabular, eventfull).
-  - When a sync or a talk turns up a reusable piece inside an app, file an extraction task on P2605.
+  - When a sync or a talk turns up a reusable piece inside an app, file an extraction task on.
   - Why: the same task should be done the same way in every app. [UX checklist]
 - **One egui version for the whole stack.** [vhrd_egui AGENTS.md, PLT-1]
   - `egui` and `eframe` sit in the root `[workspace.dependencies]`; a bump says which apps must follow.
@@ -309,11 +309,11 @@ A bot has no hover and no fold. The [section 2](#2-rules-for-every-ui) rules sti
   - Who uses it and for what; defaults that work; errors that say what to do; does the pattern already exist in vhrd_egui; tried by someone who didn't build it.
   - An agent reviews screenshots against this page.
 - **A feature a person can learn gets its skill.** [house rule "Skill tree"]
-  - A new view, button or gesture records a usage signal and gets its skill in the skill tree, or a P2618 task.
+  - A new view, button or gesture records a usage signal and gets its skill in the skill tree, or a task.
 
 ## 13. Looks to borrow from
 
-Ideas, not rules. [vhrd_egui design notes, 8 Oct 2026; P2490 UX review]
+Ideas, not rules. [vhrd_egui design notes, 8 Oct 2026; UX review]
 - Zed (density, the command palette, the modal layer), Oxide Computer (dark scheme with good contrast, ASCII art, animations, the 3D view), ZSA, the yevm page by sergey-melnychuk (background gradient, frames, hover-out animation), Bevy's variables panel (pane, subpane, group).
 - Linear and Notion for keyboard-first speed, Figma and Blender for tool modes and operator search, Ableton and Bitwig for modulation you can see.
 - Talks: Bret Victor "Inventing on principle", Jack Rusher "Stop writing dead programs".
@@ -324,10 +324,10 @@ Ideas, not rules. [vhrd_egui design notes, 8 Oct 2026; P2490 UX review]
 Ours:
 - House rules: "Nothing is hidden", "Disabled things say why", "Measure the input", "egui stack", "Everything recovers by itself", "every tunable is a setting", "Skill tree", as of 3 Nov 2026.
 - vhrd_egui [`AGENTS.md`](../AGENTS.md) "Code conventions", "Tests"; [`egui_app_skill/references/ui-guide.md`](../egui_app_skill/references/ui-guide.md); the vhrd_egui design notes (a UI ideas page, imported 8 Oct 2026).
-- io_weaver `AGENTS.md` "UI conventions"; egui_tabular `AGENTS.md`; tpm_mesh_dash `AGENTS.md`; cat_portal `AGENTS.md`; tpm_core `AGENTS.md` and its policy model; vhrd_brand `AGENTS.md`.
+- another in-house app `AGENTS.md` "UI conventions"; egui_tabular `AGENTS.md`; the mesh dashboard app `AGENTS.md`; a third in-house app `AGENTS.md`; our policy-engine app `AGENTS.md` and its policy model; vhrd_brand `AGENTS.md`.
 - The UX checklist of our UX review role.
-- Tasks: P2605#27oct-1009 (keymap, keyboard), P2605#27oct-1935 (modal layer), P2605#27oct-1423c (ve_settings), P2618#7oct-2123 and P2618#11oct-1546 (bot buttons), P2490#31oct-2308 (shift-hover).
-- The P2490 UX sweep of CAD tools (undo, command palette, hotkeys, context help, keyboard reach) and its UX review.
+- Tasks: (keymap, keyboard) (modal layer) (ve_settings) (bot buttons) (shift-hover).
+- The UX sweep of CAD tools (undo, command palette, hotkeys, context help, keyboard reach) and its UX review.
 
 Outside (read 3 Nov 2026):
 - Nielsen Norman Group, "10 Usability Heuristics for User Interface Design", https://www.nngroup.com/articles/ten-usability-heuristics/ (numbered 1-10 above).

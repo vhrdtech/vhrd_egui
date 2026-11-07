@@ -203,7 +203,7 @@ pub struct Sandbox {
     pub look: FloatLook,
     pub land: LandMode,
     /// A frame in the layout folds to its header too (`WidgetFrame::fold_in_grid`), on here to show the folded
-    /// body; off, as a host like tpm_mesh_dash has it, only a floating window folds (SETL-44).
+    /// body; off, as one of our host apps has it, only a floating window folds (SETL-44).
     pub fold: bool,
     /// The background behind the frames, and whether it is drawn.
     pub backdrop: Backdrop,

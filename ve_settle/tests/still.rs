@@ -9,7 +9,7 @@ fn v(x: f32, y: f32) -> Vec2 {
     Vec2::new(x, y)
 }
 
-/// The dash's world (`tpm_mesh_dash` `app::layout::params`).
+/// The dash's world (the mesh dashboard app's `app::layout::params`).
 fn params() -> Params {
     let d = Params::default();
     let mut p = d;

@@ -5,6 +5,8 @@ versions follow [Semantic Versioning](https://semver.org/). Feature IDs refer to
 
 ## [Unreleased]
 
+- docs: internal references removed
+
 ## [0.32.13] - 2026-11-03
 
 ### Added
@@ -38,30 +40,30 @@ versions follow [Semantic Versioning](https://semver.org/). Feature IDs refer to
 
 ### Added
 
-- `ve_basics` (BAS-7): `copyable(ui, |ui| ..)`, a region whose labels can be selected and copied (a detail panel, a log) while `setup_labels` keeps labels off app-wide; a drag selects, Ctrl+C copies, buttons inside keep their clicks (P2620#26oct-0758).
+- `ve_basics` (BAS-7): `copyable(ui, |ui| ..)`, a region whose labels can be selected and copied (a detail panel, a log) while `setup_labels` keeps labels off app-wide; a drag selects, Ctrl+C copies, buttons inside keep their clicks.
 
 ## [0.32.8] - 2026-10-26
 
 ### Added
 
-- `ve_basics` (BAS-6): `Checklist`, a dropdown of checkboxes that stays open while they are ticked and closes on a click outside, Esc or its button (`ui.menu_button` closes after every click inside), and `checklist_item` for a plain row; the list grows to the screen's bottom when a fold inside it opens, where a ScrollArea in a popup keeps the height it opened with; the UI guide says when to use it (P2620#26oct-0459).
-- `ve_dash` (DASH-25): `Glyph`, a status glyph painted in its own colour before a label: `GanttRow::glyph` before the row's label, `BurnSeries::glyph` before the legend entry. A glyph inside the label text took the text colour (P2605#21oct-2048, P2620#26oct-0459). `GanttRow` and `BurnSeries` gain a public field: a struct literal without `..Default::default()` needs `glyph: None`.
+- `ve_basics` (BAS-6): `Checklist`, a dropdown of checkboxes that stays open while they are ticked and closes on a click outside, Esc or its button (`ui.menu_button` closes after every click inside), and `checklist_item` for a plain row; the list grows to the screen's bottom when a fold inside it opens, where a ScrollArea in a popup keeps the height it opened with; the UI guide says when to use it.
+- `ve_dash` (DASH-25): `Glyph`, a status glyph painted in its own colour before a label: `GanttRow::glyph` before the row's label, `BurnSeries::glyph` before the legend entry. A glyph inside the label text took the text colour. `GanttRow` and `BurnSeries` gain a public field: a struct literal without `..Default::default()` needs `glyph: None`.
 
 ### Fixed
 
-- `ve_theme` (THM-16): a neutral status glyph (📋 planned, 💡 idea, ⬜ stub, an unknown word) is drawn in the muted text colour, new `Tone::ink`; `status_icon` painted it in `Tone::color`, a neutral badge's hairline (`line_strong`), so a task list, mostly planned, read as uncoloured (P2620#26oct-0459).
+- `ve_theme` (THM-16): a neutral status glyph (📋 planned, 💡 idea, ⬜ stub, an unknown word) is drawn in the muted text colour, new `Tone::ink`; `status_icon` painted it in `Tone::color`, a neutral badge's hairline (`line_strong`), so a task list, mostly planned, read as uncoloured.
 
 ## [0.32.7] - 2026-10-22
 
 ### Added
 
-- `just test --changed` runs only the workspace crates changed against main and their dependents (`tpm test changed`, nextest's `rdeps()`); plain `just test` runs everything, as `just test-all` does (tpm ops#22oct-2049).
+- `just test --changed` runs only the workspace crates changed against main and their dependents (nextest's `rdeps()`); plain `just test` runs everything, as `just test-all` does.
 
 ## [0.32.6] - 2026-10-22
 
 ### Changed
 
-- `just install` builds `ve_template` with the `deploy` profile and puts it on PATH through `tpm install` when tpm is there (kept-releases stack in ~/.local/bin), else `cargo install`; `just deploy` now pulls, installs and checks the version. `ve_template --version` shows the commit and build time
+- `just install` builds `ve_template` with the `deploy` profile and puts it on PATH through our internal release tool when it's there (kept-releases stack in ~/.local/bin), else `cargo install`; `just deploy` now pulls, installs and checks the version. `ve_template --version` shows the commit and build time
 
 ## [0.32.5] - 2026-10-21
 
@@ -73,7 +75,7 @@ versions follow [Semantic Versioning](https://semver.org/). Feature IDs refer to
 
 ### Added
 
-- `ve_theme` (THM-15): `status` module maps tpm's status words (`[task_status]`, `[project_status]`, `[log_kinds]`) onto a glyph (THM-14's emoji-fallback font) and a `Tone`; `status_icon(ui, name, tooltip)` looks a status up by tpm's config.toml key and draws it (an unlisted name still draws the bare word, neutral tone), `status_icon_with(ui, glyph, tone, tooltip)` for any glyph. egui 0.36 has no colour-glyph (COLR/CPAL/CBDT) support — confirmed in epaint's `skrifa`-based rasteriser, every glyph is a single coverage mask tinted by the text colour — so tinting is the same as colouring any label; code only, no wasm bytes added (the glyphs already ship with THM-14's font; the table and two small functions add roughly 1-2 KB to an app that already links egui's tooltip machinery).
+- `ve_theme` (THM-15): `status` module maps our internal task-tracker's status words (`[task_status]`, `[project_status]`, `[log_kinds]`) onto a glyph (THM-14's emoji-fallback font) and a `Tone`; `status_icon(ui, name, tooltip)` looks a status up by its config key and draws it (an unlisted name still draws the bare word, neutral tone), `status_icon_with(ui, glyph, tone, tooltip)` for any glyph. egui 0.36 has no colour-glyph (COLR/CPAL/CBDT) support — confirmed in epaint's `skrifa`-based rasteriser, every glyph is a single coverage mask tinted by the text colour — so tinting is the same as colouring any label; code only, no wasm bytes added (the glyphs already ship with THM-14's font; the table and two small functions add roughly 1-2 KB to an app that already links egui's tooltip machinery).
 
 ## [0.32.3] - 2026-10-21
 
@@ -294,7 +296,7 @@ versions follow [Semantic Versioning](https://semver.org/). Feature IDs refer to
 - **Breaking:** `ve_dash::Panel`, `ve_dash::PanelSize` and `ve_dash::panel()`, and `impl From<ve_dash::PanelSize> for
   SizeMode` (FRM-8): use `ve_frame::WidgetFrame` (`.info`, `.sizes`, `.led`). Upgrade: `panel(ui, &theme, "t", body)`
   becomes `WidgetFrame::new("t").show(ui, &mut frame_state, |ui, _size| body)`; `PanelSize::Compact` is
-  `SizeMode::Min`. tpm_mesh_dash 0.63.0 has already moved over.
+  `SizeMode::Min`. The mesh dashboard app (0.63.0) has already moved over.
 
 ## [0.26.0] - 2026-10-13
 
@@ -572,7 +574,7 @@ versions follow [Semantic Versioning](https://semver.org/). Feature IDs refer to
 - ve_frame playground: a large *Auto room* pushed frames past the right edge; a cell is never wider than its
   row now, and a hexagon on auto is chosen by its whole outline (FRM-2, FRM-6).
 - ve_dash: the three UI snapshots are compared with a budget of 20 failing pixels, so `cargo test -p ve_dash`
-  passes on omarchy-m1 too (DASH-21).
+  passes on our other dev PCs too (DASH-21).
 
 ## [0.20.0] - 2026-10-11
 
@@ -795,7 +797,7 @@ versions follow [Semantic Versioning](https://semver.org/). Feature IDs refer to
   console attached, PLT-6), the startup guard, egui_kittest tests with a wgpu snapshot, justfile and
   AGENTS / FEATURES / CHANGELOG skeletons; `ve_app.json` records the template version, commit and answers;
   `check-answers` and `compare` (3-way) drive upgrades and adoption. `SKILL.md` plus `references/` (UI guide,
-  kittest, stack versions, upgrade flow). Supersedes the eframe_template repo (P2542). Template 0.8.0 is the
+  kittest, stack versions, upgrade flow). Supersedes the eframe_template repo. Template 0.8.0 is the
   first version: no upgrade notes yet.
 
 ## [0.9.1] - 2026-10-08
@@ -868,8 +870,8 @@ versions follow [Semantic Versioning](https://semver.org/). Feature IDs refer to
 
 ### Changed
 
-- The `mesh_dash` example became `dash_demo`, synthetic data only (no `tpm_mesh` polling, `serde_json`
-  dev-dependency dropped); the live mesh dashboard moved to its own repo, `tpm_mesh_dash`. The image
+- The `mesh_dash` example became `dash_demo`, synthetic data only (no live polling, `serde_json`
+  dev-dependency dropped); the live mesh dashboard moved to its own private app. The image
   snapshot is now `tests/snapshots/dash_panel.png` (was `mesh_panel.png`).
 
 ## [0.4.0] - 2026-10-06
@@ -905,8 +907,8 @@ versions follow [Semantic Versioning](https://semver.org/). Feature IDs refer to
 - AGENTS.md, FEATURES.md and this changelog.
 - `ve_dash`: btop-style dashboard building blocks — `Theme` with CVD-validated dark palette and `heat` gradient
   (DASH-1), `History` ring buffer (DASH-2), `Sparkline` with hover readout (DASH-3), segmented `Meter` (DASH-4),
-  `StatusLight` (DASH-5), `StatTile` (DASH-6), titled `panel` (DASH-7). Demo: `examples/mesh_dash.rs`, the tpm
-  mesh node dashboard prototype (P2620), live against `tpm_mesh status --json`.
+  `StatusLight` (DASH-5), `StatTile` (DASH-6), titled `panel` (DASH-7). Demo: `examples/mesh_dash.rs`, a
+  mesh node dashboard prototype, live against our internal tooling's status data.
 
 ### Changed
 

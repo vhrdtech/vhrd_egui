@@ -195,7 +195,7 @@ fn tidy_up_from_a_frame_menu_settles_once() {
     }
 }
 
-/// SETL-42 (user, P2605#18oct-1407b: "the handle snaps to other modes and hardly lets anything be resized"): a
+/// SETL-42 (user: "the handle snaps to other modes and hardly lets anything be resized"): a
 /// frame keeps exactly the size it was let go at, its switches on auto pick the forms that fit it, its body
 /// scrolls where its content wants more, and a neighbour that is not pushed stays.
 #[test]

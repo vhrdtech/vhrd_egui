@@ -21,7 +21,7 @@ pub struct BuildInfo {
 /// Capture the calling crate's build info: name and version from Cargo, `GIT_SHA` and `BUILD_TIME` from its
 /// `build.rs` (optional, `unknown` when missing) and `cfg!(debug_assertions)`.
 ///
-/// `build.rs` of the app (a copy of tpm_mesh_dash's, no extra crates):
+/// `build.rs` of the app (a copy of the mesh dashboard app's, no extra crates):
 ///
 /// ```ignore
 /// fn main() {

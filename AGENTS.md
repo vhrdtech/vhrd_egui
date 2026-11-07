@@ -2,7 +2,7 @@
 
 Guidance for AI agents and contributors. Read this before changing code.
 
-vhrd_egui is the common egui platform for the in-house GUI apps (IOWeaver, RockFace, mx3 and future ones): the
+vhrd_egui is the common egui platform for our in-house GUI apps (several existing ones and future ones): the
 widget trait apps are built on, shared helpers, and a set of small helper crates. Pieces that grow big graduate into
 crates of their own (egui_tabular, eventfull). It is early: no app uses it yet; `ve_app` is the shell new apps
 start from.
@@ -37,7 +37,7 @@ IDs per area (`WID-2`, `EXT-3`, ...).
 - Questions like "what's new" or "what changed since X" are answered from CHANGELOG.md, newest sections first
   (the user's version or date as the cutoff), with FEATURES.md for current status.
 
-The tpm repo's `/sync-repos` reads this file to log progress, so a missing entry means work nobody sees.
+Our internal tooling reads this file to log progress, so a missing entry means work nobody sees.
 
 ## Layout
 
@@ -94,7 +94,7 @@ cargo build --workspace
 cargo clippy --workspace --all-targets -- -D warnings
 cargo fmt --all
 cargo test --workspace
-just install     # the ve_template command onto PATH; works anywhere, with tpm it uses the release stack
+just install     # the ve_template command onto PATH; works anywhere, uses a release-management tool's stack if present
 just check-wasm  # ve_dash, ve_theme, ve_basics, ve_frame, ve_settle: wasm-clean (PLT-7, PLT-9)
 ```
 
@@ -103,7 +103,7 @@ run a GUI, say so and describe the manual check.
 
 ### Web crates
 
-A web dashboard build (`tpm_mesh_dash` on wasm32-unknown-unknown) pulls in `ve_dash`, `ve_theme`, `ve_basics`,
+A web dashboard build (the mesh dashboard app, on wasm32-unknown-unknown) pulls in `ve_dash`, `ve_theme`, `ve_basics`,
 `ve_frame` and `ve_settle` (with its `frame` and `serde` features), and can take `ve_backdrop` (BACK-3): their code
 must never call something that panics in the browser (no OS clock, threads, filesystem or process).
 `just check-wasm` clippies these for `wasm32-unknown-unknown` (`ve_backdrop` twice: `--no-default-features`, the CPU
@@ -150,20 +150,19 @@ Conventional Commits with the crate as scope: `feat(ve_widget): ...`, `fix(ve_ma
 Short imperative summary, blank line, body with what and why; reference feature IDs
 (`feat(ve_widget): add widget menu builder (WID-3)`).
 
-Commit on your own initiative (tpm CLAUDE.md "Commits are free, prod is gated"): work happens on a session branch
-(`tpm work new SLUG`), each finished step is one commit with FEATURES.md and CHANGELOG.md updated in it. When the
-work is done and the user agrees, `tpm land` puts it on main; pushing is the housekeeping timer's job. Anything that
-reaches clients (prod deploy, firmware/OTA release, registry publish) still waits for the user's OK.
+Commit on your own initiative: work happens on a session branch, each finished step is one commit with FEATURES.md
+and CHANGELOG.md updated in it. When the work is done and the user agrees, it lands on main; pushing happens on its
+own schedule afterward. Anything that reaches clients (prod deploy, firmware/OTA release, registry publish) still
+waits for the user's OK.
 
 ## Versions
 
-Landing bumps the version, not each work commit (tpm CLAUDE.md "Landing bumps the version"), so any build from main
-traces back to a release commit:
-- Session commits add CHANGELOG entries under `[Unreleased]` without bumping. `tpm land` turns them into the next
+Landing bumps the version, not each work commit, so any build from main traces back to a release commit:
+- Session commits add CHANGELOG entries under `[Unreleased]` without bumping. Landing turns them into the next
   version's section with the manifest bump in one `release: x.y.z` commit: minor for Added/Changed/Removed/Deprecated,
-  else patch; major only when the owner says so (`tpm land --version`).
-- In a workspace, bump the changed crates by hand on the branch, then `tpm land --no-bump`. Docs-only, CI-only and
-  no-behaviour-change refactors land without a bump.
+  else patch; major only when the owner says so.
+- In a workspace, bump the changed crates by hand on the branch before landing; it then lands without a further
+  bump. Docs-only, CI-only and no-behaviour-change refactors land without a bump.
 - CLIs print version, git SHA and build time in `--version`, e.g. `tool 0.4.2 (a1b2c3d-dirty, built 3 Oct 2026
   18:20)`: a small `build.rs` without extra crates (`git rev-parse --short HEAD`, `-dirty` when
   `git status --porcelain` isn't empty, `rerun-if-changed` on `.git/HEAD` and `.git/index`, `unknown` without

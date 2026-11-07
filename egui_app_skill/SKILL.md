@@ -50,7 +50,7 @@ Run it from a vhrd_egui checkout (`~/git/vhrd_egui`, or `cargo install --path ve
 4. Point out: `assets/icon.svg` is a placeholder (replace, then `just icon` renders the PNG);
    `deploy/<name>.desktop` and `just install` give the launcher entry; `ve_app.json`, `AGENTS.md`, `CLAUDE.md`,
    `FEATURES.md` and `CHANGELOG.md` must stay committed (they let an agent upgrade the app and follow the repo
-   conventions). Add the repo to tpm's `repos.toml` when it is a real project.
+   conventions).
 
 ## What gets generated
 
@@ -85,7 +85,7 @@ snapshots → update `ve_app.json` (template version and commit, an `upgrades` e
 
 ## Adopting an existing app
 
-For an app not generated from the template (mx3, tpm_mesh_dash, io_weaver, RockFace): generate a fresh app with the
+For an app not generated from the template (one of our existing in-house apps): generate a fresh app with the
 app's name next to it, `compare --current <app> --new <fresh>` to see what the template has, bring over what the app
 lacks (ve_basics calls, ve_theme::setup, app id + icon + .desktop + `just install`, build.rs + `--version`,
 egui_kittest tests, StartupGuard, Windows console, the justfile recipes, the AGENTS.md sections), one commit per
@@ -109,7 +109,7 @@ check UI behaviour, and never claim kittest cannot click or type: it can.
 Versions: `references/stack.md`. One egui version for the whole stack, pinned in vhrd_egui
 `[workspace.dependencies]`; an app never bumps egui alone.
 
-Launcher icon / app id (from mx3, P2605#7oct-1558): `ViewportBuilder::with_app_id(APP_ID)` + `with_icon` from the
+Launcher icon / app id (from one of our in-house apps): `ViewportBuilder::with_app_id(APP_ID)` + `with_icon` from the
 embedded PNG, `deploy/<name>.desktop` with `StartupWMClass=<APP_ID>` and `Icon=<APP_ID>`, `just install` copies the
 binary, the SVG icon into `~/.local/share/icons/hicolor/scalable/apps/` and the `.desktop` into
 `~/.local/share/applications/`. Without the app id, eframe's default has spaces and compositors cannot match the
