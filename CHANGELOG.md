@@ -5,6 +5,8 @@ versions follow [Semantic Versioning](https://semver.org/). Feature IDs refer to
 
 ## [Unreleased]
 
+## [0.32.14] - 2026-11-07
+
 - docs: internal references removed
 
 ## [0.32.13] - 2026-11-03
