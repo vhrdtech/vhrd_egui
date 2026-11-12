@@ -67,7 +67,9 @@ The mapping speaks of what the *content* does, not the camera. With `Convention:
 
 #### The settings
 
-`Mapping` is `serde` with `#[serde(default)]`: keep it in the app's settings. Each `Output` (move right, move up, grow, tilt forward, roll right, turn clockwise) takes one raw axis (`x y z rx ry rz`) and a sign: the raw motion that makes the content do it under the content convention. A raw value of `full_scale` gives full speed, and the `dead_zone` part of the travel does nothing. `mapping_ui` edits it by hand, with the convention and a live bar per output.
+`Mapping` is `serde` with `#[serde(default)]`: keep it in the app's settings. Each `Output` (move right, move up, grow, tilt forward, roll right, turn clockwise) takes one raw axis (`x y z rx ry rz`) and a sign: the raw motion that makes the content do it under the content convention. A raw value of `full_scale` gives full speed, and the `dead_zone` part of the travel does nothing. `Speed` sets how fast a full push goes: pan in screen points per second (up to 15 000 in `mapping_ui`), zoom in log scale per second (up to 15), turn in radians per second (up to 30).
+
+Apps pan in screen pixels, not in their own units: keep the content's offset in screen points and add `nav.pan_screen() * dt` to it, as the demo does. Then a push moves the page across the screen at the same speed at every zoom. Converting the pan to content units first (dividing by the zoom) would make it crawl when zoomed in and race when zoomed out. `mapping_ui` edits it by hand, with the convention and a live bar per output.
 
 #### The calibrate step
 

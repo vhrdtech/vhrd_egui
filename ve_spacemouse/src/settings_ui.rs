@@ -4,7 +4,7 @@ use egui::{Sense, Ui, vec2};
 use ve_theme::UiExt;
 
 use crate::event::{AXIS_NAMES, Axes};
-use crate::mapping::{AxisMap, Convention, Mapping, Output};
+use crate::mapping::{AxisMap, Convention, Mapping, Output, Speed};
 
 /// One bar per raw axis: grows right for positive, left for negative, full at `full_scale`.
 pub fn axes_bars(ui: &mut Ui, axes: &Axes, full_scale: f32) {
@@ -129,19 +129,19 @@ pub fn mapping_ui(ui: &mut Ui, mapping: &mut Mapping, live: Option<&Axes>) -> bo
         ui.end_row();
         ui.label("Pan speed");
         ui.add(
-            egui::Slider::new(&mut mapping.speed.pan, 50.0..=5000.0)
+            egui::Slider::new(&mut mapping.speed.pan, Speed::PAN_RANGE)
                 .logarithmic(true)
                 .suffix(" pt/s"),
         )
-        .on_hover_text("Points per second at a full push");
+        .on_hover_text("Screen points per second at a full push, the same at every zoom");
         ui.end_row();
         ui.label("Zoom speed");
-        ui.add(egui::Slider::new(&mut mapping.speed.zoom, 0.1..=5.0).logarithmic(true))
+        ui.add(egui::Slider::new(&mut mapping.speed.zoom, Speed::ZOOM_RANGE).logarithmic(true))
             .on_hover_text("Zoom steps per second at a full push: 1 is ×2.7 a second");
         ui.end_row();
         ui.label("Rotate speed");
         ui.add(
-            egui::Slider::new(&mut mapping.speed.rotate, 0.1..=10.0)
+            egui::Slider::new(&mut mapping.speed.rotate, Speed::ROTATE_RANGE)
                 .logarithmic(true)
                 .suffix(" rad/s"),
         )

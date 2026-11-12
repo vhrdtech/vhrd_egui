@@ -146,12 +146,22 @@ impl AxisMap {
 #[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(default)]
 pub struct Speed {
-    /// Points per second.
+    /// Screen points per second at a full push. An app pans its content in screen points, not in its own units,
+    /// so the speed feels the same at every zoom: `offset += nav.pan_screen() * dt` with the offset in points.
     pub pan: f32,
     /// Zoom steps per second, as a natural log of the scale: 1.0 is ×2.7 a second.
     pub zoom: f32,
     /// Radians per second.
     pub rotate: f32,
+}
+
+impl Speed {
+    /// The range [`crate::mapping_ui`] offers for [`Speed::pan`].
+    pub const PAN_RANGE: std::ops::RangeInclusive<f32> = 50.0..=15000.0;
+    /// The range offered for [`Speed::zoom`].
+    pub const ZOOM_RANGE: std::ops::RangeInclusive<f32> = 0.1..=15.0;
+    /// The range offered for [`Speed::rotate`].
+    pub const ROTATE_RANGE: std::ops::RangeInclusive<f32> = 0.1..=30.0;
 }
 
 impl Default for Speed {
@@ -351,6 +361,18 @@ mod tests {
         assert_eq!(nav.zoom, 0.0);
         assert_eq!(nav.pan_screen().y, 0.5 * m.speed.pan);
         assert!(m.apply(&[0; 6]).is_zero());
+    }
+
+    /// The sliders reach three times the first ranges (pan 5000, zoom 5, rotate 10), the defaults in the middle.
+    #[test]
+    fn speed_ranges_reach_well_past_the_defaults() {
+        let d = Speed::default();
+        assert_eq!(*Speed::PAN_RANGE.end(), 3.0 * 5000.0);
+        assert_eq!(*Speed::ZOOM_RANGE.end(), 3.0 * 5.0);
+        assert_eq!(*Speed::ROTATE_RANGE.end(), 3.0 * 10.0);
+        assert!(Speed::PAN_RANGE.contains(&d.pan));
+        assert!(Speed::ZOOM_RANGE.contains(&d.zoom));
+        assert!(Speed::ROTATE_RANGE.contains(&d.rotate));
     }
 
     #[test]
