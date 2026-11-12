@@ -1,0 +1,25 @@
+[package]
+name = "ve_spacemouse"
+description = "3D mouse input for egui apps through spacenavd: a pure-Rust client of its socket, axis mapping with a guided calibration, and a pie menu on the device's buttons"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+repository.workspace = true
+
+[features]
+default = ["icons"]
+# Phosphor icons for the pie menu's slots: `install_icons` and the `icons` module (egui-phosphor's regular set).
+icons = ["dep:egui-phosphor"]
+
+[dependencies]
+egui.workspace = true
+serde.workspace = true
+log.workspace = true
+ve_theme = { path = "../ve_theme", version = "0.32", default-features = false }
+egui-phosphor = { version = "0.14", default-features = false, features = ["regular"], optional = true }
+
+[dev-dependencies]
+eframe = { workspace = true, features = ["wgpu"] }
+egui_kittest = { workspace = true, features = ["snapshot", "wgpu"] }
+ve_theme = { path = "../ve_theme", version = "0.32" }

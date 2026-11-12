@@ -19,6 +19,7 @@ members = [
     "ve_phosphor",
     "ve_template",
     "ve_app",
+    "ve_spacemouse",
 ]
 
 [workspace.dependencies]
