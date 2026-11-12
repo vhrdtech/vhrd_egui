@@ -3,8 +3,9 @@
 //! - [`SpaceMouse`] (SPM-1): a pure-Rust client of spacenavd's Unix socket (`/var/run/spnav.sock`), no libspnav.
 //!   A thread reads the events, reconnects when spacenavd restarts and hands them to the UI through a channel;
 //!   [`FakeSpacenavd`] serves the same protocol for tests and for running an app without the device.
-//! - [`Mapping`] (SPM-2): which raw axis pans, zooms or rotates, signs, dead zone, speed and which button is
-//!   left or right, as per-app settings; [`Mapping::apply`] gives a [`Nav`] per second. [`Calibration`] measures
+//! - [`Mapping`] (SPM-2): which raw axis moves, zooms or turns the content, signs, dead zone, speed and which
+//!   button is left or right, as per-app settings; by default the content follows the hand ([`Convention`]).
+//!   [`Mapping::apply`] gives a [`Nav`] per second: what the content does. [`Calibration`] measures
 //!   it with the person: it asks for one motion at a time, records it, works out the mapping and shows a table
 //!   to confirm ([`calibration_ui`]); [`mapping_ui`] edits it by hand.
 //! - [`PieMenu`] (SPM-3): tap a button to fire its centre slot; hold it and a ring of slots opens at the
@@ -41,13 +42,15 @@ mod mapping;
 mod pie;
 mod settings_ui;
 
-pub use calibrate::{Calibration, CalibrationAction, Measured, Step, StepResult, calibration_ui};
+pub use calibrate::{
+    Calibration, CalibrationAction, Measured, Motion, Step, StepResult, calibration_ui,
+};
 #[cfg(unix)]
 pub use client::{DEFAULT_SOCKET, Options, SpaceMouse, Status};
 pub use event::{AXIS_NAMES, Axes, EVENT_SIZE, Event};
 #[cfg(unix)]
 pub use fake::FakeSpacenavd;
-pub use mapping::{AxisMap, Buttons, Mapping, Nav, Output, Side, Speed};
+pub use mapping::{AxisMap, Buttons, Convention, Mapping, Nav, Output, Side, Speed};
 pub use pie::{ButtonEvent, Fired, PieMenu, PieState, PieStyle, Ring, Slot, SlotRef, buttons};
 pub use settings_ui::{axes_bars, mapping_ui};
 

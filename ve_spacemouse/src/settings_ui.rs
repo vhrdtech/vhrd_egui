@@ -4,7 +4,7 @@ use egui::{Sense, Ui, vec2};
 use ve_theme::UiExt;
 
 use crate::event::{AXIS_NAMES, Axes};
-use crate::mapping::{AxisMap, Mapping, Output};
+use crate::mapping::{AxisMap, Convention, Mapping, Output};
 
 /// One bar per raw axis: grows right for positive, left for negative, full at `full_scale`.
 pub fn axes_bars(ui: &mut Ui, axes: &Axes, full_scale: f32) {
@@ -39,11 +39,22 @@ fn signed_bar(ui: &mut Ui, v: f32, t: &ve_theme::Tokens) -> egui::Response {
     resp
 }
 
-/// Edit a mapping by hand: the raw axis and sign per output, dead zone, full scale, speeds and buttons.
+/// Edit a mapping by hand: content or camera, the raw axis and sign per output, dead zone, full scale, speeds and
+/// buttons.
 /// `live` (the puck now) adds a bar per output showing what it gives. Returns whether something changed.
 pub fn mapping_ui(ui: &mut Ui, mapping: &mut Mapping, live: Option<&Axes>) -> bool {
     let t = ui.tokens();
     let before = mapping.clone();
+    ui.horizontal(|ui| {
+        ui.label("The puck moves")
+            .on_hover_text("Whose motion the puck is: the content's (the default) or the camera's");
+        ui.radio_value(&mut mapping.convention, Convention::Content, "the content")
+            .on_hover_text(Convention::Content.name());
+        ui.radio_value(&mut mapping.convention, Convention::Camera, "the camera")
+            .on_hover_text(
+                "Every output turned around: slide right and the view moves right, so the page moves left",
+            );
+    });
     egui::Grid::new(ui.id().with("ve_spacemouse_mapping"))
         .striped(true)
         .show(ui, |ui| {
@@ -74,7 +85,10 @@ pub fn mapping_ui(ui: &mut Ui, mapping: &mut Mapping, live: Option<&Axes>) -> bo
                         }
                     })
                     .response
-                    .on_hover_text(format!("The raw axis that makes {}", o.effect()));
+                    .on_hover_text(format!(
+                    "The raw axis that, going positive, means {} (under \"content follows the puck\")",
+                    o.effect(true)
+                ));
                 ui.add_enabled(
                     map.raw.is_some(),
                     egui::Checkbox::without_text(&mut map.invert),

@@ -48,7 +48,8 @@ fn hold(cal: &mut Calibration, t: &mut f64, axes: [i32; 6]) {
 fn the_person_measures_checks_and_takes_the_mapping() {
     let mut h = harness();
     h.run();
-    h.get_by_label_contains("pan the view right");
+    h.get_by_label_contains("Slide the puck to the right");
+    h.get_by_label_contains("In the app the page moves right");
     // Not done yet: the button says why it is off.
     assert!(
         h.get_by_label("Use this mapping")
@@ -67,7 +68,8 @@ fn the_person_measures_checks_and_takes_the_mapping() {
     }
     h.run();
     h.get_by_label("axis -z");
-    h.get_by_label("this motion: the view zooms in");
+    h.get_by_label("the page gets smaller");
+    h.get_by_label("the page moves up");
     h.snapshot("calibration_done");
 
     h.get_by_label("Use this mapping").click();
@@ -75,8 +77,9 @@ fn the_person_measures_checks_and_takes_the_mapping() {
     let CalibrationAction::Apply(m) = &h.state().action else {
         panic!("no mapping taken: {:?}", h.state().action)
     };
-    assert_eq!(m.axis(Output::PanUp), AxisMap::inverted(2));
-    assert_eq!(m.axis(Output::ZoomIn), AxisMap::new(1));
+    assert_eq!(m.axis(Output::MoveUp), AxisMap::inverted(2));
+    // push away read +y and makes the page smaller: grow is -y
+    assert_eq!(m.axis(Output::Grow), AxisMap::inverted(1));
 }
 
 #[test]

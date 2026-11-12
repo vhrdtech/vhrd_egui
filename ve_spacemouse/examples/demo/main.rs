@@ -13,6 +13,7 @@ mod menu;
 use std::path::PathBuf;
 use std::time::Duration;
 
+use egui::emath::Rot2;
 use egui::{Pos2, Sense, Ui, Vec2, pos2, vec2};
 use menu::{Action, Can};
 use ve_spacemouse::{
@@ -21,7 +22,8 @@ use ve_spacemouse::{
 };
 use ve_theme::UiExt;
 
-const MAPPING_KEY: &str = "ve_spacemouse_mapping";
+// v2: the mapping is in content terms since the convention change; an older (camera) one is not loaded.
+const MAPPING_KEY: &str = "ve_spacemouse_mapping_v2";
 
 fn main() -> eframe::Result {
     let mut socket = PathBuf::from(ve_spacemouse::DEFAULT_SOCKET);
@@ -83,10 +85,12 @@ struct Demo {
     mapping: Mapping,
     pie: PieState,
     calibration: Option<Calibration>,
-    /// Canvas: points in canvas units, the view's offset and scale.
+    /// Canvas: points in canvas units; where the canvas origin sits from the centre, its scale and its turn
+    /// (clockwise on screen, radians).
     dots: Vec<Pos2>,
     offset: Vec2,
     scale: f32,
+    angle: f32,
     copied: Option<Pos2>,
     undo: Vec<Vec<Pos2>>,
     redo: Vec<Vec<Pos2>>,
@@ -115,6 +119,7 @@ impl Demo {
             dots,
             offset: Vec2::ZERO,
             scale: 1.0,
+            angle: 0.0,
             copied: None,
             undo: Vec::new(),
             redo: Vec::new(),
@@ -126,10 +131,12 @@ impl Demo {
     }
 
     fn to_canvas(&self, center: Pos2, screen: Pos2) -> Pos2 {
-        pos2(
-            (screen.x - center.x - self.offset.x) / self.scale,
-            (screen.y - center.y - self.offset.y) / self.scale,
-        )
+        let v = Rot2::from_angle(-self.angle) * (screen - center - self.offset) / self.scale;
+        v.to_pos2()
+    }
+
+    fn to_screen(&self, center: Pos2, canvas: Pos2) -> Pos2 {
+        center + self.offset + Rot2::from_angle(self.angle) * canvas.to_vec2() * self.scale
     }
 
     fn nearest(&self, p: Pos2) -> Option<usize> {
@@ -177,6 +184,7 @@ impl Demo {
             }
             Action::ZoomToFit | Action::Recenter => {
                 self.offset = Vec2::ZERO;
+                self.angle = 0.0;
                 if action == Action::ZoomToFit {
                     self.scale = 1.0;
                 }
@@ -219,12 +227,20 @@ impl Demo {
         if ui
             .add_enabled(!calibrating, egui::Button::new("Calibrate…"))
             .on_hover_text(
-                "Measure which way you move the puck for pan and zoom, and which button is which",
+                "Measure which way the puck reads when you slide it, lift it and push it away, and which button is which",
             )
             .on_disabled_hover_text("The calibration window is open")
             .clicked()
         {
             self.calibration = Some(Calibration::two_d(self.mapping.clone()));
+        }
+        if ui
+            .add_enabled(!calibrating, egui::Button::new("Calibrate all six axes…"))
+            .on_hover_text("The same, plus tilt, rock and twist: twist turns this canvas")
+            .on_disabled_hover_text("The calibration window is open")
+            .clicked()
+        {
+            self.calibration = Some(Calibration::full(self.mapping.clone()));
         }
         ui.add_space(t.space.m);
         ui.heading("Fired");
@@ -242,24 +258,34 @@ impl Demo {
         let (rect, _) = ui.allocate_exact_size(ui.available_size(), Sense::hover());
         let center = rect.center();
         let p = ui.painter_at(rect);
-        let step = 20.0 * self.scale;
-        if self.grid && step > 4.0 {
-            let origin = center + self.offset;
-            let x0 = origin.x - ((origin.x - rect.left()) / step).floor() * step;
-            let y0 = origin.y - ((origin.y - rect.top()) / step).floor() * step;
-            let mut x = x0;
-            while x < rect.right() {
-                let mut y = y0;
-                while y < rect.bottom() {
-                    p.circle_filled(pos2(x, y), 1.0, t.colors.line);
-                    y += step;
+        if self.grid && 20.0 * self.scale > 4.0 {
+            // The canvas grid points that can land in the view, whatever the turn.
+            let corners = [
+                rect.left_top(),
+                rect.right_top(),
+                rect.left_bottom(),
+                rect.right_bottom(),
+            ]
+            .map(|c| self.to_canvas(center, c));
+            let lo = corners
+                .iter()
+                .fold(pos2(f32::MAX, f32::MAX), |a, c| a.min(*c));
+            let hi = corners
+                .iter()
+                .fold(pos2(f32::MIN, f32::MIN), |a, c| a.max(*c));
+            let mut x = (lo.x / 20.0).floor() * 20.0;
+            while x <= hi.x {
+                let mut y = (lo.y / 20.0).floor() * 20.0;
+                while y <= hi.y {
+                    p.circle_filled(self.to_screen(center, pos2(x, y)), 1.0, t.colors.line);
+                    y += 20.0;
                 }
-                x += step;
+                x += 20.0;
             }
         }
         for d in &self.dots {
             p.circle_filled(
-                center + self.offset + d.to_vec2() * self.scale,
+                self.to_screen(center, *d),
                 6.0 * self.scale.sqrt(),
                 t.colors.accent,
             );
@@ -268,8 +294,10 @@ impl Demo {
             rect.left_top() + vec2(8.0, 8.0),
             egui::Align2::LEFT_TOP,
             format!(
-                "zoom {:.2}×  ·  tap a button for its centre slot, hold it for the ring",
-                self.scale
+                "zoom {:.2}×  ·  turn {:.0}°  ·  {}  ·  tap a button for its centre slot, hold it for the ring",
+                self.scale,
+                self.angle.to_degrees(),
+                self.mapping.convention.name()
             ),
             egui::FontId::proportional(13.0),
             t.colors.text_muted,
@@ -323,10 +351,15 @@ impl eframe::App for Demo {
             // Navigation and menu only while not calibrating: the motions there are measurements.
             let nav = self.mapping.apply(&self.mouse.axes());
             if !nav.is_zero() {
-                self.offset -= nav.pan_screen() * dt;
+                // Nav is what the content does: move, grow and turn it about the view's centre.
+                self.offset += nav.pan_screen() * dt;
                 let k = (nav.zoom * dt).exp();
-                self.scale = (self.scale * k).clamp(0.05, 40.0);
-                self.offset *= k;
+                let scale = (self.scale * k).clamp(0.05, 40.0);
+                self.offset *= scale / self.scale;
+                self.scale = scale;
+                let turn = nav.rotate[2] * dt;
+                self.offset = Rot2::from_angle(turn) * self.offset;
+                self.angle += turn;
                 ui.ctx().request_repaint_after(Duration::from_millis(16));
             }
             let can = Can {

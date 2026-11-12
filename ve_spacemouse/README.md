@@ -3,10 +3,10 @@
 3D mouse input for egui apps through [spacenavd](https://spacenav.sourceforge.net/), the free driver for 3Dconnexion devices, and a pie menu on the device's buttons.
 
 - **The client** (`SpaceMouse`) speaks spacenavd's socket protocol in pure Rust: no libspnav, no C. A thread reads the events, and the UI drains them once per frame.
-- **The mapping** (`Mapping`) says which raw axis pans, zooms or rotates the view, with signs, dead zone, speed and which button is left or right. It is a per-app setting. The calibrate step (`Calibration`) measures it with the person.
+- **The mapping** (`Mapping`) says which raw axis moves, zooms or turns the content, with signs, dead zone, speed and which button is left or right. By default the content follows the hand; a camera convention is a setting. It is a per-app setting. The calibrate step (`Calibration`) measures it with the person.
 - **The pie menu** (`PieMenu`) opens on the device's buttons, the way a pie menu over KiCad does on the same socket: tap for one action, hold for a ring of eight.
 
-Try it: `cargo run -p ve_spacemouse --example demo`. It shows a canvas of dots that the puck pans and zooms, pie menus on both buttons, the mapping as settings, and *Calibrate…*. `-- --socket PATH` connects to another socket.
+Try it: `cargo run -p ve_spacemouse --example demo`. It shows a canvas of dots that the puck moves, zooms and turns, pie menus on both buttons, the mapping as settings, and *Calibrate…*. `-- --socket PATH` connects to another socket.
 
 ## Setup
 
@@ -41,25 +41,46 @@ let mouse = ve_spacemouse::SpaceMouse::start(Default::default()).with_repaint(&c
 let events = mouse.poll();
 let nav = mapping.apply(&mouse.axes());           // per second
 let dt = ui.input(|i| i.stable_dt);
-view.pan -= nav.pan_screen() * dt;                // the view pans right: content moves left
-view.scale *= (nav.zoom * dt).exp();
+offset += nav.pan_screen() * dt;                  // what the content does, convention included
+scale *= (nav.zoom * dt).exp();
+angle += nav.rotate[2] * dt;                      // clockwise on screen
 ```
 
 `with_repaint` asks egui for a frame on every event, so the app needs no timer. The app keeps the `SpaceMouse` as transient state: it is rebuilt at start and never saved.
 
 ### The mapping and the calibrate step (SPM-2)
 
-`Mapping` is `serde` with `#[serde(default)]`: keep it in the app's settings. Each `Output` (pan right, pan up, zoom in, tilt forward, turn right, spin clockwise) takes one raw axis (`x y z rx ry rz`) and a sign. A raw value of `full_scale` gives full speed, and the `dead_zone` part of the travel does nothing. `mapping_ui` edits it by hand, with a live bar per output.
+#### Content follows the puck
+
+The mapping speaks of what the *content* does, not the camera. With `Convention::Content`, the default, the content follows the hand, as KiCad's 2D view with `reverse_pan_x` / `reverse_pan_y` and FreeCAD's object mode do:
+
+| Motion | The page |
+|---|---|
+| slide right | moves right |
+| lift up | moves up |
+| push away | gets smaller (zoom out) |
+| twist clockwise | turns clockwise |
+| tilt forward | tilts forward, its top away from you |
+| rock right | rolls right, its right side down |
+
+`Convention::Camera` turns every output around, for people who think of the puck as the camera: slide right and the view moves right, so the page moves left. `Mapping::apply` applies the convention, so the `Nav` it returns is always what the content does: an app moves its content by it and never thinks about the convention.
+
+#### The settings
+
+`Mapping` is `serde` with `#[serde(default)]`: keep it in the app's settings. Each `Output` (move right, move up, grow, tilt forward, roll right, turn clockwise) takes one raw axis (`x y z rx ry rz`) and a sign: the raw motion that makes the content do it under the content convention. A raw value of `full_scale` gives full speed, and the `dead_zone` part of the travel does nothing. `mapping_ui` edits it by hand, with the convention and a live bar per output.
+
+#### The calibrate step
 
 The calibrate step measures the input instead of asking the person to describe it:
 
-1. The panel asks for one motion at a time: "Move the puck the way that should pan the view right. Hold it about 2 s, then let go." So the person's own idea of pan and zoom decides, whatever `swap-yz` says.
+1. The panel asks for one physical motion at a time and says what it will do: "Slide the puck to the right. Hold it about 2 s, then let go. In the app the page moves right."
 2. It records the motion events from the first push past 15 % of the full scale until the puck is back under 6 %. A hold shorter than 0.8 s is asked again.
-3. The axis that moved most over the hold is the answer, and the sign of its mean is the direction. A second axis moving more than half as much is a mixed motion. The same axis for two outputs is flagged too. Both get a ⚠ and a hint to redo.
-4. It asks for each button once and records spacenavd's number for it. One number can't be both sides.
-5. A table shows what each motion will do in the app, with the raw axis, peak and hold time in the tooltip, and a *Redo* per row. *Use this mapping* is enabled once every step is done and clean. The full scale becomes 80 % of the median peak, so full speed does not need the hardest push.
+3. The axis that moved most over the hold is the answer, and the sign of its mean is the direction. A second axis moving more than half as much is a mixed motion. The same axis for two motions is flagged too. Both get a ⚠ and a hint to redo.
+4. Each `Motion` drives one output with a fixed sign (`Motion::drives`: push away is the page getting smaller, every other motion moves or turns the page with the hand), so the mapping follows from the measured axis and sign. Whatever `swap-yz` or `axismapN` say in `/etc/spnavrc`, the content follows the hand.
+5. It asks for each button once and records spacenavd's number for it. One number can't be both sides.
+6. A table shows what the page does on each motion ("push away: the page gets smaller"), with the raw axis, peak and hold time in the tooltip, and a *Redo* per row. A choice above it switches between content and camera, and the table follows. *Use this mapping* is enabled once every step is done and clean. The full scale becomes 80 % of the median peak, so full speed does not need the hardest push.
 
-`Calibration::two_d` asks for pan right, pan up, zoom in and both buttons. `Calibration::full` asks for all six outputs. `Calibration::feed` takes the time from the caller, so it is tested without a clock.
+`Calibration::two_d` asks for slide right, lift up, push away and both buttons. `Calibration::full` asks for all six motions. `Calibration::feed` takes the time from the caller, so it is tested without a clock.
 
 ### The pie menu (SPM-3)
 
@@ -92,7 +113,7 @@ Call `show` after the app's panels. `ve_spacemouse::install_icons(ctx)` (feature
 
 ## Testing
 
-`FakeSpacenavd` listens on a socket of its own and sends the events a test asks for. It speaks the same protocol, so the client cannot tell it apart: `tests/socket.rs` covers events, a restart and a late daemon with it. The pie menu (`tests/pie.rs`) and the calibrate panel (`tests/calibrate.rs`) are headless egui_kittest tests with snapshots; the state machines have unit tests.
+`FakeSpacenavd` listens on a socket of its own and sends the events a test asks for. It speaks the same protocol, so the client cannot tell it apart: `tests/socket.rs` covers events, a restart and a late daemon with it. `tests/convention.rs` plays a whole calibration through it and checks the derived signs: the content follows the hand, and the camera convention turns it around. The pie menu (`tests/pie.rs`) and the calibrate panel (`tests/calibrate.rs`) are headless egui_kittest tests with snapshots; the state machines have unit tests.
 
 ## Not a web crate
 

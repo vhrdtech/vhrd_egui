@@ -1,14 +1,16 @@
 //! The calibrate step: measure the puck, then let the person confirm (SPM-2).
 //!
-//! The person does one motion at a time ("move the puck the way that should pan the view right, hold it about
-//! 2 s, then let go") and presses each button once. [`Calibration`] records the raw events with their times,
-//! works out from the data which raw axis and sign each motion was, and which number each button has, and shows
-//! a table of what the app will then do, with a redo per row. Nothing is guessed from a description.
+//! The person does one physical motion at a time ("slide the puck to the right, hold it about 2 s, then let go")
+//! and presses each button once. [`Calibration`] records the raw events with their times, works out from the data
+//! which raw axis and sign each motion was, and which number each button has. Each [`Motion`] drives one
+//! [`Output`] with a fixed sign, so the mapping follows from the measurement: by default the content follows the
+//! hand (slide right, the page moves right; push away, the page gets smaller). A table shows what the content
+//! will then do, with a redo per row. Nothing is guessed from a description.
 //!
 //! The state machine takes the time from the caller ([`Calibration::feed`]), so tests drive it without a clock.
 
 use crate::event::{AXIS_NAMES, Axes, Event};
-use crate::mapping::{AxisMap, Mapping, Output, Side};
+use crate::mapping::{AxisMap, Convention, Mapping, Output, Side};
 use crate::settings_ui::axes_bars;
 use ve_theme::UiExt;
 
@@ -23,31 +25,106 @@ const MIXED: f32 = 0.5;
 /// `full_scale` becomes this share of the typical recorded peak, so full speed does not need the hardest push.
 const FULL_OF_PEAK: f32 = 0.8;
 
+/// A physical motion of the puck the calibrate step asks for.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub enum Motion {
+    /// Slide it to the right.
+    SlideRight,
+    /// Lift it up.
+    LiftUp,
+    /// Push it away from you.
+    PushAway,
+    /// Tilt it forward, its top away from you.
+    TiltForward,
+    /// Rock it to the right, its right side down.
+    RockRight,
+    /// Twist it clockwise, seen from above.
+    TwistClockwise,
+}
+
+impl Motion {
+    /// The motions a 2D view needs: move and zoom.
+    pub const TWO_D: [Motion; 3] = [Motion::SlideRight, Motion::LiftUp, Motion::PushAway];
+    /// All six.
+    pub const ALL: [Motion; 6] = [
+        Motion::SlideRight,
+        Motion::LiftUp,
+        Motion::PushAway,
+        Motion::TiltForward,
+        Motion::RockRight,
+        Motion::TwistClockwise,
+    ];
+
+    /// A short name for the table: "slide right".
+    pub fn name(self) -> &'static str {
+        match self {
+            Motion::SlideRight => "slide right",
+            Motion::LiftUp => "lift up",
+            Motion::PushAway => "push away",
+            Motion::TiltForward => "tilt forward",
+            Motion::RockRight => "rock right",
+            Motion::TwistClockwise => "twist clockwise",
+        }
+    }
+
+    /// What to tell the person to do.
+    pub fn instruction(self) -> &'static str {
+        match self {
+            Motion::SlideRight => "Slide the puck to the right",
+            Motion::LiftUp => "Lift the puck up",
+            Motion::PushAway => "Push the puck away from you",
+            Motion::TiltForward => "Tilt the puck forward, its top away from you",
+            Motion::RockRight => "Rock the puck to the right, its right side down",
+            Motion::TwistClockwise => "Twist the puck clockwise",
+        }
+    }
+
+    /// The output this motion drives with the content following the hand, and the sign: pushing away makes the
+    /// page smaller, every other motion moves or turns the page the same way as the hand.
+    pub fn drives(self) -> (Output, f32) {
+        match self {
+            Motion::SlideRight => (Output::MoveRight, 1.0),
+            Motion::LiftUp => (Output::MoveUp, 1.0),
+            Motion::PushAway => (Output::Grow, -1.0),
+            Motion::TiltForward => (Output::TiltForward, 1.0),
+            Motion::RockRight => (Output::RollRight, 1.0),
+            Motion::TwistClockwise => (Output::TurnClockwise, 1.0),
+        }
+    }
+
+    /// What the page does on this motion under `convention`: "the page moves right", "the page gets smaller".
+    pub fn effect(self, convention: Convention) -> &'static str {
+        let (output, sign) = self.drives();
+        output.effect(sign * convention.sign() > 0.0)
+    }
+}
+
 /// One thing the person does.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Step {
-    /// A motion that should drive this output in its positive direction.
-    Axis(Output),
+    /// A motion of the puck, held about 2 s.
+    Axis(Motion),
     /// Press and release a button.
     Button(Side),
 }
 
 impl Step {
-    /// What to tell the person.
-    pub fn prompt(&self) -> String {
+    /// What to tell the person; `convention` says what the motion will do.
+    pub fn prompt(&self, convention: Convention) -> String {
         match self {
-            Step::Axis(o) => format!(
-                "Move the puck the way that should {}. Hold it about 2 s, then let go.",
-                o.verb()
+            Step::Axis(m) => format!(
+                "{}. Hold it about 2 s, then let go. In the app {}.",
+                m.instruction(),
+                m.effect(convention)
             ),
             Step::Button(s) => format!("Press and release the {} button.", s.name()),
         }
     }
 
-    /// A short name for the table: "pan right", "left button".
+    /// A short name for the table: "slide right", "left button".
     pub fn name(&self) -> String {
         match self {
-            Step::Axis(o) => o.name().into(),
+            Step::Axis(m) => m.name().into(),
             Step::Button(s) => format!("{} button", s.name()),
         }
     }
@@ -58,7 +135,7 @@ impl Step {
 pub enum Measured {
     /// The raw axis the motion moved most, its sign, and how clear that was.
     Axis {
-        /// The raw axis and sign: what [`Mapping::axes`] gets.
+        /// The raw axis and the sign the motion read on it (`invert`: it read negative).
         map: AxisMap,
         /// The largest deflection seen on that axis.
         peak: i32,
@@ -124,16 +201,16 @@ impl Calibration {
         }
     }
 
-    /// Pan right, pan up, zoom in, then the left and the right button: what a 2D view needs.
+    /// Slide right, lift up, push away, then the left and the right button: what a 2D view needs.
     pub fn two_d(base: Mapping) -> Self {
-        let mut steps: Vec<Step> = Output::TWO_D.into_iter().map(Step::Axis).collect();
+        let mut steps: Vec<Step> = Motion::TWO_D.into_iter().map(Step::Axis).collect();
         steps.extend([Step::Button(Side::Left), Step::Button(Side::Right)]);
         Self::new(steps, base)
     }
 
-    /// All six outputs and both buttons: for a 3D view.
+    /// All six motions and both buttons: for a view that also turns (or a 3D one).
     pub fn full(base: Mapping) -> Self {
-        let mut steps: Vec<Step> = Output::ALL.into_iter().map(Step::Axis).collect();
+        let mut steps: Vec<Step> = Motion::ALL.into_iter().map(Step::Axis).collect();
         steps.extend([Step::Button(Side::Left), Step::Button(Side::Right)]);
         Self::new(steps, base)
     }
@@ -308,14 +385,32 @@ impl Calibration {
         }
     }
 
+    /// The convention the table shows and the mapping gets (the base's at the start).
+    pub fn convention(&self) -> Convention {
+        self.base.convention
+    }
+
+    /// Choose content or camera; the table and the derived mapping follow.
+    pub fn set_convention(&mut self, convention: Convention) {
+        self.base.convention = convention;
+    }
+
     /// The mapping from the measurements: the base with every measured axis, button and the full scale.
+    ///
+    /// Each motion drives its output ([`Motion::drives`]) with the content following the hand: the raw axis it
+    /// moved, signed so that the motion gives the output's sign. The convention is kept from the base and applied
+    /// by [`Mapping::apply`].
     pub fn mapping(&self) -> Mapping {
         let mut m = self.base.clone();
         let mut peaks = Vec::new();
         for (step, r) in self.steps.iter().zip(&self.results) {
             match (step, r.as_ref().map(|r| &r.measured)) {
-                (Step::Axis(o), Some(Measured::Axis { map, peak, .. })) => {
-                    m.axes[o.index()] = *map;
+                (Step::Axis(motion), Some(Measured::Axis { map, peak, .. })) => {
+                    let (output, sign) = motion.drives();
+                    m.axes[output.index()] = AxisMap {
+                        raw: map.raw,
+                        invert: map.invert != (sign < 0.0),
+                    };
                     peaks.push(*peak);
                 }
                 (Step::Button(Side::Left), Some(Measured::Button(n))) => m.buttons.left = *n,
@@ -386,7 +481,7 @@ pub fn calibration_ui(ui: &mut egui::Ui, cal: &mut Calibration) -> CalibrationAc
             egui::RichText::new(format!("Step {} of {}", i + 1, cal.steps().len()))
                 .color(t.colors.text_muted),
         );
-        ui.label(egui::RichText::new(step.prompt()).strong());
+        ui.label(egui::RichText::new(step.prompt(cal.convention())).strong());
         let state = if cal.recording() {
             "recording: let go when done"
         } else {
@@ -408,12 +503,30 @@ pub fn calibration_ui(ui: &mut egui::Ui, cal: &mut Calibration) -> CalibrationAc
     axes_bars(ui, &cal.live(), cal.base.full_scale);
     ui.add_space(t.space.s);
 
+    let mut convention = cal.convention();
+    ui.horizontal(|ui| {
+        ui.label("The puck moves")
+            .on_hover_text("Whose motion the puck is; the table below and the mapping follow");
+        ui.radio_value(&mut convention, Convention::Content, "the content")
+            .on_hover_text(
+                "The content follows the hand: slide right and the page moves right, push away and it gets smaller, \
+                 twist clockwise and it turns clockwise (KiCad with reverse pan, FreeCAD's object mode)",
+            );
+        ui.radio_value(&mut convention, Convention::Camera, "the camera")
+            .on_hover_text(
+                "The puck is the camera: slide right and the view moves right, so the page moves left; push away \
+                 and the camera goes in, so the page gets bigger",
+            );
+    });
+    cal.set_convention(convention);
+    ui.add_space(t.space.s);
+
     let mapping = cal.mapping();
     let mut redo = None;
     egui::Grid::new("ve_spacemouse_calibration").striped(true).show(ui, |ui| {
         ui.label("Step").on_hover_text("What you were asked to do");
         ui.label("Measured").on_hover_text("The raw axis and sign the motion moved most, or the button number");
-        ui.label("In the app").on_hover_text("What doing that same thing will do from now on");
+        ui.label("In the app").on_hover_text("What the page does from now on when you do this");
         ui.label("");
         ui.end_row();
         for (i, step) in cal.steps().iter().enumerate() {
@@ -432,7 +545,7 @@ pub fn calibration_ui(ui: &mut egui::Ui, cal: &mut Calibration) -> CalibrationAc
                     };
                     ui.label(measured).on_hover_text(tip);
                     let effect = match step {
-                        Step::Axis(o) => format!("this motion: {}", o.effect()),
+                        Step::Axis(m) => m.effect(convention).to_string(),
                         Step::Button(s) => format!("opens the {} pie menu", s.name()),
                     };
                     if r.warnings.is_empty() {
@@ -491,7 +604,7 @@ pub fn calibration_ui(ui: &mut egui::Ui, cal: &mut Calibration) -> CalibrationAc
             .add_enabled_ui(why.is_none(), |ui| {
                 ui.primary_button(
                     "Use this mapping",
-                    "Save the measured axes, signs, buttons and full scale in this app's settings",
+                    "Save the measured axes, signs, buttons, full scale and the convention in this app's settings",
                 )
             })
             .inner;
@@ -543,7 +656,7 @@ mod tests {
     fn two_d_measures_axes_signs_and_buttons() {
         let mut c = Calibration::two_d(Mapping::default());
         let mut t = 0.0;
-        // swap-yz style: pan up is lift (-z here), zoom is push forward (+y)
+        // slide right reads +x, lift up reads -z, push away reads +y
         hold(&mut c, &mut t, [300, 10, -20, 5, 0, 0], 2.0);
         hold(&mut c, &mut t, [10, 15, -280, 0, 0, 0], 2.0);
         hold(&mut c, &mut t, [0, 320, 30, 0, 0, 0], 2.0);
@@ -552,15 +665,16 @@ mod tests {
         assert!(c.done());
         assert!(c.results().iter().flatten().all(|r| r.warnings.is_empty()));
         let m = c.mapping();
-        assert_eq!(m.axis(Output::PanRight), AxisMap::new(0));
-        assert_eq!(m.axis(Output::PanUp), AxisMap::inverted(2));
-        assert_eq!(m.axis(Output::ZoomIn), AxisMap::new(1));
+        assert_eq!(m.axis(Output::MoveRight), AxisMap::new(0));
+        assert_eq!(m.axis(Output::MoveUp), AxisMap::inverted(2));
+        // pushing away makes the page smaller: +y is shrink, so grow is -y
+        assert_eq!(m.axis(Output::Grow), AxisMap::inverted(1));
         assert_eq!((m.buttons.left, m.buttons.right), (12, 13));
         assert_eq!(m.full_scale, 300.0 * FULL_OF_PEAK);
         // not measured: kept from the base
         assert_eq!(
-            m.axis(Output::SpinClockwise),
-            Mapping::default().axis(Output::SpinClockwise)
+            m.axis(Output::TurnClockwise),
+            Mapping::default().axis(Output::TurnClockwise)
         );
     }
 
@@ -599,7 +713,7 @@ mod tests {
                 .unwrap()
                 .warnings
                 .iter()
-                .any(|w| w.contains("Same axis as pan right"))
+                .any(|w| w.contains("Same axis as slide right"))
         );
         c.redo(1);
         hold(&mut c, &mut t, [0, 0, -280, 0, 0, 0], 2.0);
