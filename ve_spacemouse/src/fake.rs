@@ -70,7 +70,11 @@ impl FakeSpacenavd {
 
     /// The number of clients connected now.
     pub fn clients(&self) -> usize {
-        self.clients.list.lock().unwrap_or_else(|p| p.into_inner()).len()
+        self.clients
+            .list
+            .lock()
+            .unwrap_or_else(|p| p.into_inner())
+            .len()
     }
 
     /// Wait until at least `n` clients are connected; `false` if that did not happen within `timeout` (a failure

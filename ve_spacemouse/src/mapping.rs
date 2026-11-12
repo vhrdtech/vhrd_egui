@@ -52,6 +52,18 @@ impl Output {
         }
     }
 
+    /// What the motion should do, for the calibration prompt: "pan the view right".
+    pub fn verb(self) -> &'static str {
+        match self {
+            Output::PanRight => "pan the view right",
+            Output::PanUp => "pan the view up",
+            Output::ZoomIn => "zoom in",
+            Output::TiltForward => "tilt the view forward",
+            Output::TurnRight => "turn the view right",
+            Output::SpinClockwise => "spin the view clockwise",
+        }
+    }
+
     /// What the view does, for the calibration table: "the view pans right".
     pub fn effect(self) -> &'static str {
         match self {
@@ -66,7 +78,7 @@ impl Output {
 }
 
 /// Which raw axis feeds an output, and whether it is reversed.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(default)]
 pub struct AxisMap {
     /// Index into [`Axes`] (0 x, 1 y, 2 z, 3 rx, 4 ry, 5 rz); `None` turns the output off.
@@ -75,21 +87,21 @@ pub struct AxisMap {
     pub invert: bool,
 }
 
-impl Default for AxisMap {
-    fn default() -> Self {
-        Self { raw: None, invert: false }
-    }
-}
-
 impl AxisMap {
     /// `raw` as is.
     pub fn new(raw: usize) -> Self {
-        Self { raw: Some(raw), invert: false }
+        Self {
+            raw: Some(raw),
+            invert: false,
+        }
     }
 
     /// `raw` reversed.
     pub fn inverted(raw: usize) -> Self {
-        Self { raw: Some(raw), invert: true }
+        Self {
+            raw: Some(raw),
+            invert: true,
+        }
     }
 
     /// "x", "-z" or "off", for tables and tooltips.
@@ -116,7 +128,11 @@ pub struct Speed {
 
 impl Default for Speed {
     fn default() -> Self {
-        Self { pan: 1200.0, zoom: 1.5, rotate: 2.0 }
+        Self {
+            pan: 1200.0,
+            zoom: 1.5,
+            rotate: 2.0,
+        }
     }
 }
 
@@ -271,7 +287,11 @@ mod tests {
 
     #[test]
     fn dead_zone_and_full_scale() {
-        let m = Mapping { dead_zone: 0.1, full_scale: 100.0, ..Default::default() };
+        let m = Mapping {
+            dead_zone: 0.1,
+            full_scale: 100.0,
+            ..Default::default()
+        };
         assert_eq!(m.level(Output::PanRight, &[5, 0, 0, 0, 0, 0]), 0.0);
         assert_eq!(m.level(Output::PanRight, &[-10, 0, 0, 0, 0, 0]), 0.0);
         assert!((m.level(Output::PanRight, &[55, 0, 0, 0, 0, 0]) - 0.5).abs() < 1e-6);
@@ -281,7 +301,11 @@ mod tests {
 
     #[test]
     fn invert_and_off() {
-        let mut m = Mapping { dead_zone: 0.0, full_scale: 100.0, ..Default::default() };
+        let mut m = Mapping {
+            dead_zone: 0.0,
+            full_scale: 100.0,
+            ..Default::default()
+        };
         m.axes[Output::PanUp.index()] = AxisMap::inverted(2);
         m.axes[Output::ZoomIn.index()] = AxisMap::default();
         let nav = m.apply(&[0, 0, 50, 0, 0, 0]);
@@ -293,7 +317,13 @@ mod tests {
 
     #[test]
     fn buttons_by_side() {
-        let m = Mapping { buttons: Buttons { left: 12, right: 13 }, ..Default::default() };
+        let m = Mapping {
+            buttons: Buttons {
+                left: 12,
+                right: 13,
+            },
+            ..Default::default()
+        };
         assert_eq!(m.side_of(12), Some(Side::Left));
         assert_eq!(m.side_of(13), Some(Side::Right));
         assert_eq!(m.side_of(0), None);
@@ -303,8 +333,10 @@ mod tests {
     #[test]
     fn old_settings_load_with_defaults() {
         use serde::de::value::{Error, MapDeserializer};
-        let m = Mapping::deserialize(MapDeserializer::<_, Error>::new([("dead_zone", 0.2f32)].into_iter()))
-            .expect("a partial mapping loads");
+        let m = Mapping::deserialize(MapDeserializer::<_, Error>::new(
+            [("dead_zone", 0.2f32)].into_iter(),
+        ))
+        .expect("a partial mapping loads");
         assert_eq!(m.dead_zone, 0.2);
         assert_eq!(m.speed, Speed::default());
         assert_eq!(m.buttons, Buttons::default());

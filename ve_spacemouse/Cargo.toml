@@ -20,6 +20,6 @@ ve_theme = { path = "../ve_theme", version = "0.32", default-features = false }
 egui-phosphor = { version = "0.14", default-features = false, features = ["regular"], optional = true }
 
 [dev-dependencies]
-eframe = { workspace = true, features = ["wgpu"] }
+eframe = { workspace = true, features = ["persistence", "wgpu"] }
 egui_kittest = { workspace = true, features = ["snapshot", "wgpu"] }
 ve_theme = { path = "../ve_theme", version = "0.32" }

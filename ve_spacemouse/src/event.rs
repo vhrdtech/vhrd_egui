@@ -78,9 +78,16 @@ impl Event {
             Event::Motion { axes, period_ms } => [
                 MOTION, axes[0], axes[1], axes[2], axes[3], axes[4], axes[5], period_ms,
             ],
-            Event::Button { number, pressed } => {
-                [if pressed { PRESS } else { RELEASE }, number, 0, 0, 0, 0, 0, 0]
-            }
+            Event::Button { number, pressed } => [
+                if pressed { PRESS } else { RELEASE },
+                number,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+            ],
             Event::Other { kind } => [kind, 0, 0, 0, 0, 0, 0, 0],
         }
     }
@@ -113,17 +120,32 @@ mod tests {
     fn decodes_the_three_types() {
         assert_eq!(
             Event::from_words([0, 1, -2, 3, -4, 5, -6, 16]),
-            Event::Motion { axes: [1, -2, 3, -4, 5, -6], period_ms: 16 }
+            Event::Motion {
+                axes: [1, -2, 3, -4, 5, -6],
+                period_ms: 16
+            }
         );
-        assert_eq!(Event::from_words([1, 7, 0, 0, 0, 0, 0, 0]), Event::button(7, true));
-        assert_eq!(Event::from_words([2, 7, 0, 0, 0, 0, 0, 0]), Event::button(7, false));
-        assert_eq!(Event::from_words([9, 0, 0, 0, 0, 0, 0, 0]), Event::Other { kind: 9 });
+        assert_eq!(
+            Event::from_words([1, 7, 0, 0, 0, 0, 0, 0]),
+            Event::button(7, true)
+        );
+        assert_eq!(
+            Event::from_words([2, 7, 0, 0, 0, 0, 0, 0]),
+            Event::button(7, false)
+        );
+        assert_eq!(
+            Event::from_words([9, 0, 0, 0, 0, 0, 0, 0]),
+            Event::Other { kind: 9 }
+        );
     }
 
     #[test]
     fn bytes_round_trip() {
         for e in [
-            Event::Motion { axes: [350, -350, 0, 1, -1, 120], period_ms: 8 },
+            Event::Motion {
+                axes: [350, -350, 0, 1, -1, 120],
+                period_ms: 8,
+            },
             Event::button(1, true),
             Event::button(0, false),
         ] {

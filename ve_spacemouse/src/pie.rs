@@ -16,7 +16,9 @@ use std::f32::consts::{PI, TAU};
 
 use egui::epaint::{Mesh, PathShape, PathStroke};
 use egui::text::{LayoutJob, TextFormat};
-use egui::{Color32, FontId, Galley, Id, Order, Painter, Pos2, Rect, Sense, Shape, Vec2, pos2, vec2};
+use egui::{
+    Color32, FontId, Galley, Id, Order, Painter, Pos2, Rect, Sense, Shape, Vec2, pos2, vec2,
+};
 use std::sync::Arc;
 use ve_theme::Tokens;
 
@@ -185,7 +187,9 @@ pub fn buttons(events: &[Event], mapping: &Mapping) -> Vec<ButtonEvent> {
     events
         .iter()
         .filter_map(|e| match *e {
-            Event::Button { number, pressed } => mapping.side_of(number).map(|side| ButtonEvent { side, pressed }),
+            Event::Button { number, pressed } => mapping
+                .side_of(number)
+                .map(|side| ButtonEvent { side, pressed }),
             _ => None,
         })
         .collect()
@@ -258,7 +262,12 @@ impl<A: Clone> PieMenu<A> {
     ///
     /// A press while the window has no focus or the pointer is outside it is ignored, as the reference ignores
     /// presses outside the editor.
-    pub fn show(&self, ctx: &egui::Context, state: &mut PieState, buttons: &[ButtonEvent]) -> Vec<Fired<A>> {
+    pub fn show(
+        &self,
+        ctx: &egui::Context,
+        state: &mut PieState,
+        buttons: &[ButtonEvent],
+    ) -> Vec<Fired<A>> {
         let (now, pointer, focused, clicked) = ctx.input(|i| {
             (
                 i.time,
@@ -294,7 +303,18 @@ impl<A: Clone> PieMenu<A> {
                     // The whole window: clicks go to the menu, not to what is under it.
                     ui.allocate_rect(ctx.content_rect(), Sense::click_and_drag());
                     if now - open.opened_at >= self.style.tap_s {
-                        self.paint(ui.painter(), open, now, &tokens);
+                        let marks = self.paint(ui.painter(), open, now, &tokens);
+                        // Every name and the hint as accessible labels, for screen readers and kittests.
+                        for (k, (rect, text, enabled)) in marks.into_iter().enumerate() {
+                            let r = ui.interact(
+                                rect,
+                                Id::new("ve_spacemouse_pie_label").with(k),
+                                Sense::hover(),
+                            );
+                            r.widget_info(|| {
+                                egui::WidgetInfo::labeled(egui::WidgetType::Label, enabled, &text)
+                            });
+                        }
                     }
                 });
             ctx.request_repaint();
@@ -302,11 +322,24 @@ impl<A: Clone> PieMenu<A> {
         fired
     }
 
-    fn paint(&self, painter: &Painter, open: &Open, now: f64, t: &Tokens) {
+    /// Draw the open menu; the rectangle, text and enabled state of every name and of the hint.
+    fn paint(
+        &self,
+        painter: &Painter,
+        open: &Open,
+        now: f64,
+        t: &Tokens,
+    ) -> Vec<(Rect, String, bool)> {
+        let mut marks = Vec::new();
         let s = &self.style;
         let o = open.origin;
         let fill = |c: Color32| c.gamma_multiply(s.fill_alpha);
-        let (accent, bg, fg, muted) = (t.colors.accent, t.colors.surface, t.colors.text, t.colors.text_muted);
+        let (accent, bg, fg, muted) = (
+            t.colors.accent,
+            t.colors.surface,
+            t.colors.text,
+            t.colors.text_muted,
+        );
         let on_accent = t.on(accent);
         let ring = self.ring(open.ring);
         let n = ring.len();
@@ -338,8 +371,16 @@ impl<A: Clone> PieMenu<A> {
                 sector(
                     painter,
                     c,
-                    (s.center_radius + 6.0, middle - step / 2.0 + gap_in, middle + step / 2.0 - gap_in),
-                    (s.outer_radius, middle - step / 2.0 + gap_out, middle + step / 2.0 - gap_out),
+                    (
+                        s.center_radius + 6.0,
+                        middle - step / 2.0 + gap_in,
+                        middle + step / 2.0 - gap_in,
+                    ),
+                    (
+                        s.outer_radius,
+                        middle - step / 2.0 + gap_out,
+                        middle + step / 2.0 - gap_out,
+                    ),
                     fill(color).gamma_multiply(alpha),
                 );
                 let (icon_c, text_c) = match slot {
@@ -348,13 +389,18 @@ impl<A: Clone> PieMenu<A> {
                     Some(_) => (accent, fg),
                     None => (muted, muted),
                 };
-                label(
+                let rect = label(
                     painter,
                     c + dir * label_r,
                     slot.as_ref(),
                     (s.icon_size, s.label_size, s.label_width),
                     (icon_c.gamma_multiply(alpha), text_c.gamma_multiply(alpha)),
                 );
+                marks.push((
+                    rect,
+                    slot.as_ref().map_or("Free".into(), |s| s.label.clone()),
+                    enabled,
+                ));
             }
         }
         for side in [Side::Left, Side::Right] {
@@ -367,21 +413,40 @@ impl<A: Clone> PieMenu<A> {
                 (true, true, false) => t.colors.line_strong,
                 _ => bg,
             };
-            let (a0, a1) = if side == Side::Left { (PI / 2.0, 1.5 * PI) } else { (-PI / 2.0, PI / 2.0) };
-            sector(painter, o + vec2(d * 1.5, 0.0), (0.0, a0, a1), (s.center_radius, a0, a1), fill(color));
+            let (a0, a1) = if side == Side::Left {
+                (PI / 2.0, 1.5 * PI)
+            } else {
+                (-PI / 2.0, PI / 2.0)
+            };
+            sector(
+                painter,
+                o + vec2(d * 1.5, 0.0),
+                (0.0, a0, a1),
+                (s.center_radius, a0, a1),
+                fill(color),
+            );
             let (icon_c, text_c) = match item {
                 Some(i) if !i.enabled() => (muted, muted),
                 Some(_) if lit => (on_accent, on_accent),
                 Some(_) => (accent, fg),
                 None => (muted, muted),
             };
-            label(
+            let rect = label(
                 painter,
                 o + vec2(d * s.center_radius / 2.0, 0.0),
                 item,
-                (s.center_icon_size, s.center_label_size, s.center_radius - 8.0),
+                (
+                    s.center_icon_size,
+                    s.center_label_size,
+                    s.center_radius - 8.0,
+                ),
                 (icon_c, text_c),
             );
+            marks.push((
+                rect,
+                item.map_or("Free".into(), |s| s.label.clone()),
+                enabled,
+            ));
         }
         // What the slot under the pointer can't do, and why.
         let hint = match open.hot {
@@ -395,12 +460,20 @@ impl<A: Clone> PieMenu<A> {
             }),
         };
         if let Some(hint) = hint {
-            let g = painter.layout(hint, FontId::proportional(12.0), fg, 2.0 * s.outer_radius + 120.0);
+            let g = painter.layout(
+                hint.clone(),
+                FontId::proportional(12.0),
+                fg,
+                2.0 * s.outer_radius + 120.0,
+            );
             let size = g.size() + vec2(20.0, 10.0);
-            let rect = Rect::from_min_size(pos2(o.x - size.x / 2.0, o.y + s.outer_radius + 10.0), size);
+            let rect =
+                Rect::from_min_size(pos2(o.x - size.x / 2.0, o.y + s.outer_radius + 10.0), size);
             painter.rect_filled(rect, 6.0, fill(bg));
             painter.galley(rect.min + vec2(10.0, 5.0), g, fg);
+            marks.push((rect, hint, true));
         }
+        marks
     }
 }
 
@@ -449,7 +522,10 @@ impl PieState {
                     flights: Vec::new(),
                 });
             }
-            (None, None) => log::debug!("ve_spacemouse: {} button pressed outside the window, ignored", side.name()),
+            (None, None) => log::debug!(
+                "ve_spacemouse: {} button pressed outside the window, ignored",
+                side.name()
+            ),
             (Some(open), _) => {
                 // A second button while the first is held switches to the ring of both, in the same place.
                 self.held.push(side);
@@ -464,7 +540,12 @@ impl PieState {
 
     /// A button went up at `now`. Only a tap (released before the menu showed, pointer still in the centre)
     /// fires: the centre slot of that button. Once the menu shows, a release closes it.
-    pub fn release<A: Clone>(&mut self, side: Side, now: f64, menu: &PieMenu<A>) -> Option<Fired<A>> {
+    pub fn release<A: Clone>(
+        &mut self,
+        side: Side,
+        now: f64,
+        menu: &PieMenu<A>,
+    ) -> Option<Fired<A>> {
         let at = self.held.iter().position(|s| *s == side)?;
         self.held.remove(at);
         if !self.held.is_empty() {
@@ -489,7 +570,12 @@ impl PieState {
     }
 
     /// The pointer is at `pos`: light the slot under it, and fire the slice if it just crossed the outer circle.
-    pub fn pointer<A: Clone>(&mut self, pos: Pos2, now: f64, menu: &PieMenu<A>) -> Option<Fired<A>> {
+    pub fn pointer<A: Clone>(
+        &mut self,
+        pos: Pos2,
+        now: f64,
+        menu: &PieMenu<A>,
+    ) -> Option<Fired<A>> {
         let s = &menu.style;
         let open = self.open.as_mut()?;
         let d: Vec2 = pos - open.origin;
@@ -562,7 +648,13 @@ fn flight(t: f64, (fly, back): (f64, f64)) -> (f32, f32) {
 
 /// An annular sector around `c`: inner (radius, from, to) and outer (radius, from, to), angles in radians
 /// clockwise from +x (egui's y points down). An inner radius of 0 makes a pie slice.
-fn sector(painter: &Painter, c: Pos2, inner: (f32, f32, f32), outer: (f32, f32, f32), color: Color32) {
+fn sector(
+    painter: &Painter,
+    c: Pos2,
+    inner: (f32, f32, f32),
+    outer: (f32, f32, f32),
+    color: Color32,
+) {
     if color.a() == 0 {
         return;
     }
@@ -599,10 +691,10 @@ fn label<A>(
     slot: Option<&Slot<A>>,
     (icon_size, text_size, width): (f32, f32, f32),
     (icon_color, text_color): (Color32, Color32),
-) {
-    let icon: Option<Arc<Galley>> = slot
-        .filter(|s| !s.icon.is_empty())
-        .map(|s| painter.layout_no_wrap(s.icon.clone(), FontId::proportional(icon_size), icon_color));
+) -> Rect {
+    let icon: Option<Arc<Galley>> = slot.filter(|s| !s.icon.is_empty()).map(|s| {
+        painter.layout_no_wrap(s.icon.clone(), FontId::proportional(icon_size), icon_color)
+    });
     let mut job = LayoutJob::default();
     let (text, italics) = match slot {
         Some(s) => (s.label.as_str(), false),
@@ -623,7 +715,9 @@ fn label<A>(
     let text = painter.fonts_mut(|f| f.layout_job(job));
     let gap = 2.0;
     let h = icon.as_ref().map_or(0.0, |g| g.size().y + gap) + text.size().y;
-    let mut y = c.y - h / 2.0;
+    let top = c.y - h / 2.0;
+    let w = icon.as_ref().map_or(0.0, |g| g.size().x).max(text.size().x);
+    let mut y = top;
     if let Some(g) = icon {
         let w = g.size().x;
         let hh = g.size().y;
@@ -632,6 +726,7 @@ fn label<A>(
     }
     // A centred job lays out around x = 0.
     painter.galley(pos2(c.x, y), text, text_color);
+    Rect::from_center_size(pos2(c.x, top + h / 2.0), vec2(w, h))
 }
 
 #[cfg(test)]
@@ -691,8 +786,13 @@ mod tests {
         // up: slice 0
         assert_eq!(s.pointer(O + vec2(0.0, -100.0), 1.3, &m), None);
         assert_eq!(s.hot(), Some(0));
-        let f = s.pointer(O + vec2(0.0, -190.0), 1.4, &m).expect("fires on crossing");
-        assert_eq!((f.action, f.slot, f.tap), (A::Copy, SlotRef::Ring(0), false));
+        let f = s
+            .pointer(O + vec2(0.0, -190.0), 1.4, &m)
+            .expect("fires on crossing");
+        assert_eq!(
+            (f.action, f.slot, f.tap),
+            (A::Copy, SlotRef::Ring(0), false)
+        );
         // not again until back through the centre
         assert_eq!(s.pointer(O + vec2(0.0, -200.0), 1.5, &m), None);
         s.pointer(O, 1.6, &m);
@@ -705,7 +805,12 @@ mod tests {
         let m = menu();
         let mut s = PieState::default();
         s.press(Side::Right, Some(O), 0.0);
-        for (d, i) in [(vec2(0.0, -100.0), 0), (vec2(100.0, 0.0), 2), (vec2(0.0, 100.0), 4), (vec2(-100.0, 0.0), 6)] {
+        for (d, i) in [
+            (vec2(0.0, -100.0), 0),
+            (vec2(100.0, 0.0), 2),
+            (vec2(0.0, 100.0), 4),
+            (vec2(-100.0, 0.0), 6),
+        ] {
             s.pointer(O + d, 0.5, &m);
             assert_eq!(s.hot(), Some(i), "{d:?}");
         }
@@ -716,7 +821,11 @@ mod tests {
         let m = menu();
         let mut s = PieState::default();
         s.press(Side::Right, Some(O), 0.0);
-        assert_eq!(s.pointer(O + vec2(0.0, 200.0), 0.5, &m), None, "paste is disabled");
+        assert_eq!(
+            s.pointer(O + vec2(0.0, 200.0), 0.5, &m),
+            None,
+            "paste is disabled"
+        );
         assert_eq!(s.hot(), Some(4));
         s.pointer(O + vec2(150.0, 0.0), 0.6, &m);
         assert_eq!(s.click(0.7, &m), None, "a free slot");
@@ -741,7 +850,10 @@ mod tests {
         s.press(Side::Left, Some(O), 0.0);
         s.press(Side::Right, Some(O + vec2(30.0, 0.0)), 0.5);
         assert_eq!((s.ring(), s.origin()), (Some(Ring::Both), Some(O)));
-        assert_eq!(s.pointer(O + vec2(0.0, -190.0), 0.7, &m).map(|f| f.action), Some(A::Save));
+        assert_eq!(
+            s.pointer(O + vec2(0.0, -190.0), 0.7, &m).map(|f| f.action),
+            Some(A::Save)
+        );
         assert_eq!(s.release(Side::Left, 0.8, &m), None);
         assert!(s.is_open(), "one still held");
         assert_eq!(s.release(Side::Right, 0.9, &m), None);
@@ -760,12 +872,23 @@ mod tests {
     #[test]
     fn button_events_by_side() {
         let mapping = Mapping::default();
-        let ev = [Event::button(1, true), Event::motion([1; 6]), Event::button(5, true), Event::button(0, false)];
+        let ev = [
+            Event::button(1, true),
+            Event::motion([1; 6]),
+            Event::button(5, true),
+            Event::button(0, false),
+        ];
         assert_eq!(
             buttons(&ev, &mapping),
             vec![
-                ButtonEvent { side: Side::Right, pressed: true },
-                ButtonEvent { side: Side::Left, pressed: false }
+                ButtonEvent {
+                    side: Side::Right,
+                    pressed: true
+                },
+                ButtonEvent {
+                    side: Side::Left,
+                    pressed: false
+                }
             ]
         );
     }

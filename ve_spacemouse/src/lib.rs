@@ -31,9 +31,9 @@
 //! The reference for the menu's behaviour is a pie menu over KiCad driven by the same socket (a Python script
 //! and a Quickshell overlay); this crate brings it into egui apps with the theme's look and phosphor icons.
 
+mod calibrate;
 #[cfg(unix)]
 mod client;
-mod calibrate;
 mod event;
 #[cfg(unix)]
 mod fake;

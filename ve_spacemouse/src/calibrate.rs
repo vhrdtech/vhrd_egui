@@ -37,8 +37,8 @@ impl Step {
     pub fn prompt(&self) -> String {
         match self {
             Step::Axis(o) => format!(
-                "Move the puck the way that should make {}. Hold it about 2 s, then let go.",
-                o.effect()
+                "Move the puck the way that should {}. Hold it about 2 s, then let go.",
+                o.verb()
             ),
             Step::Button(s) => format!("Press and release the {} button.", s.name()),
         }
@@ -197,15 +197,27 @@ impl Calibration {
         let Some(i) = self.current else { return };
         match (self.steps[i], event) {
             (Step::Axis(_), Event::Motion { axes, .. }) => self.motion(i, *axes, now),
-            (Step::Button(side), Event::Button { number, pressed: true }) => {
-                let taken = self.steps.iter().zip(&self.results).find_map(|(s, r)| match (s, r) {
-                    (Step::Button(other), Some(StepResult { measured: Measured::Button(n), .. }))
-                        if n == number && *other != side =>
-                    {
-                        Some(*other)
-                    }
-                    _ => None,
-                });
+            (
+                Step::Button(side),
+                Event::Button {
+                    number,
+                    pressed: true,
+                },
+            ) => {
+                let taken = self
+                    .steps
+                    .iter()
+                    .zip(&self.results)
+                    .find_map(|(s, r)| match (s, r) {
+                        (
+                            Step::Button(other),
+                            Some(StepResult {
+                                measured: Measured::Button(n),
+                                ..
+                            }),
+                        ) if n == number && *other != side => Some(*other),
+                        _ => None,
+                    });
                 if let Some(other) = taken {
                     self.note = Some(format!(
                         "Button {number} is already the {} button: press the {} one.",
@@ -214,7 +226,13 @@ impl Calibration {
                     ));
                     return;
                 }
-                self.finish(i, StepResult { measured: Measured::Button(*number), warnings: vec![] });
+                self.finish(
+                    i,
+                    StepResult {
+                        measured: Measured::Button(*number),
+                        warnings: vec![],
+                    },
+                );
             }
             _ => {}
         }
@@ -226,7 +244,10 @@ impl Calibration {
         match &mut self.phase {
             Phase::Waiting => {
                 if biggest >= START {
-                    self.phase = Phase::Holding { start: now, samples: vec![axes] };
+                    self.phase = Phase::Holding {
+                        start: now,
+                        samples: vec![axes],
+                    };
                 }
             }
             Phase::Holding { start, samples } => {
@@ -254,7 +275,9 @@ impl Calibration {
         self.note = None;
         self.recheck();
         let n = self.steps.len();
-        self.current = (1..=n).map(|k| (i + k) % n).find(|&k| self.results[k].is_none());
+        self.current = (1..=n)
+            .map(|k| (i + k) % n)
+            .find(|&k| self.results[k].is_none());
     }
 
     /// Recompute the warnings that compare steps (an axis used twice).
@@ -263,7 +286,10 @@ impl Calibration {
             .results
             .iter()
             .map(|r| match r {
-                Some(StepResult { measured: Measured::Axis { map, .. }, .. }) => map.raw,
+                Some(StepResult {
+                    measured: Measured::Axis { map, .. },
+                    ..
+                }) => map.raw,
                 _ => None,
             })
             .collect();
@@ -322,7 +348,11 @@ fn analyse(samples: &[Axes], held_s: f64) -> StepResult {
     order.sort_by(|&a, &b| abs[b].total_cmp(&abs[a]));
     let (top, second) = (order[0], order[1]);
     let total: f64 = abs.iter().sum();
-    let share = if total > 0.0 { (abs[top] / total) as f32 } else { 0.0 };
+    let share = if total > 0.0 {
+        (abs[top] / total) as f32
+    } else {
+        0.0
+    };
     let mut warnings = Vec::new();
     if abs[top] > 0.0 && abs[second] / abs[top] > f64::from(MIXED) {
         warnings.push(format!(
@@ -334,7 +364,10 @@ fn analyse(samples: &[Axes], held_s: f64) -> StepResult {
     }
     StepResult {
         measured: Measured::Axis {
-            map: AxisMap { raw: Some(top), invert: signed[top] < 0.0 },
+            map: AxisMap {
+                raw: Some(top),
+                invert: signed[top] < 0.0,
+            },
             peak: peak[top],
             share,
             held_s,
@@ -349,7 +382,10 @@ pub fn calibration_ui(ui: &mut egui::Ui, cal: &mut Calibration) -> CalibrationAc
     let t = ui.tokens();
     let mut action = CalibrationAction::None;
     if let Some((i, step)) = cal.current() {
-        ui.label(egui::RichText::new(format!("Step {} of {}", i + 1, cal.steps().len())).color(t.colors.text_muted));
+        ui.label(
+            egui::RichText::new(format!("Step {} of {}", i + 1, cal.steps().len()))
+                .color(t.colors.text_muted),
+        );
         ui.label(egui::RichText::new(step.prompt()).strong());
         let state = if cal.recording() {
             "recording: let go when done"
@@ -360,7 +396,10 @@ pub fn calibration_ui(ui: &mut egui::Ui, cal: &mut Calibration) -> CalibrationAc
             ui.label(egui::RichText::new(state).color(t.colors.text_muted));
         }
     } else {
-        ui.label(egui::RichText::new("All steps done. Check what the puck will do, then use it.").strong());
+        ui.label(
+            egui::RichText::new("All steps done. Check what the puck will do, then use it.")
+                .strong(),
+        );
     }
     if let Some(note) = cal.note() {
         ui.colored_label(t.colors.warn, note);
@@ -436,7 +475,11 @@ pub fn calibration_ui(ui: &mut egui::Ui, cal: &mut Calibration) -> CalibrationAc
     );
     ui.add_space(t.space.s);
     ui.horizontal(|ui| {
-        let warnings = cal.results().iter().flatten().any(|r| !r.warnings.is_empty());
+        let warnings = cal
+            .results()
+            .iter()
+            .flatten()
+            .any(|r| !r.warnings.is_empty());
         let why = if !cal.done() {
             Some("Not every step is done yet".to_string())
         } else if warnings {
@@ -458,16 +501,21 @@ pub fn calibration_ui(ui: &mut egui::Ui, cal: &mut Calibration) -> CalibrationAc
         if use_it.clicked() {
             action = CalibrationAction::Apply(mapping.clone());
         }
-        if ui.button("Start over").on_hover_text("Forget every measurement and begin at step 1").clicked() {
+        if ui
+            .button("Start over")
+            .on_hover_text("Forget every measurement and begin at step 1")
+            .clicked()
+        {
             cal.restart();
         }
-        if ui.button("Cancel").on_hover_text("Keep the mapping as it was").clicked() {
+        if ui
+            .button("Cancel")
+            .on_hover_text("Keep the mapping as it was")
+            .clicked()
+        {
             action = CalibrationAction::Cancel;
         }
     });
-    if cal.recording() || cal.current().is_some() {
-        ui.ctx().request_repaint_after(std::time::Duration::from_millis(100));
-    }
     action
 }
 
@@ -510,7 +558,10 @@ mod tests {
         assert_eq!((m.buttons.left, m.buttons.right), (12, 13));
         assert_eq!(m.full_scale, 300.0 * FULL_OF_PEAK);
         // not measured: kept from the base
-        assert_eq!(m.axis(Output::SpinClockwise), Mapping::default().axis(Output::SpinClockwise));
+        assert_eq!(
+            m.axis(Output::SpinClockwise),
+            Mapping::default().axis(Output::SpinClockwise)
+        );
     }
 
     #[test]
@@ -542,17 +593,34 @@ mod tests {
         let w = &c.results()[0].as_ref().unwrap().warnings;
         assert!(w.iter().any(|w| w.starts_with("Mixed motion: y")), "{w:?}");
         hold(&mut c, &mut t, [280, 0, 0, 0, 0, 0], 2.0);
-        assert!(c.results()[1].as_ref().unwrap().warnings.iter().any(|w| w.contains("Same axis as pan right")));
+        assert!(
+            c.results()[1]
+                .as_ref()
+                .unwrap()
+                .warnings
+                .iter()
+                .any(|w| w.contains("Same axis as pan right"))
+        );
         c.redo(1);
         hold(&mut c, &mut t, [0, 0, -280, 0, 0, 0], 2.0);
-        assert!(c.results()[0].as_ref().unwrap().warnings.iter().all(|w| !w.starts_with("Same axis")));
+        assert!(
+            c.results()[0]
+                .as_ref()
+                .unwrap()
+                .warnings
+                .iter()
+                .all(|w| !w.starts_with("Same axis"))
+        );
         // after the redo it goes on with the first step not done
         assert_eq!(c.current().map(|c| c.0), Some(2));
     }
 
     #[test]
     fn a_button_cannot_be_both_sides() {
-        let mut c = Calibration::new(vec![Step::Button(Side::Left), Step::Button(Side::Right)], Mapping::default());
+        let mut c = Calibration::new(
+            vec![Step::Button(Side::Left), Step::Button(Side::Right)],
+            Mapping::default(),
+        );
         press(&mut c, 4);
         press(&mut c, 4);
         assert_eq!(c.current().map(|c| c.0), Some(1));

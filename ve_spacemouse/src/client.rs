@@ -113,7 +113,8 @@ impl SpaceMouse {
                 .ok()
         };
         if thread.is_none() {
-            *lock(&shared.status) = Status::Down("could not start the client thread (see the log)".into());
+            *lock(&shared.status) =
+                Status::Down("could not start the client thread (see the log)".into());
         }
         Self {
             rx,
@@ -172,10 +173,14 @@ impl Drop for SpaceMouse {
 fn why_not(socket: &Path, e: &std::io::Error) -> String {
     let at = socket.display();
     match e.kind() {
-        ErrorKind::NotFound => format!("no socket at {at}: is spacenavd installed and running? (systemctl status spacenavd)"),
+        ErrorKind::NotFound => format!(
+            "no socket at {at}: is spacenavd installed and running? (systemctl status spacenavd)"
+        ),
         ErrorKind::PermissionDenied => format!("no permission to open {at}"),
         ErrorKind::ConnectionRefused => {
-            format!("nothing listens on {at}: spacenavd stopped and left its socket (systemctl restart spacenavd)")
+            format!(
+                "nothing listens on {at}: spacenavd stopped and left its socket (systemctl restart spacenavd)"
+            )
         }
         _ => format!("{at}: {e}"),
     }
@@ -252,12 +257,15 @@ fn read_events(stream: &mut UnixStream, shared: &Shared, send: &impl Fn(Event)) 
                             held.remove(&number);
                         }
                     }
-                    Event::Other { kind } => log::debug!("ve_spacemouse: event type {kind} ignored"),
+                    Event::Other { kind } => {
+                        log::debug!("ve_spacemouse: event type {kind} ignored")
+                    }
                 }
                 send(event);
             }
             Err(e) if e.kind() == ErrorKind::UnexpectedEof => {
-                return "spacenavd closed the connection (stopped or restarted); reconnecting".into();
+                return "spacenavd closed the connection (stopped or restarted); reconnecting"
+                    .into();
             }
             Err(e) if e.kind() == ErrorKind::Interrupted => continue,
             Err(e) => return format!("reading from spacenavd failed: {e}; reconnecting"),
@@ -271,7 +279,7 @@ fn to_rest(shared: &Shared, send: &impl Fn(Event)) {
     for number in held {
         send(Event::button(number, false));
     }
-    let was = std::mem::replace(&mut *lock(&shared.axes), [0; 6]);
+    let was = std::mem::take(&mut *lock(&shared.axes));
     if was != [0; 6] {
         send(Event::motion([0; 6]));
     }

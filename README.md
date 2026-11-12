@@ -33,5 +33,9 @@ past SDR white while the UI stays at it. The demo: `cargo run -p ve_phosphor --r
 - **Without a window**: `ve_phosphor --headless DIR` renders every scene to PNGs (as an SDR screen shows it, the HDR
   frame clipped, the HDR frame scaled down by its peak); `ve_phosphor --bench` measures the waveforms per second.
 
+SpaceMouse: `ve_spacemouse` pans and zooms a view with a 3Dconnexion puck through spacenavd and opens a pie menu
+on its buttons (tap for one action, hold for a ring of eight); a calibrate step measures which way is which. Try it
+with `cargo run -p ve_spacemouse --example demo` (README in the crate).
+
 New app: `just new NAME` (the `ve_template` command, `egui_app_skill/SKILL.md`) generates an app with the stack's
 basics, theme, launcher entry, `--version`, headless UI tests and a `ve_app.json` that lets an agent upgrade it later.
