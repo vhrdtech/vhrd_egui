@@ -304,14 +304,12 @@ impl<'a> SubPane<'a> {
                 ui.set_min_width(ui.available_width());
                 ui.spacing_mut().item_spacing.y = 0.0;
                 let h = field_height(ui, &t) + t.space.xs;
-                let (rect, _) =
-                    ui.allocate_exact_size(vec2(ui.available_width(), h), Sense::hover());
                 let sense = if self.foldable {
                     Sense::click()
                 } else {
                     Sense::hover()
                 };
-                let mut r = ui.interact(rect, id.with("header"), sense);
+                let (rect, mut r) = ui.allocate_exact_size(vec2(ui.available_width(), h), sense);
                 if r.clicked() {
                     state.toggle(ui);
                 }
@@ -526,13 +524,14 @@ impl PropertyRow {
 }
 
 /// Label and value pairs in two columns, read-only: what a thing is (its name, where it came from, its hash).
-/// The label column is as wide as its widest label; long values are cut with `…`, whole on hover.
+/// The label column is as wide as the widest label it has shown (kept in egui memory, so it never jumps back);
+/// long values are cut with `…`, whole on hover. No grid: a value that changes length never moves the columns.
 pub struct Facts {
     id_salt: Id,
 }
 
 impl Facts {
-    /// Facts keyed by `id_salt` (egui's grid keeps its column widths under it).
+    /// Facts keyed by `id_salt` (the label column's learned width is kept under it).
     pub fn new(id_salt: impl std::hash::Hash + std::fmt::Debug) -> Self {
         Self {
             id_salt: Id::new(("ve_theme::Facts", id_salt)),
@@ -542,18 +541,56 @@ impl Facts {
     /// Draw the facts `add` lists.
     pub fn show<R>(self, ui: &mut Ui, add: impl FnOnce(&mut FactsUi<'_>) -> R) -> R {
         let t = Tokens::of_ui(ui);
-        egui::Grid::new(self.id_salt)
-            .num_columns(2)
-            .spacing(vec2(t.space.m, t.space.xs))
-            .show(ui, |ui| add(&mut FactsUi { ui, tokens: t }))
-            .inner
+        let id = ui.id().with(self.id_salt);
+        let learned = ui.data(|d| d.get_temp::<f32>(id)).unwrap_or(0.0);
+        let mut facts = FactsUi {
+            ui,
+            tokens: t,
+            label_width: learned,
+        };
+        let out = ui_vertical_tight(&mut facts, add);
+        if facts.label_width > learned {
+            let w = facts.label_width;
+            facts.ui.data_mut(|d| d.insert_temp(id, w));
+            // Drawn again before it is shown, with every label in the wider column: no frame with the values out
+            // of line, and no extra frame either
+            facts
+                .ui
+                .ctx()
+                .request_discard("ve_theme::Facts: a wider label");
+        }
+        out
     }
+}
+
+fn ui_vertical_tight<R>(facts: &mut FactsUi<'_>, add: impl FnOnce(&mut FactsUi<'_>) -> R) -> R {
+    let gap = facts.tokens.space.xs;
+    let tokens = facts.tokens.clone();
+    let label_width = facts.label_width;
+    let mut learned = label_width;
+    let out = facts
+        .ui
+        .vertical(|ui| {
+            ui.spacing_mut().item_spacing.y = gap;
+            let mut inner = FactsUi {
+                ui,
+                tokens,
+                label_width,
+            };
+            let out = add(&mut inner);
+            learned = inner.label_width;
+            out
+        })
+        .inner;
+    facts.label_width = learned;
+    out
 }
 
 /// The rows of [`Facts`].
 pub struct FactsUi<'u> {
     ui: &'u mut Ui,
     tokens: Arc<Tokens>,
+    label_width: f32,
 }
 
 impl FactsUi<'_> {
@@ -606,36 +643,42 @@ impl FactsUi<'_> {
         whole: &str,
         tooltip: String,
     ) -> Response {
-        let t = &self.tokens;
-        self.ui.label(
-            RichText::new(label.into())
-                .font(caption_font(t))
-                .color(t.colors.text_muted),
-        );
         let hover = match (whole.is_empty(), tooltip.is_empty()) {
             (_, true) => whole.to_string(),
             (true, false) => tooltip,
             (false, false) => format!("{whole}\n{tooltip}"),
         };
-        let r = self
-            .ui
-            .add(egui::Label::new(text).truncate())
-            .on_hover_text(hover);
-        self.ui.end_row();
-        r
+        self.row(label, |ui| {
+            ui.add(egui::Label::new(text).truncate())
+                .on_hover_text(hover)
+        })
     }
 
     /// A row of your own beside `label`.
     pub fn row<R>(&mut self, label: impl Into<String>, add: impl FnOnce(&mut Ui) -> R) -> R {
-        let t = &self.tokens;
-        self.ui.label(
-            RichText::new(label.into())
-                .font(caption_font(t))
-                .color(t.colors.text_muted),
-        );
-        let r = add(self.ui);
-        self.ui.end_row();
-        r
+        let t = self.tokens.clone();
+        let label_width = &mut self.label_width;
+        self.ui
+            .horizontal(|ui| {
+                ui.spacing_mut().item_spacing.x = t.space.m;
+                let g = ui.painter().layout_no_wrap(
+                    label.into(),
+                    caption_font(&t),
+                    t.colors.text_muted,
+                );
+                *label_width = label_width.max(g.size().x);
+                let h = g.size().y.max(ui.spacing().interact_size.y - t.space.xs);
+                let (rect, r) = ui.allocate_exact_size(vec2(*label_width, h), Sense::hover());
+                let text = g.text().to_string();
+                r.widget_info(|| WidgetInfo::labeled(WidgetType::Label, true, &text));
+                ui.painter().galley(
+                    pos2(rect.left(), rect.center().y - g.size().y * 0.5),
+                    g,
+                    t.colors.text_muted,
+                );
+                add(ui)
+            })
+            .inner
     }
 }
 

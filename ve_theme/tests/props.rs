@@ -248,3 +248,20 @@ fn sub_pane_folds() {
     }
     h.get_by_label("inside");
 }
+
+/// A value that changes length moves nothing: the labels keep their column, and the facts settle at once (a grid
+/// re-measured its columns for frames on end when a value grew)
+#[test]
+fn facts_settle_when_a_value_grows() {
+    let mut h = harness(String::from("fp1:aaaa"), |ui, v| {
+        Facts::new("t").show(ui, |f| {
+            f.fact("Footprint", "Mixed_Pads", "");
+            f.fact("Footprint_Review", v.as_str(), "");
+        });
+    });
+    let x0 = h.get_by_label("fp1:aaaa").rect().left();
+    *h.state_mut() = "fp1:aaaa, the same: reviewed and a good deal longer than before".into();
+    h.run();
+    let node = h.get_by_label_contains("the same: reviewed");
+    assert_eq!(node.rect().left(), x0);
+}
