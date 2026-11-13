@@ -316,3 +316,60 @@ fn the_overlay_draws_at_its_scale() {
     let size = view.texture().size();
     assert_eq!([size.width, size.height], [40, 30]);
 }
+
+/// X-ray (V3D-4): the faces faded so the background shows through, and the edges behind them drawn, solid when
+/// thin and broken when dashed. From the front in perspective, the back face's top edge lies inside the front face.
+#[test]
+fn xray_shows_the_edges_behind_the_faces() {
+    let mut h = harness(cube_scene(), ViewPreset::Front);
+    // Points along the hidden edge (the camera stays put).
+    let along: Vec<Pos2> = (0..40)
+        .map(|i| screen(&h, Vec3::new(-0.8 + i as f32 * 0.04, 1.0, 1.0)))
+        .collect();
+    // The darkest of the pixels across the hidden edge's line at p.
+    let darkest = |img: &RgbaImage, p: Pos2| {
+        (-2..=2)
+            .map(|dy| pixel(img, p + vec2(0.0, dy as f32)))
+            .map(|c| c[0] as i32 + c[1] as i32 + c[2] as i32)
+            .min()
+            .unwrap()
+    };
+    let front_centre = screen(&h, Vec3::new(0.0, -1.0, 0.0));
+    let opaque = h.render().expect("render");
+    let face = pixel(&opaque, front_centre);
+    assert!(
+        darkest(&opaque, along[22]) > 150,
+        "no X-ray: the face hides the back edge"
+    );
+
+    h.state_mut().xray = true;
+    h.state_mut().style.hidden_edges = ve_view3d::HiddenEdges::Thin;
+    h.run();
+    let thin = h.render().expect("render");
+    let faded = pixel(&thin, front_centre);
+    assert!(
+        dist(face, faded) > 60,
+        "the faces fade: {face:?} -> {faded:?}"
+    );
+    let dark = |img: &RgbaImage| along.iter().filter(|p| darkest(img, **p) < 120).count();
+    assert_eq!(dark(&thin), along.len(), "a thin hidden edge is solid");
+
+    h.state_mut().style.hidden_edges = ve_view3d::HiddenEdges::Dashed;
+    h.run();
+    let dashed = h.render().expect("render");
+    let n = dark(&dashed);
+    assert!(
+        n > along.len() / 4 && n < along.len() * 9 / 10,
+        "a dashed hidden edge is broken: {n} of {} dark",
+        along.len()
+    );
+    // A visible edge stays as it was: the front face's bottom edge.
+    let bottom = screen(&h, Vec3::new(0.2, -1.0, -1.0)) + vec2(0.0, -0.5);
+    let edge = pixel(&dashed, bottom);
+    assert!(edge[0] < 80 && edge[1] < 80, "edge {edge:?}");
+    // A hidden edge picks in X-ray.
+    h.hover_at(along[22]);
+    h.run();
+    let hovered = h.state().hovered().expect("over the cube");
+    assert!(hovered.edge.is_some(), "{hovered:?}");
+}

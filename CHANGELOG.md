@@ -5,6 +5,10 @@ versions follow [Semantic Versioning](https://semver.org/). Feature IDs refer to
 
 ## [Unreleased]
 
+### Added
+
+- `ve_view3d`: X-ray. `View3d::xray` fades the faces and draws the edges behind them too, thinner and solid or dashed (`View3dStyle::hidden_edges`, `HiddenEdges`, `hidden_width`, `xray_opacity`), so a model's inside shows; in the view menu and as `View3d::xray_ui`. In X-ray a hidden edge picks too; `Picker::pick_through` does the same for an app's own picks (V3D-4).
+
 ## [0.33.0] - 2026-11-13
 
 ### Added

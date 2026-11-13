@@ -1,4 +1,6 @@
-// ve_view3d: faces lit by a headlight, edges as screen-space quads of a fixed width (V3D-1).
+// ve_view3d: faces lit by a headlight, edges as screen-space quads of a fixed width (V3D-1). In X-ray (V3D-4) the
+// faces are faded (premultiplied alpha over a depth prepass, so only the nearest surface shows) and the edges behind
+// them are drawn too, thinner or dashed, by a pass that keeps what the depth test would throw away.
 // Rendered offscreen into an Rgba8Unorm target with depth and 4x MSAA; egui shows the resolved texture, whose
 // bytes it takes as gamma-encoded. Shading is in linear light, encoded to sRGB at the end.
 
@@ -16,6 +18,9 @@ struct Uniforms {
     selected: array<vec4<u32>, 4>,
     hover_color: vec4<f32>,
     select_color: vec4<f32>,
+    // x: the faces' alpha (1: opaque), y: a hidden edge's width over a visible one's, z: dash length and w: gap
+    // in pixels (z = 0: solid).
+    xray: vec4<f32>,
 };
 
 @group(0) @binding(0) var<uniform> u: Uniforms;
@@ -59,7 +64,8 @@ fn highlight(base: vec3<f32>, key: u32, hovered: u32, amount: f32) -> vec3<f32> 
 }
 
 struct MeshOut {
-    @builtin(position) pos: vec4<f32>,
+    // Invariant: the depth prepass and the faded faces in X-ray must land on the same depths.
+    @builtin(position) @invariant pos: vec4<f32>,
     @location(0) world: vec3<f32>,
     @location(1) normal: vec3<f32>,
     @location(2) color: vec4<f32>,
@@ -100,12 +106,15 @@ fn fs_mesh(in: MeshOut) -> @location(0) vec4<f32> {
     let sky = 0.5 + 0.5 * n.z;
     let base = highlight(linear_from_srgb(in.color.rgb), in.key, u.hover.x, 0.55);
     let lit = base * (0.18 + 0.62 * lambert + 0.25 * sky) + vec3<f32>(spec);
-    return vec4<f32>(srgb_from_linear(clamp(lit, vec3<f32>(0.0), vec3<f32>(1.0))), 1.0);
+    let a = u.xray.x;
+    return vec4<f32>(srgb_from_linear(clamp(lit, vec3<f32>(0.0), vec3<f32>(1.0))) * a, a);
 }
 
 struct EdgeOut {
     @builtin(position) pos: vec4<f32>,
     @location(0) color: vec4<f32>,
+    // Pixels along the segment from its first end, for the dashes of a hidden edge.
+    @location(1) along: f32,
 };
 
 @vertex
@@ -117,6 +126,23 @@ fn vs_edge(
     @location(3) key: u32,
     @location(4) width: f32,
 ) -> EdgeOut {
+    return edge_vertex(vi, a_in, b_in, color, key, width);
+}
+
+// A hidden edge (X-ray): the same quad, its width scaled.
+@vertex
+fn vs_edge_hidden(
+    @builtin(vertex_index) vi: u32,
+    @location(0) a_in: vec3<f32>,
+    @location(1) b_in: vec3<f32>,
+    @location(2) color: vec4<f32>,
+    @location(3) key: u32,
+    @location(4) width: f32,
+) -> EdgeOut {
+    return edge_vertex(vi, a_in, b_in, color, key, width * u.xray.y);
+}
+
+fn edge_vertex(vi: u32, a_in: vec3<f32>, b_in: vec3<f32>, color: vec4<f32>, key: u32, width: f32) -> EdgeOut {
     var out: EdgeOut;
     var a = u.view_proj * vec4<f32>(a_in, 1.0);
     var b = u.view_proj * vec4<f32>(b_in, 1.0);
@@ -124,6 +150,7 @@ fn vs_edge(
     if a.z < 0.0 && b.z < 0.0 {
         out.pos = vec4<f32>(2.0, 2.0, 2.0, 1.0);
         out.color = vec4<f32>(0.0);
+        out.along = 0.0;
         return out;
     }
     if a.z < 0.0 {
@@ -165,10 +192,22 @@ fn vs_edge(
     clip.z = max(clip.z - 4e-4 * clip.w, 0.0);
     out.pos = clip;
     out.color = vec4<f32>(c, 1.0);
+    out.along = select(0.0, len, corner.x > 0.5) + along * w * 0.5;
     return out;
 }
 
 @fragment
 fn fs_edge(in: EdgeOut) -> @location(0) vec4<f32> {
+    return vec4<f32>(srgb_from_linear(in.color.rgb), in.color.a);
+}
+
+// A hidden edge: dashed when the dash is set; a quad's length is in whole dashes from its first end.
+@fragment
+fn fs_edge_hidden(in: EdgeOut) -> @location(0) vec4<f32> {
+    let dash = u.xray.z;
+    let period = dash + u.xray.w;
+    if dash > 0.0 && period > 0.0 && in.along - floor(in.along / period) * period > dash {
+        discard;
+    }
     return vec4<f32>(srgb_from_linear(in.color.rgb), in.color.a);
 }

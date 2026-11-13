@@ -34,7 +34,9 @@ m.line("mm");          // "12.345 mm · dx 1.000 · dy -2.000 · dz 0.500"
 m.relation_line("mm"); // Some("parallel faces 1.600 mm apart"), Some("cylinder Ø 4.000 mm"), None
 ```
 
-`View3d::camera` is serializable view state; keep it with the app's settings. `View3d::selection` holds the selected faces and edges. `View3d::menu_ui` is the view menu (fit, preset views, projection, clear selection), which right-click opens; an app can put it in its own menus too.
+`View3d::camera` is serializable view state; keep it with the app's settings. `View3d::selection` holds the selected faces and edges. `View3d::menu_ui` is the view menu (fit, preset views, projection, snap, X-ray, clear selection), which right-click opens; an app can put it in its own menus too.
+
+`View3d::xray` sees through the model: the faces fade to `View3dStyle::xray_opacity` and every edge is drawn, those behind a face thinner (`hidden_width`) and solid or dashed (`View3dStyle::hidden_edges`, `HiddenEdges`), so the inside shows as a drawing shows hidden lines. `View3d::xray_ui` is the switch and the choice, for an app's own panel. The edges are the `LineSet`s the reader gives, so a STEP reader's B-rep edges show, not the triangles' sides. In X-ray an edge behind a face picks too (`Picker::pick_through`).
 
 ## Controls
 
@@ -59,6 +61,7 @@ A frame is rendered only when something that shows changed: the camera, the size
 - **Faces** are flattened to one vertex per triangle corner carrying its face's colour and key. They are lit by a headlight (bright when facing the viewer, dark edge-on, two-sided) with a faint specular, plus a soft light from above. That light keeps the iso view's three faces apart, since the headlight alone gives them the same brightness.
 - **Edges** are one instance per segment, expanded to a quad in the vertex shader. Its width is in screen pixels, so edges keep their width at every zoom, and each end extends by half the width so polylines join without gaps. The quad is pulled a little toward the eye, so an edge on a face wins the depth test against that face. A segment crossing the near plane is clipped there.
 - **Colour**: egui 0.36 textures hold gamma-encoded bytes. The target is `Rgba8Unorm`; the shader shades in linear light and encodes to sRGB at the end. The clear is transparent, so egui's own background shows around the model.
+- **X-ray** draws the faces twice: first their depth alone, then their colour faded (premultiplied alpha, as egui takes the picture) where the depth test finds the nearest face, so only the front surface shows and two faces behind each other never darken it. The visible edges follow as usual; then the edges again with the depth test turned around (greater), which draws exactly what a face hides, thinner and, when dashed, broken by the pixels along the segment.
 - **Hover and selection** go to the shader as keys (face and edge ids flattened over the scene), up to 16 selected. A hovered or selected face takes on the theme's hover or selection colour; an edge also doubles its width.
 
 ### Camera
@@ -78,7 +81,7 @@ Picking runs on the CPU, so it is deterministic and tested without a GPU.
 
 - A ray from the pointer goes against the triangles (Möller–Trumbore, two-sided).
 - A mesh with more than 10,000 triangles gets a bounding volume hierarchy: median splits on the longest axis, four triangles a leaf, nearer child first. The median model has some 600 triangles; the largest seen has 176,000.
-- Edges count within `View3dStyle::edge_tolerance` points of the pointer. The distance is taken at the point of the edge closest to the pointer's ray. An edge behind the face under the pointer does not count, with a slack of about the tolerance's world size, so edges on a face's border always pick.
+- Edges count within `View3dStyle::edge_tolerance` points of the pointer. The distance is taken at the point of the edge closest to the pointer's ray. An edge behind the face under the pointer does not count (in X-ray it does, as it is drawn), with a slack of about the tolerance's world size, so edges on a face's border always pick.
 - When both an edge and a face are under the pointer, the edge is what the person aimed at: `Pick::item` and `Pick::point` take the edge.
 
 ### Measuring
@@ -93,4 +96,4 @@ The normal at a pick is the vertex normals blended across the triangle, so a smo
 ## Tests
 
 - Unit tests: camera maths (preset axes, project and ray agree, fit shows every corner in both projections and any aspect, zoom keeps its anchor, pan follows the pointer, orbit and SpaceMouse directions), picking (faces, visible and hidden edges, BVH against brute force on 2,000 random rays, broken triangles skipped) and the shapes.
-- `tests/render.rs`: headless renders through egui_kittest on a real GPU. It covers colour and edges, hover and selection highlights, clicks and ctrl+clicks, an edge winning over a face, marks over the model, the view menu, the 176,000-triangle mesh, and an iso snapshot. After an intended visual change: `UPDATE_SNAPSHOTS=1 cargo test -p ve_view3d --test render`, then commit the PNG.
+- `tests/render.rs`: headless renders through egui_kittest on a real GPU. It covers colour and edges, hover and selection highlights, clicks and ctrl+clicks, an edge winning over a face, marks over the model, X-ray (faded faces, thin and dashed hidden edges, a hidden edge hovered), the view menu, the 176,000-triangle mesh, and an iso snapshot. After an intended visual change: `UPDATE_SNAPSHOTS=1 cargo test -p ve_view3d --test render`, then commit the PNG.

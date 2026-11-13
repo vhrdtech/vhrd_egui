@@ -18,6 +18,8 @@
 //!   nearest of the 24 axis-aligned orientations, eased ([`View3d::snap`], off by default; Alt keeps the free
 //!   angle). [`View3d::paint_overlay`] with [`Camera::set_ortho_scale`] draws the model at a fixed scale over other
 //!   content.
+//! - **X-ray** ([`View3d::xray`], [`HiddenEdges`]): the faces faded and the edges behind them drawn thinner or
+//!   dashed, so the inside shows; a hidden edge picks too.
 //! - **Measuring** ([`Measurement`]): between two picks, the offset along X, Y and Z and the distance; two
 //!   parallel flat faces give their gap along the normal, two points on one cylindrical face its diameter.
 //!
@@ -63,7 +65,7 @@ pub use scene::{Bounds, LineSet, Mark, MarkShape, Mesh, Scene};
 pub use snap::{
     Release, SnapAnim, SnapSettings, angle_to_nearest, axis_rotations, nearest_axis_rotation,
 };
-pub use view::{View3d, View3dResponse, View3dStyle};
+pub use view::{HiddenEdges, View3d, View3dResponse, View3dStyle};
 
 /// The math types of the API (`Vec3`, `Quat`, `Mat4`), so apps use the same glam version.
 pub use glam;

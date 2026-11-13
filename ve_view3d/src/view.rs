@@ -23,6 +23,12 @@ pub struct View3dStyle {
     pub mark_radius: f32,
     /// The width of a mark's segment in points.
     pub mark_width: f32,
+    /// How X-ray draws the edges behind the faces (V3D-4).
+    pub hidden_edges: HiddenEdges,
+    /// A hidden edge's width over a visible one's, in X-ray.
+    pub hidden_width: f32,
+    /// The faces' opacity in X-ray, 0 to 1 (kept below 1: at 1 nothing behind would show).
+    pub xray_opacity: f32,
 }
 
 impl Default for View3dStyle {
@@ -33,9 +39,38 @@ impl Default for View3dStyle {
             edge_tolerance: 5.0,
             mark_radius: 3.5,
             mark_width: 1.5,
+            hidden_edges: HiddenEdges::Dashed,
+            hidden_width: 0.6,
+            xray_opacity: 0.25,
         }
     }
 }
+
+/// How X-ray draws an edge that a face hides (V3D-4).
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub enum HiddenEdges {
+    /// A thinner solid line.
+    Thin,
+    /// A thinner dashed line, as a drawing shows hidden lines.
+    #[default]
+    Dashed,
+}
+
+impl HiddenEdges {
+    /// Both, for a choice.
+    pub const ALL: [HiddenEdges; 2] = [HiddenEdges::Thin, HiddenEdges::Dashed];
+
+    /// A word for a menu.
+    pub fn name(self) -> &'static str {
+        match self {
+            HiddenEdges::Thin => "thin",
+            HiddenEdges::Dashed => "dashed",
+        }
+    }
+}
+
+/// Dash and gap of a hidden edge, in points.
+const DASH: [f32; 2] = [5.0, 3.5];
 
 /// What happened in the view this frame.
 #[derive(Clone, Debug)]
@@ -71,6 +106,9 @@ pub struct View3d {
     pub style: View3dStyle,
     /// Finish a turn onto the nearest of the 24 axis-aligned orientations when it lets go (V3D-3); off by default.
     pub snap: SnapSettings,
+    /// See through the model (V3D-4): the faces faded to [`View3dStyle::xray_opacity`] and every edge drawn, those
+    /// behind a face as [`View3dStyle::hidden_edges`] says; a hidden edge picks too. Off by default.
+    pub xray: bool,
     release: Release,
     snap_anim: Option<SnapAnim>,
     scene: Scene,
@@ -105,6 +143,7 @@ impl View3d {
             marks: Vec::new(),
             style: View3dStyle::default(),
             snap: SnapSettings::OFF,
+            xray: false,
             release: Release::default(),
             snap_anim: None,
             scene: Scene::default(),
@@ -234,6 +273,8 @@ impl View3d {
         ui.separator();
         self.snap.ui(ui);
         ui.separator();
+        self.xray_ui(ui);
+        ui.separator();
         let clear = ui.add_enabled(
             !self.selection.is_empty(),
             egui::Button::new("Clear selection"),
@@ -244,6 +285,25 @@ impl View3d {
             self.selection.clear();
             ui.close();
         }
+    }
+
+    /// The X-ray switch and how hidden edges look, for the view menu or an app's own panel (V3D-4).
+    pub fn xray_ui(&mut self, ui: &mut Ui) {
+        ui.checkbox(&mut self.xray, "X-ray").on_hover_text(
+            "See through the model: the faces faded, the edges behind them drawn too",
+        );
+        ui.horizontal(|ui| {
+            ui.label("Hidden edges");
+            for h in HiddenEdges::ALL {
+                ui.radio_value(&mut self.style.hidden_edges, h, capitalize(h.name()))
+                    .on_hover_text(match h {
+                        HiddenEdges::Thin => "Thinner solid lines",
+                        HiddenEdges::Dashed => {
+                            "Thinner dashed lines, as a drawing shows hidden lines"
+                        }
+                    });
+            }
+        });
     }
 
     /// Show the view in all the space left.
@@ -263,10 +323,8 @@ impl View3d {
         let clicked = self.input(ui, rect, &response);
         let projector = self.projector(rect);
         let hover_pos = response.hover_pos().filter(|_| !response.dragged());
-        self.hovered = hover_pos.and_then(|p| {
-            self.picker
-                .pick(&self.scene, &projector, p, self.style.edge_tolerance)
-        });
+        self.hovered =
+            hover_pos.and_then(|p| self.pick_at(&projector, p, self.style.edge_tolerance));
 
         if ui.is_rect_visible(rect) {
             let painter = ui.painter_at(rect);
@@ -368,9 +426,7 @@ impl View3d {
         }
         if response.double_clicked()
             && let Some(pos) = response.interact_pointer_pos()
-            && let Some(p) =
-                self.picker
-                    .pick(&self.scene, &projector, pos, self.style.edge_tolerance)
+            && let Some(p) = self.pick_at(&projector, pos, self.style.edge_tolerance)
         {
             // Centre the view on the picked point and turn about it from now on, at the same depth.
             let depth = (p.point - self.camera.eye())
@@ -382,9 +438,7 @@ impl View3d {
         }
         if response.clicked_by(egui::PointerButton::Primary) {
             let pos = response.interact_pointer_pos()?;
-            let pick = self
-                .picker
-                .pick(&self.scene, &projector, pos, self.style.edge_tolerance);
+            let pick = self.pick_at(&projector, pos, self.style.edge_tolerance);
             let add = modifiers.command || modifiers.shift;
             match pick.and_then(|p| p.item()) {
                 Some(item) if add => {
@@ -401,6 +455,12 @@ impl View3d {
             return pick;
         }
         None
+    }
+
+    /// What is under a screen point; in X-ray an edge behind a face too.
+    fn pick_at(&self, projector: &Projector, pos: Pos2, tolerance: f32) -> Option<Pick> {
+        self.picker
+            .pick_through(&self.scene, projector, pos, tolerance, self.xray)
     }
 
     /// The point zooming keeps still: what is under the pointer, else the pointer on the target's plane.
@@ -493,6 +553,20 @@ impl View3d {
             selected,
             hover_color: gpu::linear(hover_color),
             select_color: gpu::linear(select_color),
+            xray: if self.xray {
+                let dash = match self.style.hidden_edges {
+                    HiddenEdges::Thin => [0.0, 0.0],
+                    HiddenEdges::Dashed => DASH.map(|d| d * ppp),
+                };
+                [
+                    self.style.xray_opacity.clamp(0.0, 0.99),
+                    self.style.hidden_width.max(0.0),
+                    dash[0],
+                    dash[1],
+                ]
+            } else {
+                [1.0, 1.0, 0.0, 0.0]
+            },
         };
         // Render only when something changed: an idle view costs nothing on the GPU.
         if self.last != Some((u, px)) || self.texture.is_none() {

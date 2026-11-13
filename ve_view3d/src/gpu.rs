@@ -36,6 +36,9 @@ pub struct Uniforms {
     pub selected: [[u32; 4]; 4],
     pub hover_color: [f32; 4],
     pub select_color: [f32; 4],
+    /// X-ray (V3D-4): the faces' alpha (1: opaque, no X-ray), a hidden edge's width over a visible one's, the dash
+    /// and the gap in pixels (dash 0: solid).
+    pub xray: [f32; 4],
 }
 
 /// Up to this many selected items are highlighted.
@@ -124,6 +127,10 @@ pub struct Gpu {
     renderer: Arc<egui::mutex::RwLock<egui_wgpu::Renderer>>,
     mesh_pipeline: wgpu::RenderPipeline,
     edge_pipeline: wgpu::RenderPipeline,
+    /// X-ray: the faces' depth alone, then the faces faded where it is the nearest, then the edges behind them
+    depth_pipeline: wgpu::RenderPipeline,
+    faded_pipeline: wgpu::RenderPipeline,
+    hidden_pipeline: wgpu::RenderPipeline,
     uniforms: wgpu::Buffer,
     bind_group: wgpu::BindGroup,
     meshes: Option<(wgpu::Buffer, u32)>,
@@ -172,64 +179,110 @@ impl Gpu {
                 resource: uniforms.as_entire_binding(),
             }],
         });
-        let depth = |write| {
+        let depth = |write, compare| {
             Some(wgpu::DepthStencilState {
                 format: DEPTH,
                 depth_write_enabled: Some(write),
-                depth_compare: Some(wgpu::CompareFunction::LessEqual),
+                depth_compare: Some(compare),
                 stencil: wgpu::StencilState::default(),
                 bias: wgpu::DepthBiasState::default(),
             })
         };
-        let pipeline = |label, vs, fs, buffers: &[Option<wgpu::VertexBufferLayout<'_>>]| {
-            device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
-                label: Some(label),
-                layout: Some(&layout),
-                vertex: wgpu::VertexState {
-                    module: &shader,
-                    entry_point: Some(vs),
-                    compilation_options: Default::default(),
-                    buffers,
-                },
-                fragment: Some(wgpu::FragmentState {
-                    module: &shader,
-                    entry_point: Some(fs),
-                    compilation_options: Default::default(),
-                    targets: &[Some(wgpu::ColorTargetState {
-                        format: COLOR,
-                        blend: None,
-                        write_mask: wgpu::ColorWrites::ALL,
-                    })],
-                }),
-                primitive: wgpu::PrimitiveState::default(),
-                depth_stencil: depth(true),
-                multisample: wgpu::MultisampleState {
-                    count: MSAA,
-                    ..Default::default()
-                },
-                multiview_mask: None,
-                cache: None,
-            })
+        /// How a pipeline writes: the depth test and write, the colour blend and mask
+        struct Pass {
+            depth_write: bool,
+            compare: wgpu::CompareFunction,
+            blend: Option<wgpu::BlendState>,
+            colour: wgpu::ColorWrites,
+        }
+        const OPAQUE: Pass = Pass {
+            depth_write: true,
+            compare: wgpu::CompareFunction::LessEqual,
+            blend: None,
+            colour: wgpu::ColorWrites::ALL,
         };
-        let mesh_pipeline = pipeline(
-            "ve_view3d mesh",
-            "vs_mesh",
-            "fs_mesh",
-            &[Some(wgpu::VertexBufferLayout {
-                array_stride: std::mem::size_of::<MeshVertex>() as u64,
-                step_mode: wgpu::VertexStepMode::Vertex,
-                attributes: &wgpu::vertex_attr_array![0 => Float32x3, 1 => Float32x3, 2 => Unorm8x4, 3 => Uint32],
-            })],
-        );
+        let pipeline =
+            |label, vs, fs, buffers: &[Option<wgpu::VertexBufferLayout<'_>>], pass: Pass| {
+                device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
+                    label: Some(label),
+                    layout: Some(&layout),
+                    vertex: wgpu::VertexState {
+                        module: &shader,
+                        entry_point: Some(vs),
+                        compilation_options: Default::default(),
+                        buffers,
+                    },
+                    fragment: Some(wgpu::FragmentState {
+                        module: &shader,
+                        entry_point: Some(fs),
+                        compilation_options: Default::default(),
+                        targets: &[Some(wgpu::ColorTargetState {
+                            format: COLOR,
+                            blend: pass.blend,
+                            write_mask: pass.colour,
+                        })],
+                    }),
+                    primitive: wgpu::PrimitiveState::default(),
+                    depth_stencil: depth(pass.depth_write, pass.compare),
+                    multisample: wgpu::MultisampleState {
+                        count: MSAA,
+                        ..Default::default()
+                    },
+                    multiview_mask: None,
+                    cache: None,
+                })
+            };
+        let mesh_layout = [Some(wgpu::VertexBufferLayout {
+            array_stride: std::mem::size_of::<MeshVertex>() as u64,
+            step_mode: wgpu::VertexStepMode::Vertex,
+            attributes: &wgpu::vertex_attr_array![0 => Float32x3, 1 => Float32x3, 2 => Unorm8x4, 3 => Uint32],
+        })];
+        let edge_layout = [Some(wgpu::VertexBufferLayout {
+            array_stride: std::mem::size_of::<EdgeInstance>() as u64,
+            step_mode: wgpu::VertexStepMode::Instance,
+            attributes: &wgpu::vertex_attr_array![0 => Float32x3, 1 => Float32x3, 2 => Unorm8x4, 3 => Uint32, 4 => Float32],
+        })];
+        let mesh_pipeline = pipeline("ve_view3d mesh", "vs_mesh", "fs_mesh", &mesh_layout, OPAQUE);
         let edge_pipeline = pipeline(
             "ve_view3d edges",
             "vs_edge",
             "fs_edge",
-            &[Some(wgpu::VertexBufferLayout {
-                array_stride: std::mem::size_of::<EdgeInstance>() as u64,
-                step_mode: wgpu::VertexStepMode::Instance,
-                attributes: &wgpu::vertex_attr_array![0 => Float32x3, 1 => Float32x3, 2 => Unorm8x4, 3 => Uint32, 4 => Float32],
-            })],
+            &edge_layout,
+            OPAQUE,
+        );
+        let depth_pipeline = pipeline(
+            "ve_view3d x-ray depth",
+            "vs_mesh",
+            "fs_mesh",
+            &mesh_layout,
+            Pass {
+                colour: wgpu::ColorWrites::empty(),
+                ..OPAQUE
+            },
+        );
+        // The faces' colour is premultiplied by their alpha, as egui takes the picture.
+        let faded_pipeline = pipeline(
+            "ve_view3d x-ray faces",
+            "vs_mesh",
+            "fs_mesh",
+            &mesh_layout,
+            Pass {
+                depth_write: false,
+                blend: Some(wgpu::BlendState::PREMULTIPLIED_ALPHA_BLENDING),
+                ..OPAQUE
+            },
+        );
+        // What lies behind the nearest face: the depth test turned around.
+        let hidden_pipeline = pipeline(
+            "ve_view3d x-ray hidden edges",
+            "vs_edge_hidden",
+            "fs_edge_hidden",
+            &edge_layout,
+            Pass {
+                depth_write: false,
+                compare: wgpu::CompareFunction::Greater,
+                ..OPAQUE
+            },
         );
         Self {
             max_size: device.limits().max_texture_dimension_2d,
@@ -238,6 +291,9 @@ impl Gpu {
             renderer: rs.renderer.clone(),
             mesh_pipeline,
             edge_pipeline,
+            depth_pipeline,
+            faded_pipeline,
+            hidden_pipeline,
             uniforms,
             bind_group,
             meshes: None,
@@ -348,15 +404,26 @@ impl Gpu {
                 multiview_mask: None,
             });
             pass.set_bind_group(0, &self.bind_group, &[]);
+            let xray = uniforms.xray[0] < 1.0;
             if let Some((buf, n)) = &self.meshes {
-                pass.set_pipeline(&self.mesh_pipeline);
                 pass.set_vertex_buffer(0, buf.slice(..));
+                if xray {
+                    pass.set_pipeline(&self.depth_pipeline);
+                    pass.draw(0..*n, 0..1);
+                    pass.set_pipeline(&self.faded_pipeline);
+                } else {
+                    pass.set_pipeline(&self.mesh_pipeline);
+                }
                 pass.draw(0..*n, 0..1);
             }
             if let Some((buf, n)) = &self.edges {
-                pass.set_pipeline(&self.edge_pipeline);
                 pass.set_vertex_buffer(0, buf.slice(..));
+                pass.set_pipeline(&self.edge_pipeline);
                 pass.draw(0..6, 0..*n);
+                if xray {
+                    pass.set_pipeline(&self.hidden_pipeline);
+                    pass.draw(0..6, 0..*n);
+                }
             }
         }
         self.queue.submit([encoder.finish()]);

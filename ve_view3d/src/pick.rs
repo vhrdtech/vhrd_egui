@@ -309,6 +309,19 @@ impl Picker {
         pos: Pos2,
         tolerance: f32,
     ) -> Option<Pick> {
+        self.pick_through(scene, projector, pos, tolerance, false)
+    }
+
+    /// [`Picker::pick`], and with `see_through` (the view in X-ray) an edge behind a face picks too, the nearest
+    /// to the pointer first, as the hidden edges are drawn then.
+    pub fn pick_through(
+        &self,
+        scene: &Scene,
+        projector: &Projector,
+        pos: Pos2,
+        tolerance: f32,
+        see_through: bool,
+    ) -> Option<Pick> {
         let ray = projector.ray(pos);
         let face = self.ray(scene, &ray);
         // How far an edge may lie behind the surface and still count as on it: a couple of the tolerance's
@@ -338,7 +351,8 @@ impl Picker {
                     continue;
                 }
                 let depth = (p - ray.origin).dot(ray.dir);
-                if let Some(f) = &face
+                if !see_through
+                    && let Some(f) = &face
                     && depth > f.t + slack(p)
                 {
                     continue;
@@ -478,6 +492,16 @@ mod tests {
                 let back = pr.project(Vec3::new(0.3, 1.0, 1.0)).unwrap().0;
                 let p = picker.pick(&scene, &pr, back, 1.0).expect("the front face");
                 assert!(p.edge.is_none(), "{:?}", p.edge);
+                assert_eq!(p.face.unwrap().face, 2);
+                // In X-ray it is drawn, so it picks; the face is still the one in front.
+                let p = picker
+                    .pick_through(&scene, &pr, back, 1.0, true)
+                    .expect("the back edge");
+                let e = p.edge.expect("the hidden edge");
+                assert!(
+                    (e.point.y - 1.0).abs() < 1e-3 && (e.point.z - 1.0).abs() < 1e-3,
+                    "{e:?}"
+                );
                 assert_eq!(p.face.unwrap().face, 2);
             }
         }
