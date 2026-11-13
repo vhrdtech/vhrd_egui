@@ -5,6 +5,8 @@ versions follow [Semantic Versioning](https://semver.org/). Feature IDs refer to
 
 ## [Unreleased]
 
+## [0.33.2] - 2026-11-13
+
 ### Added
 
 - `ve_view3d`: orthographic or perspective with the field of view as a control. `View3d::projection_ui` (and `projection_ui` for a camera an app keeps itself) shows the switch and the vertical field of view, 5° to 120°, disabled in orthographic with the reason; the view menu uses it. `Camera::set_fov_y` changes the field of view and keeps the scale at the target, `Camera::set_scale` fixes the scale at the target without forcing orthographic, `Camera::magnification` says how much larger a point nearer the eye looks (V3D-5).
