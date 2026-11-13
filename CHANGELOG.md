@@ -5,6 +5,8 @@ versions follow [Semantic Versioning](https://semver.org/). Feature IDs refer to
 
 ## [Unreleased]
 
+## [0.32.17] - 2026-11-13
+
 ### Added
 
 - `ve_spacemouse`: one SpaceMouse mapping for every app, in `spacemouse.toml`, found the way Cargo finds its config: `.config/spacemouse.toml` in the current folder and each parent, then `~/.config/spacemouse.toml` (`$XDG_CONFIG_HOME`), merged key by key with the nearest file winning (`Config`). `SettingsPanel` is the one settings panel apps embed: *Calibrate…*, the mapping with the file each value comes from, *Save* into the user's file or the project's, *Reload*, and the files found. `Config::adopt` moves an app's old per-app mapping into the user's file once (SPM-5).
