@@ -299,6 +299,24 @@ impl View3d {
         }
     }
 
+    /// Render the scene through [`View3d::camera`] into a picture `size` points large (at `ctx`'s pixels per
+    /// point, at most the GPU's texture limit) without showing it: its egui texture and its wgpu view, for an app
+    /// that composites it itself (a blend pass over a drawing). The picture is gamma-encoded RGBA, transparent where
+    /// there is nothing, its colour premultiplied by coverage at the edges. `None` without wgpu.
+    pub fn render_offscreen(
+        &mut self,
+        ctx: &egui::Context,
+        size: Vec2,
+    ) -> Option<(egui::TextureId, egui_wgpu::wgpu::TextureView)> {
+        self.gpu.as_ref()?;
+        let rect = Rect::from_min_size(Pos2::ZERO, size.max(vec2(1.0, 1.0)));
+        let projector = self.projector(rect);
+        let visuals = ctx.global_style().visuals.clone();
+        let tex = self.render(ctx.pixels_per_point(), &visuals, rect, &projector)?;
+        let view = self.gpu.as_ref()?.picture()?;
+        Some((tex, view))
+    }
+
     /// Pointer, scroll and SpaceMouse; returns the click's pick.
     fn input(&mut self, ui: &Ui, rect: Rect, response: &Response) -> Option<Pick> {
         let (dt, now, modifiers, scroll, zoom) = ui.input(|i| {
@@ -404,55 +422,9 @@ impl View3d {
         projector: &Projector,
         tint: Color32,
     ) {
-        let visuals = ui.visuals();
-        let hover_color = self
-            .style
-            .hover
-            .unwrap_or(visuals.widgets.hovered.fg_stroke.color);
-        let select_color = self.style.selection.unwrap_or(visuals.selection.bg_fill);
-        if let Some(gpu) = &mut self.gpu {
-            if !self.uploaded {
-                gpu.upload(&self.scene, &self.keys);
-                self.uploaded = true;
-                self.last = None;
-            }
-            let ppp = ui.ctx().pixels_per_point();
-            let px = [
-                (rect.width() * ppp).round().max(1.0) as u32,
-                (rect.height() * ppp).round().max(1.0) as u32,
-            ];
-            let key = |item: Item| match item {
-                Item::Face { mesh, face } => self.keys.face(mesh, face),
-                Item::Edge { set, edge } => self.keys.edge(set, edge),
-            };
-            let mut selected = [[0u32; 4]; 4];
-            for (i, item) in self.selection.iter().take(MAX_SELECTED).enumerate() {
-                selected[i / 4][i % 4] = key(*item);
-            }
-            let (hover_face, hover_edge) = match self.hovered.and_then(|p| p.item()) {
-                Some(i @ Item::Face { .. }) => (key(i), 0),
-                Some(i @ Item::Edge { .. }) => (0, key(i)),
-                None => (0, 0),
-            };
-            let u = Uniforms {
-                view_proj: projector.view_proj.to_cols_array_2d(),
-                eye: projector
-                    .eye
-                    .extend(if projector.orthographic { 1.0 } else { 0.0 })
-                    .to_array(),
-                forward: projector.forward.extend(0.0).to_array(),
-                viewport: [px[0] as f32, px[1] as f32, ppp, 0.0],
-                hover: [hover_face, hover_edge, 0, 0],
-                selected,
-                hover_color: gpu::linear(hover_color),
-                select_color: gpu::linear(select_color),
-            };
-            // Render only when something changed: an idle view costs nothing on the GPU.
-            if self.last != Some((u, px)) || self.texture.is_none() {
-                self.texture = Some(gpu.render(px, &u));
-                self.last = Some((u, px));
-            }
-            if let Some(tex) = self.texture {
+        let visuals = ui.visuals().clone();
+        match self.render(ui.ctx().pixels_per_point(), &visuals, rect, projector) {
+            Some(tex) => {
                 painter.image(
                     tex,
                     rect,
@@ -460,15 +432,74 @@ impl View3d {
                     tint,
                 );
             }
-        } else {
-            painter.text(
-                rect.center(),
-                Align2::CENTER_CENTER,
-                "The 3D view needs the wgpu renderer\n(eframe: renderer: Renderer::Wgpu)",
-                FontId::proportional(13.0),
-                visuals.weak_text_color(),
-            );
+            None => {
+                painter.text(
+                    rect.center(),
+                    Align2::CENTER_CENTER,
+                    "The 3D view needs the wgpu renderer\n(eframe: renderer: Renderer::Wgpu)",
+                    FontId::proportional(13.0),
+                    visuals.weak_text_color(),
+                );
+            }
         }
+    }
+
+    /// Render into the view's texture when something changed; `None` without wgpu.
+    fn render(
+        &mut self,
+        ppp: f32,
+        visuals: &egui::Visuals,
+        rect: Rect,
+        projector: &Projector,
+    ) -> Option<egui::TextureId> {
+        let hover_color = self
+            .style
+            .hover
+            .unwrap_or(visuals.widgets.hovered.fg_stroke.color);
+        let select_color = self.style.selection.unwrap_or(visuals.selection.bg_fill);
+        let gpu = self.gpu.as_mut()?;
+        if !self.uploaded {
+            gpu.upload(&self.scene, &self.keys);
+            self.uploaded = true;
+            self.last = None;
+        }
+        let px = [
+            (rect.width() * ppp).round().max(1.0) as u32,
+            (rect.height() * ppp).round().max(1.0) as u32,
+        ];
+        let keys = &self.keys;
+        let key = |item: Item| match item {
+            Item::Face { mesh, face } => keys.face(mesh, face),
+            Item::Edge { set, edge } => keys.edge(set, edge),
+        };
+        let mut selected = [[0u32; 4]; 4];
+        for (i, item) in self.selection.iter().take(MAX_SELECTED).enumerate() {
+            selected[i / 4][i % 4] = key(*item);
+        }
+        let (hover_face, hover_edge) = match self.hovered.and_then(|p| p.item()) {
+            Some(i @ Item::Face { .. }) => (key(i), 0),
+            Some(i @ Item::Edge { .. }) => (0, key(i)),
+            None => (0, 0),
+        };
+        let u = Uniforms {
+            view_proj: projector.view_proj.to_cols_array_2d(),
+            eye: projector
+                .eye
+                .extend(if projector.orthographic { 1.0 } else { 0.0 })
+                .to_array(),
+            forward: projector.forward.extend(0.0).to_array(),
+            viewport: [px[0] as f32, px[1] as f32, ppp, 0.0],
+            hover: [hover_face, hover_edge, 0, 0],
+            selected,
+            hover_color: gpu::linear(hover_color),
+            select_color: gpu::linear(select_color),
+        };
+        // Render only when something changed: an idle view costs nothing on the GPU.
+        if self.last != Some((u, px)) || self.texture.is_none() {
+            self.texture = Some(gpu.render(px, &u));
+            self.last = Some((u, px));
+        }
+        self.texture
     }
 
     fn paint_marks(&self, ui: &Ui, painter: &egui::Painter, projector: &Projector) {

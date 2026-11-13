@@ -307,4 +307,12 @@ fn the_overlay_draws_at_its_scale() {
     );
     assert!(is_white(c + vec2(0.0, -23.0)));
     assert!(!is_white(c + vec2(0.0, -17.0)));
+    // Rendered without showing, for an app's own pass: a texture and its wgpu view of the size asked.
+    let ctx = h.ctx.clone();
+    let (_, view) = h
+        .state_mut()
+        .render_offscreen(&ctx, vec2(40.0, 30.0))
+        .expect("a picture");
+    let size = view.texture().size();
+    assert_eq!([size.width, size.height], [40, 30]);
 }

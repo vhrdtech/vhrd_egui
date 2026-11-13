@@ -363,6 +363,12 @@ impl Gpu {
         self.texture.unwrap_or_default()
     }
 
+    /// The picture rendered last (gamma-encoded RGBA, transparent where there is nothing, colour premultiplied by
+    /// coverage at the edges), for an app's own pass to sample.
+    pub fn picture(&self) -> Option<wgpu::TextureView> {
+        self.target.as_ref().map(|t| t.resolve.clone())
+    }
+
     fn resize(&mut self, size: [u32; 2]) {
         let extent = wgpu::Extent3d {
             width: size[0],
