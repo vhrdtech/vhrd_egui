@@ -14,9 +14,7 @@ use std::path::PathBuf;
 use egui::{Color32, RichText};
 use glam::Vec3;
 use ve_spacemouse::{CalibrateSteps, Options, SettingsPanel, SpaceMouse, Status};
-use ve_view3d::{
-    Camera, Mark, Measurement, Mesh, Pick, Projection, Scene, View3d, ViewPreset, shapes,
-};
+use ve_view3d::{Camera, Mark, Measurement, Mesh, Pick, Scene, View3d, ViewPreset, shapes};
 
 const CAMERA_KEY: &str = "ve_view3d_camera";
 
@@ -223,11 +221,7 @@ impl eframe::App for Demo {
                         self.view.fit();
                     }
                 });
-                ui.horizontal(|ui| {
-                    for p in [Projection::Perspective, Projection::Orthographic] {
-                        ui.radio_value(&mut self.view.camera.projection, p, p.name());
-                    }
-                });
+                self.view.projection_ui(ui);
                 let tris = self.view.scene().triangle_count();
                 if ui
                     .checkbox(&mut self.big, "Big ball (176,000 triangles)")

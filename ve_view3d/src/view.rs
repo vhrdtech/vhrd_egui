@@ -255,21 +255,7 @@ impl View3d {
             }
         }
         ui.separator();
-        for p in [Projection::Perspective, Projection::Orthographic] {
-            if ui
-                .radio(self.camera.projection == p, capitalize(p.name()))
-                .on_hover_text(match p {
-                    Projection::Perspective => "Farther things look smaller",
-                    Projection::Orthographic => {
-                        "Parallel lines stay parallel, sizes don't change with depth"
-                    }
-                })
-                .clicked()
-            {
-                self.camera.projection = p;
-                ui.close();
-            }
-        }
+        self.projection_ui(ui);
         ui.separator();
         self.snap.ui(ui);
         ui.separator();
@@ -285,6 +271,13 @@ impl View3d {
             self.selection.clear();
             ui.close();
         }
+    }
+
+    /// Orthographic or perspective, and the field of view, for the view menu or an app's own panel (V3D-5). The
+    /// scale at the target is kept through both, so the model stays the size it was and only the depth changes.
+    /// Returns whether either changed (an app that keeps them as settings saves them then).
+    pub fn projection_ui(&mut self, ui: &mut Ui) -> bool {
+        projection_ui(&mut self.camera, ui)
     }
 
     /// The X-ray switch and how hidden edges look, for the view menu or an app's own panel (V3D-4).
@@ -618,6 +611,56 @@ impl View3d {
 const HELP: &str = "Drag: turn · right or middle drag: pan · scroll: zoom at the pointer\n\
 Double-click: centre and turn about that point · click: select, ctrl+click: add · right-click: views\n\
 Snap on: a turn finishes onto the nearest side when it lets go; hold Alt to keep the free angle";
+
+/// Orthographic or perspective and the field of view of `camera`, as [`View3d::projection_ui`] shows them; for a
+/// camera an app keeps outside a [`View3d`] too. Returns whether either changed.
+pub fn projection_ui(camera: &mut Camera, ui: &mut Ui) -> bool {
+    let mut changed = false;
+    ui.horizontal(|ui| {
+        for p in [Projection::Orthographic, Projection::Perspective] {
+            if ui
+                .radio(camera.projection == p, capitalize(p.name()))
+                .on_hover_text(match p {
+                    Projection::Perspective => "Farther things look smaller: for looking at depth",
+                    Projection::Orthographic => {
+                        "Parallel lines stay parallel, sizes don't change with depth: for measuring"
+                    }
+                })
+                .clicked()
+                && camera.projection != p
+            {
+                camera.projection = p;
+                changed = true;
+            }
+        }
+    });
+    let perspective = camera.projection == Projection::Perspective;
+    let mut deg = camera.fov_y.to_degrees();
+    ui.horizontal(|ui| {
+        ui.add_enabled_ui(perspective, |ui| {
+            ui.label("Field of view");
+            let r = ui
+                .add(
+                    egui::DragValue::new(&mut deg)
+                        .range(Camera::FOV_MIN.to_degrees()..=Camera::FOV_MAX.to_degrees())
+                        .speed(0.5)
+                        .max_decimals(0)
+                        .suffix("°"),
+                )
+                .on_hover_text(
+                    "Vertical, in degrees: wider shows depth more strongly; the model keeps its size at the target",
+                )
+                .on_disabled_hover_text(
+                    "Orthographic has no field of view: pick Perspective to set it",
+                );
+            if r.changed() {
+                camera.set_fov_y(deg.to_radians());
+                changed = true;
+            }
+        });
+    });
+    changed
+}
 
 fn capitalize(s: &str) -> String {
     let mut c = s.chars();

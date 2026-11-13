@@ -189,8 +189,38 @@ impl Camera {
     /// points high (a model in mm over a drawing at the drawing's scale).
     pub fn set_ortho_scale(&mut self, points_per_unit: f32, height: f32) {
         self.projection = Projection::Orthographic;
+        self.set_scale(points_per_unit, height);
+    }
+
+    /// A fixed scale at the target, the projection kept: one world unit at the target's depth is `points_per_unit`
+    /// points on the screen in a view `height` points high. Orthographic, that holds everywhere; in perspective only
+    /// on the plane through the target facing the camera, nearer things larger, farther ones smaller.
+    pub fn set_scale(&mut self, points_per_unit: f32, height: f32) {
         let hh = 0.5 * height.max(1.0) / points_per_unit.max(1e-9);
         self.distance = hh / (self.fov_y * 0.5).tan();
+    }
+
+    /// A new vertical field of view (radians, held between [`Camera::FOV_MIN`] and [`Camera::FOV_MAX`]), the view's
+    /// scale at the target kept: the eye moves in or out so the target's plane shows as much as before, and only
+    /// the depth looks different.
+    pub fn set_fov_y(&mut self, fov_y: f32) {
+        let hh = self.half_height();
+        self.fov_y = fov_y.clamp(Self::FOV_MIN, Self::FOV_MAX);
+        self.distance = hh / (self.fov_y * 0.5).tan();
+    }
+
+    /// The narrowest field of view [`Camera::set_fov_y`] takes: 5°.
+    pub const FOV_MIN: f32 = 5.0 * std::f32::consts::PI / 180.0;
+    /// The widest field of view [`Camera::set_fov_y`] takes: 120°.
+    pub const FOV_MAX: f32 = 120.0 * std::f32::consts::PI / 180.0;
+
+    /// How much larger a point `depth` world units nearer the eye than the target looks than one at the target:
+    /// `distance / (distance - depth)` in perspective, 1 orthographic.
+    pub fn magnification(&self, depth: f32) -> f32 {
+        match self.projection {
+            Projection::Orthographic => 1.0,
+            Projection::Perspective => self.distance / (self.distance - depth).max(1e-6),
+        }
     }
 
     /// Points per world unit at the target in a view `height` points high (orthographic: everywhere).
@@ -508,6 +538,40 @@ mod tests {
             let other_after = pr.project(Vec3::ZERO).unwrap().0;
             assert!((other_after - after).length() > (other - before).length() * 1.5);
         }
+    }
+
+    /// A new field of view or the projection switched keeps the size at the target; `set_scale` keeps the
+    /// projection, and in perspective a nearer point looks larger by `magnification`
+    #[test]
+    fn the_scale_at_the_target_holds() {
+        let r = rect();
+        let mut cam = Camera {
+            target: Vec3::new(1.0, 2.0, 0.0),
+            ..Default::default()
+        };
+        cam.set_scale(20.0, r.height());
+        assert_eq!(cam.projection, Projection::Perspective);
+        let at = |cam: &Camera, p: Vec3| cam.projector(r, &cube()).project(p).unwrap().0;
+        let x = cam.right();
+        let span = |cam: &Camera| (at(cam, cam.target + x) - at(cam, cam.target)).length();
+        assert!((span(&cam) - 20.0).abs() < 1e-2, "{}", span(&cam));
+        for deg in [10.0f32, 60.0, 100.0] {
+            cam.set_fov_y(deg.to_radians());
+            assert!((span(&cam) - 20.0).abs() < 1e-2, "{deg}°: {}", span(&cam));
+            // Nearer the eye by 1: larger by the magnification
+            let near = cam.target + cam.back();
+            let s = (at(&cam, near + x) - at(&cam, near)).length();
+            assert!(
+                (s / 20.0 - cam.magnification(1.0)).abs() < 1e-3,
+                "{deg}°: {s}"
+            );
+            assert!(cam.magnification(1.0) > 1.0);
+        }
+        cam.set_fov_y(500.0);
+        assert_eq!(cam.fov_y, Camera::FOV_MAX);
+        cam.projection = Projection::Orthographic;
+        assert!((span(&cam) - 20.0).abs() < 1e-2);
+        assert_eq!(cam.magnification(1.0), 1.0);
     }
 
     #[test]

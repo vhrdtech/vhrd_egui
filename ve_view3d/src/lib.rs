@@ -65,7 +65,7 @@ pub use scene::{Bounds, LineSet, Mark, MarkShape, Mesh, Scene};
 pub use snap::{
     Release, SnapAnim, SnapSettings, angle_to_nearest, axis_rotations, nearest_axis_rotation,
 };
-pub use view::{HiddenEdges, View3d, View3dResponse, View3dStyle};
+pub use view::{HiddenEdges, View3d, View3dResponse, View3dStyle, projection_ui};
 
 /// The math types of the API (`Vec3`, `Quat`, `Mat4`), so apps use the same glam version.
 pub use glam;
