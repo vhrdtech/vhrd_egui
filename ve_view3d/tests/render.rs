@@ -281,7 +281,7 @@ fn the_overlay_draws_at_its_scale() {
             |ui, view: &mut View3d| {
                 egui::CentralPanel::default()
                     .frame(egui::Frame::NONE.fill(Color32::WHITE))
-                    .show_inside(ui, |ui| {
+                    .show(ui, |ui| {
                         let rect = ui.max_rect();
                         view.camera.set_ortho_scale(20.0, rect.height());
                         let painter = ui.painter_at(rect);
