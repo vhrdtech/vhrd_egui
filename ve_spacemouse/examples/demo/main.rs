@@ -6,7 +6,8 @@
 //! cargo run -p ve_spacemouse --example demo -- --socket /tmp/spnav.sock  # another one, e.g. a fake
 //! ```
 //!
-//! The mapping is saved with the window state (eframe persistence), so a calibration is kept between runs.
+//! The mapping is the shared one in `spacemouse.toml` (`~/.config`, or a project's `.config` above the current
+//! folder): a calibration here applies to every app on ve_spacemouse.
 
 mod menu;
 
@@ -17,13 +18,9 @@ use egui::emath::Rot2;
 use egui::{Pos2, Sense, Ui, Vec2, pos2, vec2};
 use menu::{Action, Can};
 use ve_spacemouse::{
-    Calibration, CalibrationAction, Mapping, Options, PieState, SpaceMouse, Status, buttons,
-    calibration_ui, mapping_ui,
+    CalibrateSteps, Options, PieState, SettingsPanel, SpaceMouse, Status, buttons,
 };
 use ve_theme::UiExt;
-
-// v2: the mapping is in content terms since the convention change; an older (camera) one is not loaded.
-const MAPPING_KEY: &str = "ve_spacemouse_mapping_v2";
 
 fn main() -> eframe::Result {
     let mut socket = PathBuf::from(ve_spacemouse::DEFAULT_SOCKET);
@@ -66,25 +63,22 @@ fn main() -> eframe::Result {
         Box::new(move |cc| {
             ve_theme::setup(&cc.egui_ctx);
             ve_spacemouse::install_icons(&cc.egui_ctx);
-            let mapping = cc
-                .storage
-                .and_then(|s| eframe::get_value::<Mapping>(s, MAPPING_KEY))
-                .unwrap_or_default();
+            // All six motions: twist turns this canvas.
+            let settings = SettingsPanel::load(CalibrateSteps::Full);
             let mouse = SpaceMouse::start(Options {
                 socket,
                 ..Default::default()
             })
             .with_repaint(&cc.egui_ctx);
-            Ok(Box::new(Demo::new(mouse, mapping)))
+            Ok(Box::new(Demo::new(mouse, settings)))
         }),
     )
 }
 
 struct Demo {
     mouse: SpaceMouse,
-    mapping: Mapping,
+    settings: SettingsPanel,
     pie: PieState,
-    calibration: Option<Calibration>,
     /// Canvas: points in canvas units; where the canvas origin sits from the centre, its scale and its turn
     /// (clockwise on screen, radians).
     dots: Vec<Pos2>,
@@ -101,7 +95,7 @@ struct Demo {
 }
 
 impl Demo {
-    fn new(mouse: SpaceMouse, mapping: Mapping) -> Self {
+    fn new(mouse: SpaceMouse, settings: SettingsPanel) -> Self {
         let dots = (0..12)
             .map(|i| {
                 let a = i as f32 * 0.52;
@@ -113,9 +107,8 @@ impl Demo {
             .collect();
         Self {
             mouse,
-            mapping,
+            settings,
             pie: PieState::default(),
-            calibration: None,
             dots,
             offset: Vec2::ZERO,
             scale: 1.0,
@@ -219,29 +212,9 @@ impl Demo {
         ui.colored_label(color, status.line())
             .on_hover_text(format!("Socket {}", self.mouse.socket().display()));
         ui.add_space(t.space.m);
-        ui.heading("Mapping");
+        ui.heading("Settings");
         let live = self.mouse.axes();
-        mapping_ui(ui, &mut self.mapping, Some(&live));
-        ui.add_space(t.space.s);
-        let calibrating = self.calibration.is_some();
-        if ui
-            .add_enabled(!calibrating, egui::Button::new("Calibrate…"))
-            .on_hover_text(
-                "Measure which way the puck reads when you slide it, lift it and push it away, and which button is which",
-            )
-            .on_disabled_hover_text("The calibration window is open")
-            .clicked()
-        {
-            self.calibration = Some(Calibration::two_d(self.mapping.clone()));
-        }
-        if ui
-            .add_enabled(!calibrating, egui::Button::new("Calibrate all six axes…"))
-            .on_hover_text("The same, plus tilt, rock and twist: twist turns this canvas")
-            .on_disabled_hover_text("The calibration window is open")
-            .clicked()
-        {
-            self.calibration = Some(Calibration::full(self.mapping.clone()));
-        }
+        self.settings.ui(ui, Some(&live));
         ui.add_space(t.space.m);
         ui.heading("Fired");
         egui::ScrollArea::vertical()
@@ -297,7 +270,7 @@ impl Demo {
                 "zoom {:.2}×  ·  turn {:.0}°  ·  {}  ·  tap a button for its centre slot, hold it for the ring",
                 self.scale,
                 self.angle.to_degrees(),
-                self.mapping.convention.name()
+                self.settings.mapping().convention.name()
             ),
             egui::FontId::proportional(13.0),
             t.colors.text_muted,
@@ -306,20 +279,11 @@ impl Demo {
 }
 
 impl eframe::App for Demo {
-    fn save(&mut self, storage: &mut dyn eframe::Storage) {
-        eframe::set_value(storage, MAPPING_KEY, &self.mapping);
-    }
-
     fn ui(&mut self, ui: &mut Ui, _frame: &mut eframe::Frame) {
         let events = self.mouse.poll();
         let dt = ui.input(|i| i.stable_dt).min(0.1);
 
-        if let Some(cal) = &mut self.calibration {
-            let now = ui.input(|i| i.time);
-            for e in &events {
-                cal.feed(e, now);
-            }
-        }
+        self.settings.feed(&events, ui.input(|i| i.time));
 
         egui::Panel::right("side")
             .min_size(320.0)
@@ -330,26 +294,13 @@ impl eframe::App for Demo {
             self.canvas(ui);
         });
 
-        if let Some(cal) = &mut self.calibration {
-            let mut open = true;
-            let mut action = CalibrationAction::None;
-            egui::Window::new("Calibrate the SpaceMouse")
-                .open(&mut open)
-                .default_width(460.0)
-                .show(ui.ctx(), |ui| action = calibration_ui(ui, cal));
-            match action {
-                CalibrationAction::Apply(m) => {
-                    self.log.push(format!("calibrated: {m:?}"));
-                    self.mapping = m;
-                    self.calibration = None;
-                }
-                CalibrationAction::Cancel => self.calibration = None,
-                CalibrationAction::None if !open => self.calibration = None,
-                CalibrationAction::None => {}
-            }
-        } else {
+        if self.settings.calibration_window(ui.ctx()) {
+            self.log
+                .push(format!("calibrated: {:?}", self.settings.mapping()));
+        }
+        if !self.settings.calibrating() {
             // Navigation and menu only while not calibrating: the motions there are measurements.
-            let nav = self.mapping.apply(&self.mouse.axes());
+            let nav = self.settings.mapping().apply(&self.mouse.axes());
             if !nav.is_zero() {
                 // Nav is what the content does: move, grow and turn it about the view's centre.
                 self.offset += nav.pan_screen() * dt;
@@ -369,7 +320,11 @@ impl eframe::App for Demo {
                 redo: !self.redo.is_empty(),
             };
             let menu = menu::menu(can);
-            for fired in menu.show(ui.ctx(), &mut self.pie, &buttons(&events, &self.mapping)) {
+            for fired in menu.show(
+                ui.ctx(),
+                &mut self.pie,
+                &buttons(&events, self.settings.mapping()),
+            ) {
                 let at = self.to_canvas(canvas_center, fired.at);
                 let label = menu
                     .slot(fired.ring, fired.slot)

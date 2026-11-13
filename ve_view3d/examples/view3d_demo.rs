@@ -6,17 +6,19 @@
 //! cargo run -p ve_view3d --example view3d_demo -- --socket /tmp/spnav.sock   # another one, e.g. a fake
 //! ```
 //!
-//! The camera and the puck's mapping are saved with the window state (eframe persistence).
+//! The camera is saved with the window state (eframe persistence); the puck's mapping is the shared one in
+//! `spacemouse.toml` (ve_spacemouse's settings panel), so a calibration here applies to every app.
 
 use std::path::PathBuf;
 
 use egui::{Color32, RichText};
 use glam::Vec3;
-use ve_spacemouse::{Mapping, Options, SpaceMouse, Status, mapping_ui};
-use ve_view3d::{Camera, Mark, Mesh, Pick, Projection, Scene, View3d, ViewPreset, shapes};
+use ve_spacemouse::{CalibrateSteps, Options, SettingsPanel, SpaceMouse, Status};
+use ve_view3d::{
+    Camera, Mark, Measurement, Mesh, Pick, Projection, Scene, View3d, ViewPreset, shapes,
+};
 
 const CAMERA_KEY: &str = "ve_view3d_camera";
-const MAPPING_KEY: &str = "ve_view3d_mapping";
 
 fn main() -> eframe::Result {
     let mut socket = PathBuf::from(ve_spacemouse::DEFAULT_SOCKET);
@@ -68,10 +70,7 @@ fn main() -> eframe::Result {
                 Some(camera) => view.camera = camera,
                 None => view.view(ViewPreset::Iso),
             }
-            let mapping = cc
-                .storage
-                .and_then(|s| eframe::get_value::<Mapping>(s, MAPPING_KEY))
-                .unwrap_or_default();
+            let settings = SettingsPanel::load(CalibrateSteps::Full);
             let mouse = SpaceMouse::start(Options {
                 socket,
                 ..Default::default()
@@ -80,7 +79,7 @@ fn main() -> eframe::Result {
             Ok(Box::new(Demo {
                 view,
                 mouse,
-                mapping,
+                settings,
                 big: false,
                 measure: Vec::new(),
             }))
@@ -91,10 +90,10 @@ fn main() -> eframe::Result {
 struct Demo {
     view: View3d,
     mouse: SpaceMouse,
-    mapping: Mapping,
+    settings: SettingsPanel,
     /// The 176,000-triangle ball instead of the small one (the largest model seen).
     big: bool,
-    /// Up to two picks; with two, their distance is shown.
+    /// Up to two picks; with two, the measurement between them is shown.
     measure: Vec<Pick>,
 }
 
@@ -196,12 +195,19 @@ fn describe(p: &Pick) -> String {
 impl eframe::App for Demo {
     fn save(&mut self, storage: &mut dyn eframe::Storage) {
         eframe::set_value(storage, CAMERA_KEY, &self.view.camera);
-        eframe::set_value(storage, MAPPING_KEY, &self.mapping);
     }
 
     fn ui(&mut self, ui: &mut egui::Ui, _frame: &mut eframe::Frame) {
-        self.mouse.poll();
-        self.view.navigate(self.mapping.apply(&self.mouse.axes()));
+        let events = self.mouse.poll();
+        self.settings.feed(&events, ui.input(|i| i.time));
+        if !self.settings.calibrating() {
+            self.view
+                .navigate(self.settings.mapping().apply(&self.mouse.axes()));
+        }
+        let measured = match self.measure.as_slice() {
+            [a, b] => Some(Measurement::between(a, b, self.view.scene())),
+            _ => None,
+        };
 
         egui::Panel::right("controls")
             .min_size(260.0)
@@ -244,9 +250,19 @@ impl eframe::App for Demo {
                 ui.separator();
                 ui.heading("Measure");
                 ui.weak("Click two points; the third click starts again.");
-                if self.measure.len() == 2 {
-                    let d = (self.measure[1].point - self.measure[0].point).length();
-                    ui.label(RichText::new(format!("{d:.3} mm")).strong());
+                if let Some(m) = &measured {
+                    ui.label(RichText::new(format!("{:.3} mm", m.distance)).strong());
+                    egui::Grid::new("delta").show(ui, |ui| {
+                        for (axis, v) in [("dX", m.delta.x), ("dY", m.delta.y), ("dZ", m.delta.z)] {
+                            ui.label(axis);
+                            ui.label(RichText::new(format!("{v:+.3} mm")).monospace())
+                                .on_hover_text("Second point minus first, in the model's axes");
+                            ui.end_row();
+                        }
+                    });
+                    if let Some(r) = m.relation_line("mm") {
+                        ui.label(RichText::new(r).strong());
+                    }
                 }
 
                 ui.separator();
@@ -257,10 +273,11 @@ impl eframe::App for Demo {
                     _ => ui.visuals().warn_fg_color,
                 };
                 ui.colored_label(color, status.line());
-                egui::CollapsingHeader::new("Mapping").show(ui, |ui| {
-                    mapping_ui(ui, &mut self.mapping, Some(&self.mouse.axes()));
+                egui::CollapsingHeader::new("Settings").show(ui, |ui| {
+                    self.settings.ui(ui, Some(&self.mouse.axes()));
                 });
             });
+        self.settings.calibration_window(ui.ctx());
 
         egui::CentralPanel::default().show(ui, |ui| {
             let r = self.view.show(ui);
@@ -274,11 +291,10 @@ impl eframe::App for Demo {
             }
             self.view.marks = match self.measure.as_slice() {
                 [a] => vec![Mark::point(a.point, "1")],
-                [a, b] => vec![Mark::segment(
-                    a.point,
-                    b.point,
-                    format!("{:.3} mm", (b.point - a.point).length()),
-                )],
+                [a, b] => {
+                    let m = Measurement::between(a, b, self.view.scene());
+                    vec![Mark::segment(a.point, b.point, m.label("mm"))]
+                }
                 _ => vec![],
             };
         });

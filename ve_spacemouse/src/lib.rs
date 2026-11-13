@@ -8,6 +8,11 @@
 //!   [`Mapping::apply`] gives a [`Nav`] per second: what the content does. [`Calibration`] measures
 //!   it with the person: it asks for one motion at a time, records it, works out the mapping and shows a table
 //!   to confirm ([`calibration_ui`]); [`mapping_ui`] edits it by hand.
+//! - [`Config`] and [`SettingsPanel`] (SPM-5): one mapping for every app, in `spacemouse.toml` files found the
+//!   way Cargo finds its config (`.config/spacemouse.toml` in the current folder and each parent, then
+//!   `~/.config/spacemouse.toml`), merged per key with the nearest file winning. The panel is what apps embed:
+//!   Calibrate…, the mapping with the file each value comes from, Save into the user's or the project's file, the
+//!   files found. [`Config::adopt`] moves an app's old per-app mapping into the user's file once.
 //! - [`PieMenu`] (SPM-3): tap a button to fire its centre slot; hold it and a ring of slots opens at the
 //!   pointer, crossing the outer circle or clicking fires the slot under the pointer, and it stays open while
 //!   held so actions chain; each button has its own ring and both together a third.
@@ -35,10 +40,12 @@
 mod calibrate;
 #[cfg(unix)]
 mod client;
+mod config;
 mod event;
 #[cfg(unix)]
 mod fake;
 mod mapping;
+mod panel;
 mod pie;
 mod settings_ui;
 
@@ -47,10 +54,15 @@ pub use calibrate::{
 };
 #[cfg(unix)]
 pub use client::{DEFAULT_SOCKET, Options, SpaceMouse, Status};
+pub use config::{
+    Adopted, Candidate, Config, FILE_NAME, Layer, Saved, candidates, display_path, known_keys,
+    user_config_dir, user_file,
+};
 pub use event::{AXIS_NAMES, Axes, EVENT_SIZE, Event};
 #[cfg(unix)]
 pub use fake::FakeSpacenavd;
 pub use mapping::{AxisMap, Buttons, Convention, Mapping, Nav, Output, Side, Speed};
+pub use panel::{CalibrateSteps, SaveTarget, SettingsPanel};
 pub use pie::{ButtonEvent, Fired, PieMenu, PieState, PieStyle, Ring, Slot, SlotRef, buttons};
 pub use settings_ui::{axes_bars, mapping_ui};
 

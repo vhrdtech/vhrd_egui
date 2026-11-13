@@ -43,6 +43,29 @@ fn signed_bar(ui: &mut Ui, v: f32, t: &ve_theme::Tokens) -> egui::Response {
 /// buttons.
 /// `live` (the puck now) adds a bar per output showing what it gives. Returns whether something changed.
 pub fn mapping_ui(ui: &mut Ui, mapping: &mut Mapping, live: Option<&Axes>) -> bool {
+    mapping_ui_from(ui, mapping, live, None)
+}
+
+/// Where a key's value comes from, for the "From" column: a short name and a tooltip.
+pub(crate) type From<'a> = &'a dyn Fn(&str) -> (String, String);
+
+/// A muted "from" cell.
+fn from_cell(ui: &mut Ui, from: Option<From>, key: &str) {
+    if let Some(from) = from {
+        let (short, tip) = from(key);
+        let muted = ui.tokens().colors.text_muted;
+        ui.label(egui::RichText::new(short).small().color(muted))
+            .on_hover_text(tip);
+    }
+}
+
+/// [`mapping_ui`] with a "From" column: which file each value comes from.
+pub(crate) fn mapping_ui_from(
+    ui: &mut Ui,
+    mapping: &mut Mapping,
+    live: Option<&Axes>,
+    from: Option<From>,
+) -> bool {
     let t = ui.tokens();
     let before = mapping.clone();
     ui.horizontal(|ui| {
@@ -54,6 +77,7 @@ pub fn mapping_ui(ui: &mut Ui, mapping: &mut Mapping, live: Option<&Axes>) -> bo
             .on_hover_text(
                 "Every output turned around: slide right and the view moves right, so the page moves left",
             );
+        from_cell(ui, from, "convention");
     });
     egui::Grid::new(ui.id().with("ve_spacemouse_mapping"))
         .striped(true)
@@ -67,6 +91,10 @@ pub fn mapping_ui(ui: &mut Ui, mapping: &mut Mapping, live: Option<&Axes>) -> bo
             if live.is_some() {
                 ui.label("Now")
                     .on_hover_text("What the puck gives this output now, dead zone taken out");
+            }
+            if from.is_some() {
+                ui.label("From")
+                    .on_hover_text("The file the six axes come from; they are saved together");
             }
             ui.end_row();
             for o in Output::ALL {
@@ -103,6 +131,7 @@ pub fn mapping_ui(ui: &mut Ui, mapping: &mut Mapping, live: Option<&Axes>) -> bo
                         level * 100.0
                     ));
                 }
+                from_cell(ui, from, "axes");
                 ui.end_row();
             }
         });
@@ -116,6 +145,7 @@ pub fn mapping_ui(ui: &mut Ui, mapping: &mut Mapping, live: Option<&Axes>) -> bo
         .on_hover_text(
             "The part of the travel that does nothing, so a resting hand does not drift the view",
         );
+        from_cell(ui, from, "dead_zone");
         ui.end_row();
         ui.label("Full push");
         ui.add(
@@ -126,6 +156,7 @@ pub fn mapping_ui(ui: &mut Ui, mapping: &mut Mapping, live: Option<&Axes>) -> bo
         .on_hover_text(
             "The raw value that gives full speed; the calibrate step sets it from your pushes",
         );
+        from_cell(ui, from, "full_scale");
         ui.end_row();
         ui.label("Pan speed");
         ui.add(
@@ -134,10 +165,12 @@ pub fn mapping_ui(ui: &mut Ui, mapping: &mut Mapping, live: Option<&Axes>) -> bo
                 .suffix(" pt/s"),
         )
         .on_hover_text("Screen points per second at a full push, the same at every zoom");
+        from_cell(ui, from, "speed.pan");
         ui.end_row();
         ui.label("Zoom speed");
         ui.add(egui::Slider::new(&mut mapping.speed.zoom, Speed::ZOOM_RANGE).logarithmic(true))
             .on_hover_text("Zoom steps per second at a full push: 1 is ×2.7 a second");
+        from_cell(ui, from, "speed.zoom");
         ui.end_row();
         ui.label("Rotate speed");
         ui.add(
@@ -146,14 +179,17 @@ pub fn mapping_ui(ui: &mut Ui, mapping: &mut Mapping, live: Option<&Axes>) -> bo
                 .suffix(" rad/s"),
         )
         .on_hover_text("Radians per second at a full push");
+        from_cell(ui, from, "speed.rotate");
         ui.end_row();
         ui.label("Left button");
         ui.add(egui::DragValue::new(&mut mapping.buttons.left).range(0..=31))
             .on_hover_text("spacenavd's number of the left button; the calibrate step finds it");
+        from_cell(ui, from, "buttons.left");
         ui.end_row();
         ui.label("Right button");
         ui.add(egui::DragValue::new(&mut mapping.buttons.right).range(0..=31))
             .on_hover_text("spacenavd's number of the right button; the calibrate step finds it");
+        from_cell(ui, from, "buttons.right");
         ui.end_row();
     });
     *mapping != before

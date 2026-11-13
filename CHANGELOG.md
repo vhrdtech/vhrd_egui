@@ -5,6 +5,15 @@ versions follow [Semantic Versioning](https://semver.org/). Feature IDs refer to
 
 ## [Unreleased]
 
+### Added
+
+- `ve_spacemouse`: one SpaceMouse mapping for every app, in `spacemouse.toml`, found the way Cargo finds its config: `.config/spacemouse.toml` in the current folder and each parent, then `~/.config/spacemouse.toml` (`$XDG_CONFIG_HOME`), merged key by key with the nearest file winning (`Config`). `SettingsPanel` is the one settings panel apps embed: *Calibrate…*, the mapping with the file each value comes from, *Save* into the user's file or the project's, *Reload*, and the files found. `Config::adopt` moves an app's old per-app mapping into the user's file once (SPM-5).
+- `ve_view3d`: `Measurement` between two picks: dX, dY, dZ (signed, in the model's axes) and the distance, plus the gap of two parallel flat faces along their normal or the diameter of a cylinder picked twice; the demo shows them (V3D-2).
+
+### Changed
+
+- `ve_spacemouse`'s `demo` and `ve_view3d`'s `view3d_demo` take the mapping from `spacemouse.toml` through `SettingsPanel` instead of their window state; a mapping they saved before is not read (SPM-5).
+
 ## [0.32.16] - 2026-11-13
 
 ### Added

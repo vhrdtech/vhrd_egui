@@ -3,7 +3,8 @@
 3D mouse input for egui apps through [spacenavd](https://spacenav.sourceforge.net/), the free driver for 3Dconnexion devices, and a pie menu on the device's buttons.
 
 - **The client** (`SpaceMouse`) speaks spacenavd's socket protocol in pure Rust: no libspnav, no C. A thread reads the events, and the UI drains them once per frame.
-- **The mapping** (`Mapping`) says which raw axis moves, zooms or turns the content, with signs, dead zone, speed and which button is left or right. By default the content follows the hand; a camera convention is a setting. It is a per-app setting. The calibrate step (`Calibration`) measures it with the person.
+- **The mapping** (`Mapping`) says which raw axis moves, zooms or turns the content, with signs, dead zone, speed and which button is left or right. By default the content follows the hand; a camera convention is a setting. The calibrate step (`Calibration`) measures it with the person.
+- **The settings** (`Config`, `SettingsPanel`) are shared by every app: one `spacemouse.toml`, found the way Cargo finds its config, so one calibration and one set of speeds apply everywhere. The panel is the same in every app.
 - **The pie menu** (`PieMenu`) opens on the device's buttons, the way a pie menu over KiCad does on the same socket: tap for one action, hold for a ring of eight.
 
 Try it: `cargo run -p ve_spacemouse --example demo`. It shows a canvas of dots that the puck moves, zooms and turns, pie menus on both buttons, the mapping as settings, and *Calibrate…*. `-- --socket PATH` connects to another socket.
@@ -84,6 +85,55 @@ The calibrate step measures the input instead of asking the person to describe i
 
 `Calibration::two_d` asks for slide right, lift up, push away and both buttons. `Calibration::full` asks for all six motions. `Calibration::feed` takes the time from the caller, so it is tested without a clock.
 
+### One settings file for every app (SPM-5)
+
+The mapping lives in `spacemouse.toml`, not in each app's settings. The files are found the way Cargo finds its `config.toml`, nearest first:
+
+1. `.config/spacemouse.toml` in the current folder, then in each parent folder up to `/`;
+2. `spacemouse.toml` in the user's config folder: `$XDG_CONFIG_HOME`, else `~/.config`. When the walk already met that file (the current folder is under the home folder), it is read once, at its place in the walk.
+
+They are merged key by key, and the nearest file wins. Tables merge per key (`speed.pan`, `buttons.left`); the `axes` list is one key, because the calibrate step measures all six together. A key that no file sets takes `Mapping::default`'s value. So a project can make its pans faster with one line and keep the calibration from the user's file:
+
+```toml
+# ~/git/board/.config/spacemouse.toml
+[speed]
+pan = 3000.0
+```
+
+A file holds a `Mapping` at its top level: `convention`, `full_scale`, `dead_zone`, `[speed]` (`pan`, `zoom`, `rotate`), `[buttons]` (`left`, `right`) and six `[[axes]]` (`raw` 0 to 5 for `x y z rx ry rz`, `invert`), in the order move right, move up, grow, tilt forward, roll right, turn clockwise. A file that does not read, or a value of the wrong type, is skipped and said; a key that means nothing is said and ignored.
+
+`Config` reads the files. `Config::mapping` is the merged mapping, `Config::source(key)` the file a key came from, `Config::layers` the files found and `Config::candidates` every place looked at.
+
+`Config::save(mapping, file)` writes into one file the keys it already had, with their new values, and every key whose value differs from what the farther files and the defaults give. A project file keeps only what the project changes. The save reports which keys a nearer file still sets to another value (`Saved::shadowed`), because those don't apply until that file changes. The rest of the file stays; comments in it are not kept.
+
+#### The panel
+
+`SettingsPanel` is what apps embed, the same in every app:
+
+- *Calibrate…* opens the calibrate step in a window (`CalibrateSteps::TwoD` for a 2D view, `Full` for one that turns); *Use this mapping* there saves at once.
+- The mapping by hand, as `mapping_ui`, with a *From* column: `user`, the project's folder (`board/.config`), `default`, or `changed` while not saved. The tooltip names the file.
+- *Save to*: *every folder* (the user's file, the default) or *this project* (the nearest project file, or a new `.config/spacemouse.toml` in the current folder). *Save* writes there, *Reload* reads the files again.
+- *Files*: the files found, nearest first, with the keys each sets, and under a fold of its own every place looked at with no file.
+
+```rust
+// once:
+let mut panel = ve_spacemouse::SettingsPanel::load(ve_spacemouse::CalibrateSteps::Full);
+// per frame:
+let events = mouse.poll();
+panel.feed(&events, ui.input(|i| i.time));
+if !panel.calibrating() {
+    view.navigate(panel.mapping().apply(&mouse.axes()));
+}
+panel.ui(ui, Some(&mouse.axes()));           // where the app keeps its settings
+panel.calibration_window(ui.ctx());
+```
+
+Per-app things stay with the app: what the pie menu's slots do, and what the puck moves in a view with more than one thing to move.
+
+#### Moving an app's old mapping
+
+Apps kept the mapping in their own settings before. `Config::adopt(old_table, "where it was")` moves it into the user's file once: keys the user's file lacks are taken from the old section, keys it has keep their values. The app removes the old section only after `adopt` returned `Ok`, so a failed write loses nothing. better_erc_app does this with `[spacemouse]` of its `config.toml` at start.
+
 ### The pie menu (SPM-3)
 
 | Do | Get |
@@ -115,7 +165,7 @@ Call `show` after the app's panels. `ve_spacemouse::install_icons(ctx)` (feature
 
 ## Testing
 
-`FakeSpacenavd` listens on a socket of its own and sends the events a test asks for. It speaks the same protocol, so the client cannot tell it apart: `tests/socket.rs` covers events, a restart and a late daemon with it. `tests/convention.rs` plays a whole calibration through it and checks the derived signs: the content follows the hand, and the camera convention turns it around. The pie menu (`tests/pie.rs`) and the calibrate panel (`tests/calibrate.rs`) are headless egui_kittest tests with snapshots; the state machines have unit tests.
+`FakeSpacenavd` listens on a socket of its own and sends the events a test asks for. It speaks the same protocol, so the client cannot tell it apart: `tests/socket.rs` covers events, a restart and a late daemon with it. `tests/convention.rs` plays a whole calibration through it and checks the derived signs: the content follows the hand, and the camera convention turns it around. The pie menu (`tests/pie.rs`), the calibrate panel (`tests/calibrate.rs`) and the settings panel (`tests/panel.rs`, on a temporary folder tree) are headless egui_kittest tests with snapshots; the state machines have unit tests.
 
 ## Not a web crate
 

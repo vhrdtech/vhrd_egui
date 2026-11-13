@@ -10,7 +10,7 @@ It knows meshes, not CAD files. A reader (a STEP reader, a procedural shape) han
 
 Everything is in one world frame, Z up, in the caller's unit (millimetres for a footprint model).
 
-Try it: `cargo run -p ve_view3d --example view3d_demo`. It shows a board with a chip, a capacitor and a ball, the preset views, the pick under the pointer, a two-click measure, a 176,000-triangle ball for speed, and the SpaceMouse with its mapping. `-- --socket PATH` connects to another spacenavd socket.
+Try it: `cargo run -p ve_view3d --example view3d_demo`. It shows a board with a chip, a capacitor and a ball, the preset views, the pick under the pointer, a two-click measure (dX, dY, dZ, the distance, and the gap of parallel faces or a cylinder's diameter), a 176,000-triangle ball for speed, and the SpaceMouse with ve_spacemouse's shared settings panel (the mapping from `spacemouse.toml`, *Calibrate…*). `-- --socket PATH` connects to another spacenavd socket.
 
 ## Use
 
@@ -27,6 +27,11 @@ view.view(ve_view3d::ViewPreset::Iso);
 view.navigate(mapping.apply(&mouse.axes()));   // the SpaceMouse, through ve_spacemouse
 let r = view.show(ui);
 if let Some(pick) = r.clicked { /* pick.face, pick.edge, pick.point */ }
+
+// Two picks measured:
+let m = ve_view3d::Measurement::between(&first, &second, view.scene());
+m.line("mm");          // "12.345 mm · dx 1.000 · dy -2.000 · dz 0.500"
+m.relation_line("mm"); // Some("parallel faces 1.600 mm apart"), Some("cylinder Ø 4.000 mm"), None
 ```
 
 `View3d::camera` is serializable view state; keep it with the app's settings. `View3d::selection` holds the selected faces and edges. `View3d::menu_ui` is the view menu (fit, preset views, projection, clear selection), which right-click opens; an app can put it in its own menus too.
@@ -75,6 +80,15 @@ Picking runs on the CPU, so it is deterministic and tested without a GPU.
 - A mesh with more than 10,000 triangles gets a bounding volume hierarchy: median splits on the longest axis, four triangles a leaf, nearer child first. The median model has some 600 triangles; the largest seen has 176,000.
 - Edges count within `View3dStyle::edge_tolerance` points of the pointer. The distance is taken at the point of the edge closest to the pointer's ray. An edge behind the face under the pointer does not count, with a slack of about the tolerance's world size, so edges on a face's border always pick.
 - When both an edge and a face are under the pointer, the edge is what the person aimed at: `Pick::item` and `Pick::point` take the edge.
+
+### Measuring
+
+`Measurement::between(a, b, scene)` gives the offset from the first pick to the second along X, Y and Z (signed, in the model's axes and unit), the distance, and what the two faces say about it (`Relation`):
+
+- **Parallel faces:** both picks on flat faces whose normals are within 0.5° of each other or of the opposite. The gap is the offset along the first face's normal: the thickness of a board from a point on top and any point underneath.
+- **Cylinder:** both picks on the same face, whose normals are all square to one axis (within about 1.5°). In the plane square to that axis each pick lies a radius back along its normal from the centre, which gives the radius; the fit is kept when the two centres agree within 2 % of it and the two normals differ by more than about 11°. A sphere fails the axis test, so it gets no diameter.
+
+The normal at a pick is the vertex normals blended across the triangle, so a smooth cylinder of 64 segments gives its diameter within 0.01 mm at 4 mm. An edge pick gives no relation, as its point is on the edge, not on a face. The text matches the footprint review's ruler in better_erc: `12.345 mm · dx 1.000 · dy -2.000`, with `dz` added.
 
 ## Tests
 

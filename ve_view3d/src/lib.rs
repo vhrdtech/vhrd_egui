@@ -14,6 +14,8 @@
 //! - **Picking** on the CPU ([`Picker`]): a ray against the triangles, a BVH for meshes past 10,000 triangles,
 //!   edges within a few points of the pointer that no face hides; a [`Pick`] names the mesh, face, edge and point.
 //!   Hover and selection are highlighted.
+//! - **Measuring** ([`Measurement`]): between two picks, the offset along X, Y and Z and the distance; two
+//!   parallel flat faces give their gap along the normal, two points on one cylindrical face its diameter.
 //!
 //! ```no_run
 //! # use ve_view3d::*;
@@ -43,12 +45,14 @@
 
 mod camera;
 mod gpu;
+mod measure;
 mod pick;
 mod scene;
 pub mod shapes;
 mod view;
 
 pub use camera::{Camera, Projection, Projector, Ray, ViewPreset, looking_from};
+pub use measure::{Measurement, Relation};
 pub use pick::{EdgePick, FacePick, Item, Pick, Picker, closest_on_segment, ray_triangle};
 pub use scene::{Bounds, LineSet, Mark, MarkShape, Mesh, Scene};
 pub use view::{View3d, View3dResponse, View3dStyle};
