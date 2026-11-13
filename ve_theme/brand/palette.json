@@ -145,5 +145,11 @@
   "kicad-wire": {
     "light": "#5a5a5a",
     "dark": "#9a9a9a"
+  },
+  "kicad-rail": {
+    "ground-wire": "#00731e",
+    "ground-symbol": "#3caa18",
+    "power-wire": "#af320a",
+    "power-symbol": "#e8710a"
   }
 }
