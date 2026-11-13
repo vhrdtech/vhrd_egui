@@ -5,6 +5,8 @@ versions follow [Semantic Versioning](https://semver.org/). Feature IDs refer to
 
 ## [Unreleased]
 
+## [0.32.16] - 2026-11-13
+
 ### Added
 
 - `ve_theme`: the brand palette's KiCad rail colours (`brand::kicad_rail`: power and ground, symbol and wire), from the refreshed copy of the brand export (THM-11).
