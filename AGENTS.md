@@ -80,6 +80,10 @@ Cargo workspace, edition 2024, one shared version (`[workspace.package]`).
   the protocol in `event.rs`; `FakeSpacenavd` in `fake.rs` for tests), `Mapping` and `Nav` (`mapping.rs`), the
   calibrate step (`calibrate.rs`) and `mapping_ui` (`settings_ui.rs`), `PieMenu` (`pie.rs`); the demo example.
   Not a web crate (Unix socket, a thread).
+- `ve_view3d/` — the 3D view: `Scene` of `Mesh`es, `LineSet`s and `Mark`s (`scene.rs`), `Camera` and `Projector`
+  (`camera.rs`), CPU picking with a BVH (`pick.rs`), the offscreen wgpu renderer with depth and 4x MSAA
+  (`gpu.rs`, `view3d.wgsl`), the `View3d` widget (`view.rs`), procedural `shapes`, the `view3d_demo` example.
+  Rendering needs eframe's wgpu renderer; without it the view says so and picking still works.
 - `ve_basics/` — build info, non-selectable labels, hover cross-reference highlight, the fold for the rest of a
   cut list (`FoldRest`), startup crash guard.
 - `ve_template/` — the app template as a command (`new`, `check-answers`, `compare`); the files it renders and the
@@ -122,7 +126,8 @@ lookup and Hyprland listener, which are cfg'd off on wasm32) carry a local `#[al
 with a short reason; a new one needs the same conscious annotation, not a blanket allow.
 
 Not web crates, and why: `ve_widget` (eframe with default features, tokio, `typetag` and `inventory`, which need
-`ctor` support on wasm), `ve_app` (egui_tiles, eframe persistence), `ve_spacemouse` (a Unix socket and a thread).
+`ctor` support on wasm), `ve_app` (egui_tiles, eframe persistence), `ve_spacemouse` (a Unix socket and a thread),
+`ve_view3d` (on `ve_spacemouse`; not checked on wasm yet).
 
 ## UI guide rules
 

@@ -1,0 +1,23 @@
+[package]
+name = "ve_view3d"
+description = "3D mesh view for egui: meshes, edges and marks rendered offscreen through wgpu with depth and 4x MSAA, an orbit / pan / zoom camera with preset views, CPU picking of faces, edges and points, and the SpaceMouse on all six axes"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+repository.workspace = true
+
+[dependencies]
+egui.workspace = true
+egui-wgpu.workspace = true
+bytemuck = { version = "1.25", features = ["derive"] }
+glam = { version = "0.34", default-features = false, features = ["std", "serde", "bytemuck"] }
+serde.workspace = true
+ve_spacemouse = { path = "../ve_spacemouse", version = "0.32", default-features = false }
+
+[dev-dependencies]
+eframe = { workspace = true, features = ["persistence", "wgpu"] }
+egui_kittest = { workspace = true, features = ["snapshot", "wgpu"] }
+ve_theme = { path = "../ve_theme", version = "0.32" }
+ve_spacemouse = { path = "../ve_spacemouse", version = "0.32" }
+image = { version = "0.25", default-features = false, features = ["png"] }

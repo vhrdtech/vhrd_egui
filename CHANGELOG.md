@@ -8,6 +8,7 @@ versions follow [Semantic Versioning](https://semver.org/). Feature IDs refer to
 ### Added
 
 - `ve_theme`: the brand palette's KiCad rail colours (`brand::kicad_rail`: power and ground, symbol and wire), from the refreshed copy of the brand export (THM-11).
+- `ve_view3d`, a new crate: a 3D view of meshes for egui apps (V3D-1). `View3d` shows meshes whose triangles are grouped into faces with ids and colours, edges as polylines and labelled marks, rendered offscreen through wgpu with depth and 4x MSAA and shown as an egui image. The camera turns, pans, zooms about the point under the pointer, fits, has top / bottom / front / back / left / right / iso views, is perspective or orthographic, and takes the SpaceMouse on all six axes through `ve_spacemouse`'s `Nav`. Picking runs on the CPU (a BVH for meshes past 10,000 triangles) and names the mesh, face, edge and point under the pointer; hover and selection are highlighted. Try it with `cargo run -p ve_view3d --example view3d_demo`.
 
 ## [0.32.15] - 2026-11-12
 

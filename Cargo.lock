@@ -1453,6 +1453,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "glam"
+version = "0.34.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "627003914c6057c9c8f0832ee4f870b5a4f599d0cfa83f4072675114860cd0ff"
+dependencies = [
+ "bytemuck",
+ "serde_core",
+]
+
+[[package]]
 name = "glifo"
 version = "0.2.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -3811,6 +3821,22 @@ dependencies = [
  "egui_kittest",
  "serde_json",
  "ve_basics",
+]
+
+[[package]]
+name = "ve_view3d"
+version = "0.32.15"
+dependencies = [
+ "bytemuck",
+ "eframe",
+ "egui",
+ "egui-wgpu",
+ "egui_kittest",
+ "glam",
+ "image",
+ "serde",
+ "ve_spacemouse",
+ "ve_theme",
 ]
 
 [[package]]
