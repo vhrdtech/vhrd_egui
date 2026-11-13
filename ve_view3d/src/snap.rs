@@ -128,6 +128,20 @@ impl SnapAnim {
         })
     }
 
+    /// The turn from `from` to `to` (a side picked, say), the short way, starting at `now`; `None` when they are
+    /// the same.
+    pub fn towards(from: Quat, to: Quat, now: f64, duration: f32) -> Option<Self> {
+        let from = from.normalize();
+        let to = to.normalize();
+        let to = if to.dot(from) < 0.0 { -to } else { to };
+        (from.angle_between(to) > 1e-4).then_some(Self {
+            from,
+            to,
+            start: now,
+            duration: duration.max(0.0),
+        })
+    }
+
     /// Where the turn finishes.
     pub fn target(&self) -> Quat {
         self.to
@@ -248,6 +262,12 @@ mod tests {
         // Already on a side: nothing to do. A zero time jumps.
         assert!(SnapAnim::new(ViewPreset::Left.rotation(), 0.0, 0.5).is_none());
         assert!(SnapAnim::new(from, 0.0, 0.0).unwrap().at(0.0).1);
+        // Towards a side picked: lands on it, the short way.
+        let to = ViewPreset::Front.rotation();
+        let a = SnapAnim::towards(from, -to, 0.0, 0.2).unwrap();
+        assert!(a.target().dot(from) >= 0.0);
+        assert!(a.at(0.2).0.angle_between(to) < 1e-4);
+        assert!(SnapAnim::towards(to, to, 0.0, 0.2).is_none());
     }
 
     #[test]
