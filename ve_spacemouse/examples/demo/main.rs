@@ -298,6 +298,7 @@ impl eframe::App for Demo {
             self.log
                 .push(format!("calibrated: {:?}", self.settings.mapping()));
         }
+        self.settings.leave_guard(ui.ctx());
         if !self.settings.calibrating() {
             // Navigation and menu only while not calibrating: the motions there are measurements.
             let nav = self.settings.mapping().apply(&self.mouse.axes());

@@ -5,6 +5,14 @@ versions follow [Semantic Versioning](https://semver.org/). Feature IDs refer to
 
 ## [Unreleased]
 
+### Added
+
+- `ve_spacemouse`: the settings panel says what is not saved: the changed keys in the warning colour, and `SettingsPanel::leave_guard` holds a window close while there are unsaved changes and asks to save to ~/.config, save locally, close without saving, or stay. `Config::plan` gives the keys a save would write without touching the disk (SPM-6).
+
+### Changed
+
+- **Breaking:** `ve_spacemouse::SettingsPanel` has two buttons instead of a target choice and *Save*: *Save to ~/.config* writes the user's file, *Save locally* writes `.config/spacemouse.toml` in the current folder (made when missing; before, *this project* meant the nearest project file above). Each tooltip names the file and the keys it then holds, and the note after saving says the same. `SaveTarget::Project` is now `SaveTarget::Local`; `save` takes the target, `target`/`set_target` are gone. A calibration taken is in use and shown as unsaved until saved, no longer saved at once (SPM-6). Apps call `leave_guard` once per frame.
+
 ## [0.32.18] - 2026-11-13
 
 ### Added

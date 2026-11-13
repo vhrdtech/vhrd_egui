@@ -278,6 +278,7 @@ impl eframe::App for Demo {
                 });
             });
         self.settings.calibration_window(ui.ctx());
+        self.settings.leave_guard(ui.ctx());
 
         egui::CentralPanel::default().show(ui, |ui| {
             let r = self.view.show(ui);

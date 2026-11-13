@@ -11,8 +11,9 @@
 //! - [`Config`] and [`SettingsPanel`] (SPM-5): one mapping for every app, in `spacemouse.toml` files found the
 //!   way Cargo finds its config (`.config/spacemouse.toml` in the current folder and each parent, then
 //!   `~/.config/spacemouse.toml`), merged per key with the nearest file winning. The panel is what apps embed:
-//!   Calibrate…, the mapping with the file each value comes from, Save into the user's or the project's file, the
-//!   files found. [`Config::adopt`] moves an app's old per-app mapping into the user's file once.
+//!   Calibrate…, the mapping with the file each value comes from, Save to ~/.config or Save locally (SPM-6), the
+//!   unsaved changes and the question on closing ([`SettingsPanel::leave_guard`]), the files found.
+//!   [`Config::adopt`] moves an app's old per-app mapping into the user's file once.
 //! - [`PieMenu`] (SPM-3): tap a button to fire its centre slot; hold it and a ring of slots opens at the
 //!   pointer, crossing the outer circle or clicking fires the slot under the pointer, and it stays open while
 //!   held so actions chain; each button has its own ring and both together a third.

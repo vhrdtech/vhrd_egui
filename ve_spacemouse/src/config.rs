@@ -103,9 +103,14 @@ pub struct Saved {
 }
 
 impl Saved {
-    /// One line for the panel: where it went, and what still overrides it.
+    /// One line for the panel: where it went, what the file now holds, and what still overrides it.
     pub fn line(&self) -> String {
         let mut s = format!("saved to {}", display_path(&self.path));
+        s += &if self.keys.is_empty() {
+            ": no keys, everything as the farther files and the defaults give it".to_string()
+        } else {
+            format!(": {}", self.keys.join(", "))
+        };
         if !self.shadowed.is_empty() {
             let keys: Vec<String> = self
                 .shadowed
@@ -269,6 +274,21 @@ fn merge(base: &mut Table, over: &Table) {
             }
         }
     }
+}
+
+/// `table` with `mapping`'s keys it had, and those that differ from `below`, set; and those keys.
+fn write_keys(mapping: &Mapping, table: &Table, below: &Table) -> (Table, Vec<String>) {
+    let mut table = table.clone();
+    let had = flatten(&table);
+    let below = flatten(below);
+    let mut keys = Vec::new();
+    for (k, v) in flatten(&mapping_table(mapping)) {
+        if had.contains_key(&k) || below.get(&k) != Some(&v) {
+            set_key(&mut table, &k, v);
+            keys.push(k);
+        }
+    }
+    (table, keys)
 }
 
 fn to_mapping(t: &Table) -> Result<Mapping, String> {
@@ -441,44 +461,49 @@ impl Config {
             .or_else(|| self.new_project_file())
     }
 
+    /// The table `path` holds now (as read, `None` when it was not found) and what the files farther away and the
+    /// defaults give below it.
+    fn below(&self, path: &Path) -> (Option<Table>, Table) {
+        if let Some(i) = self.layers.iter().position(|l| l.path == path) {
+            return (Some(self.layers[i].table.clone()), self.merged(i + 1).0);
+        }
+        let at = self
+            .candidates
+            .iter()
+            .position(|c| c.path == path)
+            .unwrap_or(self.candidates.len());
+        let from = self
+            .layers
+            .iter()
+            .position(|l| {
+                self.candidates
+                    .iter()
+                    .position(|c| c.path == l.path)
+                    .is_some_and(|ci| ci > at)
+            })
+            .unwrap_or(self.layers.len());
+        (None, self.merged(from).0)
+    }
+
+    /// The keys [`Config::save`] would write into `path` for `mapping`, from the files as last read (no disk
+    /// access: for a tooltip).
+    pub fn plan(&self, mapping: &Mapping, path: &Path) -> Vec<String> {
+        let (table, below) = self.below(path);
+        write_keys(mapping, &table.unwrap_or_default(), &below).1
+    }
+
     /// Write `mapping` into `path` (one of [`Config::candidates`], or any file), then read the files again.
     ///
     /// The file gets the keys it already had, with the new values, and every key whose value differs from what
     /// the files farther away (and the defaults) give, so a project file holds only what the project changes. Its
     /// other contents stay. A file that does not read is left as it is.
     pub fn save(&mut self, mapping: &Mapping, path: &Path) -> Result<Saved, String> {
-        let index = self.layers.iter().position(|l| l.path == path);
-        let (mut table, below) = match index {
-            Some(i) => (self.layers[i].table.clone(), self.merged(i + 1).0),
-            None => {
-                let table = read_table(path)?.unwrap_or_default();
-                let at = self
-                    .candidates
-                    .iter()
-                    .position(|c| c.path == path)
-                    .unwrap_or(self.candidates.len());
-                let from = self
-                    .layers
-                    .iter()
-                    .position(|l| {
-                        self.candidates
-                            .iter()
-                            .position(|c| c.path == l.path)
-                            .is_some_and(|ci| ci > at)
-                    })
-                    .unwrap_or(self.layers.len());
-                (table, self.merged(from).0)
-            }
+        let (table, below) = self.below(path);
+        let table = match table {
+            Some(t) => t,
+            None => read_table(path)?.unwrap_or_default(),
         };
-        let had = flatten(&table);
-        let below = flatten(&below);
-        let mut keys = Vec::new();
-        for (k, v) in flatten(&mapping_table(mapping)) {
-            if had.contains_key(&k) || below.get(&k) != Some(&v) {
-                set_key(&mut table, &k, v);
-                keys.push(k);
-            }
-        }
+        let (table, keys) = write_keys(mapping, &table, &below);
         write_table(path, &table)?;
         self.reload();
         let wanted = flatten(&mapping_table(mapping));

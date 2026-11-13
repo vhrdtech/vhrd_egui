@@ -1,5 +1,5 @@
 //! The SpaceMouse's settings as one panel every app embeds as is (SPM-5): Calibrate…, the mapping with where each
-//! value comes from, where to save, and the files found.
+//! value comes from, Save to ~/.config and Save locally, the unsaved changes and the files found.
 
 use std::path::PathBuf;
 
@@ -22,14 +22,26 @@ pub enum CalibrateSteps {
     Full,
 }
 
-/// Which file Save and Calibrate write.
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+/// Which file a save writes (SPM-6).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum SaveTarget {
     /// The user's `~/.config/spacemouse.toml`: every app, every folder.
-    #[default]
     User,
-    /// The nearest project's `.config/spacemouse.toml`, or a new one in the current folder.
-    Project,
+    /// `.config/spacemouse.toml` in the current folder (the project), made when missing.
+    Local,
+}
+
+impl SaveTarget {
+    /// Both, in the order the buttons show them.
+    pub const ALL: [SaveTarget; 2] = [SaveTarget::User, SaveTarget::Local];
+
+    /// The button's label.
+    pub fn label(self) -> &'static str {
+        match self {
+            SaveTarget::User => "Save to ~/.config",
+            SaveTarget::Local => "Save locally",
+        }
+    }
 }
 
 /// The settings panel: the [`Config`] read from the files, the mapping in use (with unsaved changes) and the
@@ -37,14 +49,15 @@ pub enum SaveTarget {
 ///
 /// Per frame: [`SettingsPanel::feed`] the events (the calibrate step records them), use
 /// [`SettingsPanel::mapping`] unless [`SettingsPanel::calibrating`], show [`SettingsPanel::ui`] where the app keeps
-/// its settings and [`SettingsPanel::calibration_window`] once per frame.
+/// its settings, and [`SettingsPanel::calibration_window`] and [`SettingsPanel::leave_guard`] once per frame.
 pub struct SettingsPanel {
     config: Config,
     mapping: Mapping,
     steps: CalibrateSteps,
     calibration: Option<Calibration>,
-    target: SaveTarget,
     note: Option<String>,
+    /// The window was asked to close with unsaved changes: the question is open.
+    leaving: bool,
 }
 
 impl SettingsPanel {
@@ -56,8 +69,8 @@ impl SettingsPanel {
             mapping,
             steps,
             calibration: None,
-            target: SaveTarget::User,
             note: None,
+            leaving: false,
         }
     }
 
@@ -89,6 +102,21 @@ impl SettingsPanel {
         &self.mapping != self.config.mapping()
     }
 
+    /// The keys changed and not saved, as dotted paths (`speed.pan`, `axes`).
+    pub fn unsaved_keys(&self) -> Vec<String> {
+        let now = key_values(&self.mapping);
+        let read = key_values(self.config.mapping());
+        now.iter()
+            .filter(|(k, v)| read.get(*k) != Some(*v))
+            .map(|(k, _)| k.clone())
+            .collect()
+    }
+
+    /// The question "save before closing?" is open ([`SettingsPanel::leave_guard`]).
+    pub fn leaving(&self) -> bool {
+        self.leaving
+    }
+
     /// The calibrate step's window is open: the app should not move anything by the puck, nor open its menus.
     pub fn calibrating(&self) -> bool {
         self.calibration.is_some()
@@ -113,16 +141,6 @@ impl SettingsPanel {
         self.note.as_deref()
     }
 
-    /// Where Save writes.
-    pub fn target(&self) -> SaveTarget {
-        self.target
-    }
-
-    /// Choose where Save writes.
-    pub fn set_target(&mut self, target: SaveTarget) {
-        self.target = target;
-    }
-
     /// The file `target` stands for, or why there is none.
     pub fn target_path(&self, target: SaveTarget) -> Result<PathBuf, &'static str> {
         match target {
@@ -131,10 +149,10 @@ impl SettingsPanel {
                 .user_file()
                 .map(PathBuf::from)
                 .ok_or("No user config folder: neither XDG_CONFIG_HOME nor HOME is set"),
-            SaveTarget::Project => self
+            SaveTarget::Local => self
                 .config
-                .project_target()
-                .ok_or("No current folder known, so no project file"),
+                .new_project_file()
+                .ok_or("No current folder known, so no local file"),
         }
     }
 
@@ -147,10 +165,30 @@ impl SettingsPanel {
         }
     }
 
-    /// Write the mapping in use into the chosen file.
-    pub fn save(&mut self) -> Result<Saved, String> {
+    /// What saving into `target` would write: the file and the keys, one line for a tooltip.
+    pub fn plan_line(&self, target: SaveTarget) -> String {
+        match self.target_path(target) {
+            Err(why) => why.to_string(),
+            Ok(path) => {
+                let keys = self.config.plan(&self.mapping, &path);
+                let what = if keys.is_empty() {
+                    "no keys: everything as the farther files and the defaults give it".to_string()
+                } else {
+                    keys.join(", ")
+                };
+                let new = if path.exists() { "" } else { " (new file)" };
+                format!(
+                    "Writes {}{new}, which then holds: {what}",
+                    display_path(&path)
+                )
+            }
+        }
+    }
+
+    /// Write the mapping in use into `target`'s file.
+    pub fn save(&mut self, target: SaveTarget) -> Result<Saved, String> {
         let result = self
-            .target_path(self.target)
+            .target_path(target)
             .map_err(|e| format!("not saved: {e}"))
             .and_then(|path| self.config.save(&self.mapping, &path));
         self.note = Some(match &result {
@@ -175,12 +213,9 @@ impl SettingsPanel {
         let now = key_values(&self.mapping);
         let read = key_values(self.config.mapping());
         if now.get(key) != read.get(key) {
-            let to = self
-                .target_path(self.target)
-                .map_or_else(|e| e.to_string(), |p| display_path(&p));
             return (
                 "changed".into(),
-                format!("Not saved yet; Save writes it to {to}"),
+                "Not saved yet: Save to ~/.config or Save locally keeps it".into(),
             );
         }
         match self.config.source(key) {
@@ -204,8 +239,8 @@ impl SettingsPanel {
         if ui
             .add_enabled(!calibrating, egui::Button::new("Calibrate…"))
             .on_hover_text(format!(
-                "Measure which way the puck reads when you {what}, and which button is which; saved where Save \
-                 writes, for every app"
+                "Measure which way the puck reads when you {what}, and which button is which; then save it with \
+                 Save to ~/.config (every app, every folder) or Save locally (this folder)"
             ))
             .on_disabled_hover_text("The calibration window is open")
             .clicked()
@@ -224,43 +259,10 @@ impl SettingsPanel {
         }
         ui.add_space(t.space.s);
 
+        self.unsaved_ui(ui);
         ui.horizontal(|ui| {
-            ui.label("Save to");
-            for (target, name) in [
-                (SaveTarget::User, "every folder"),
-                (SaveTarget::Project, "this project"),
-            ] {
-                match self.target_path(target) {
-                    Ok(path) => {
-                        let new = !path.exists();
-                        let tip = format!(
-                            "{}{}",
-                            display_path(&path),
-                            if new { " (new file)" } else { "" }
-                        );
-                        ui.radio_value(&mut self.target, target, name)
-                            .on_hover_text(tip);
-                    }
-                    Err(why) => {
-                        ui.add_enabled(false, egui::RadioButton::new(false, name))
-                            .on_disabled_hover_text(why);
-                    }
-                }
-            }
-        });
-        ui.horizontal(|ui| {
-            let changed = self.changed();
-            let save = ui
-                .add_enabled(changed, egui::Button::new("Save"))
-                .on_hover_text(
-                    self.target_path(self.target)
-                        .map_or_else(|e| e.to_string(), |p| display_path(&p)),
-                )
-                .on_disabled_hover_text("Nothing changed since the files were read");
-            if save.clicked() {
-                let _ = self.save();
-            }
-            let reload = ui.button("Reload").on_hover_text(if changed {
+            self.save_buttons(ui);
+            let reload = ui.button("Reload").on_hover_text(if self.changed() {
                 "Read the files again; the changes not saved are dropped"
             } else {
                 "Read the files again, for changes made by another app or by hand"
@@ -277,6 +279,96 @@ impl SettingsPanel {
         }
         self.files_ui(ui);
         changed
+    }
+
+    /// The changed keys, in the warning colour, while they are not saved.
+    fn unsaved_ui(&self, ui: &mut Ui) {
+        let keys = self.unsaved_keys();
+        if keys.is_empty() {
+            return;
+        }
+        let t = ui.tokens();
+        ui.colored_label(t.colors.warn, format!("⚠ Unsaved: {}", keys.join(", ")))
+            .on_hover_text("In use now, lost when the app closes unless saved; closing asks");
+    }
+
+    /// "Save to ~/.config" and "Save locally", each off with the reason when there is nothing to save or no file.
+    /// Returns whether one saved.
+    fn save_buttons(&mut self, ui: &mut Ui) -> bool {
+        let changed = self.changed();
+        let mut saved = false;
+        for target in SaveTarget::ALL {
+            let why = match self.target_path(target) {
+                Err(why) => Some(why.to_string()),
+                Ok(_) if !changed => Some("Nothing changed since the files were read".to_string()),
+                Ok(_) => None,
+            };
+            let b = ui
+                .add_enabled(why.is_none(), egui::Button::new(target.label()))
+                .on_hover_text(self.plan_line(target));
+            let b = match &why {
+                Some(why) => b.on_disabled_hover_text(why),
+                None => b,
+            };
+            if b.clicked() {
+                saved |= self.save(target).is_ok();
+            }
+        }
+        saved
+    }
+
+    /// Once per frame: when the window is asked to close while the mapping has unsaved changes, the close is held
+    /// and a question asks to save to ~/.config, save locally, close without saving, or stay.
+    pub fn leave_guard(&mut self, ctx: &egui::Context) {
+        if ctx.input(|i| i.viewport().close_requested()) && self.changed() && !self.leaving {
+            ctx.send_viewport_cmd(egui::ViewportCommand::CancelClose);
+            self.leaving = true;
+        }
+        if !self.leaving {
+            return;
+        }
+        let mut close = false;
+        let mut stay = false;
+        egui::Modal::new(egui::Id::new("ve_spacemouse_leave")).show(ctx, |ui| {
+            ui.heading("Save the SpaceMouse's mapping?");
+            ui.label(format!(
+                "Changed and not saved: {}.",
+                self.unsaved_keys().join(", ")
+            ));
+            let s = ui.tokens().space.s;
+            ui.add_space(s);
+            ui.horizontal(|ui| {
+                if self.save_buttons(ui) {
+                    close = true;
+                }
+                if ui
+                    .danger_button("Close without saving", "The changes are lost")
+                    .clicked()
+                {
+                    close = true;
+                }
+                if ui
+                    .button("Stay")
+                    .on_hover_text("Keep the app open")
+                    .clicked()
+                {
+                    stay = true;
+                }
+            });
+            if let Some(n) = &self.note {
+                ui.label(RichText::new(n).small());
+            }
+        });
+        if close {
+            self.leaving = false;
+            if self.changed() {
+                // Close without saving: the mapping read from the files is the one in use until the window goes.
+                self.mapping = self.config.mapping().clone();
+            }
+            ctx.send_viewport_cmd(egui::ViewportCommand::Close);
+        } else if stay {
+            self.leaving = false;
+        }
     }
 
     /// The files found with the keys each sets; the places looked at with nothing there under a fold of their own.
@@ -326,8 +418,8 @@ impl SettingsPanel {
         });
     }
 
-    /// The calibrate step's window while it is open. Using its mapping makes it the one in use and saves it where
-    /// Save writes; returns `true` on that frame.
+    /// The calibrate step's window while it is open. Using its mapping makes it the one in use, shown as unsaved
+    /// until Save to ~/.config or Save locally; returns `true` on that frame.
     pub fn calibration_window(&mut self, ctx: &egui::Context) -> bool {
         let Some(cal) = &mut self.calibration else {
             return false;
@@ -342,8 +434,7 @@ impl SettingsPanel {
         match action {
             CalibrationAction::Apply(m) => {
                 self.calibration = None;
-                self.mapping = m;
-                let _ = self.save();
+                self.set_mapping(m);
                 true
             }
             CalibrationAction::Cancel => {
