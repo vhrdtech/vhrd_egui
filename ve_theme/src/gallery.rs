@@ -238,3 +238,202 @@ impl Gallery {
         });
     }
 }
+
+/// The property-panel widgets ([`crate::props`], THM-17) in one pane: the gallery's second page, and the content
+/// of the `props_dark.png` / `props_light.png` snapshots.
+#[derive(Clone, Debug)]
+pub struct PropsGallery {
+    width: u8,
+    scalar: f64,
+    angle: f32,
+    vec3: [f64; 3],
+    blend: u8,
+    layers: [bool; 3],
+    selected: usize,
+    filter: String,
+}
+
+impl Default for PropsGallery {
+    fn default() -> Self {
+        Self {
+            width: 2,
+            scalar: 7.0,
+            angle: 90.0,
+            vec3: [10.1, 7.124, 100.0],
+            blend: 0,
+            layers: [true, true, false],
+            selected: 1,
+            filter: String::new(),
+        }
+    }
+}
+
+const ROWS: [(&str, &str, Tone); 7] = [
+    ("First World", "reviewed", Tone::Good),
+    ("Second Nature", "unreviewed", Tone::Warn),
+    ("Third Degree", "stale", Tone::Crit),
+    ("Fourth Wall", "no footprint", Tone::Off),
+    ("Fifth Column", "reviewed", Tone::Good),
+    ("Sixth Sense", "partial", Tone::Warn),
+    ("Seventh Seal", "reviewed", Tone::Good),
+];
+
+impl PropsGallery {
+    /// Dark and light next to each other, each on its own background.
+    pub fn side_by_side(&mut self, ui: &mut Ui) {
+        ui.columns(2, |cols| {
+            for (col, theme) in cols.iter_mut().zip([Theme::Dark, Theme::Light]) {
+                col.push_id(theme, |ui| self.themed(ui, theme));
+            }
+        });
+    }
+
+    /// The pane in one theme, on that theme's background.
+    pub fn themed(&mut self, ui: &mut Ui, theme: Theme) {
+        ui.set_style(ui.ctx().style_of(theme));
+        let t = Tokens::of(ui.ctx(), theme);
+        Frame::new()
+            .fill(t.colors.bg)
+            .inner_margin(Margin::same(t.space.l as i8))
+            .show(ui, |ui| {
+                ui.set_min_width(ui.available_width());
+                self.ui(ui);
+            });
+    }
+
+    /// The pane in the `Ui`'s current theme.
+    pub fn ui(&mut self, ui: &mut Ui) {
+        use crate::props::*;
+        let width = &mut self.width;
+        Pane::new()
+            .bar(|ui| {
+                ui.primary_button("▶ Run", "Primary button: the one main action of the pane");
+                ui.separator();
+                Segmented::new(width)
+                    .item(1, "¼", "A quarter of the window")
+                    .item(2, "½", "Half the window")
+                    .item(3, "¾", "Three quarters of the window")
+                    .show(ui);
+                ui.separator();
+                ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                    ui.button("×").on_hover_text("Close the pane");
+                    ui.button("▾").on_hover_text("More: the pane's menu");
+                });
+            })
+            .title(
+                "A standard editor pane",
+                "Pane: the panel's box, a bar on top, a quiet title",
+            )
+            .show(ui, |ui| {
+                SubPane::new("Sub-pane")
+                    .center("Center")
+                    .summary("Right")
+                    .tooltip(
+                        "Sub-pane: a section that folds; folded, its summary says what is inside",
+                    )
+                    .show(ui, |ui| {
+                        Group::new("A standard group")
+                            .tooltip("Group: properties that belong together")
+                            .show(ui, |ui| {
+                                PropertyRow::new("Scalar property")
+                                    .tooltip("Property row: the name above its input")
+                                    .show(ui, |ui| {
+                                        ui.add(
+                                            ScalarField::new(&mut self.scalar)
+                                                .unit("mm")
+                                                .tooltip("A length"),
+                                        )
+                                    });
+                                PropertyRow::new("Angle").show(ui, |ui| {
+                                    ui.add(
+                                        ScalarField::new(&mut self.angle)
+                                            .unit("°")
+                                            .decimals(1)
+                                            .range(-360.0..=360.0)
+                                            .tooltip("Counter-clockwise"),
+                                    )
+                                });
+                                PropertyRow::new("Vec3 property").show(ui, |ui| {
+                                    let [x, y, z] = &mut self.vec3;
+                                    ui.add(VecField::new([x, y, z]).decimals(3).tooltip("A point"))
+                                });
+                                PropertyRow::new("Disabled").show(ui, |ui| {
+                                    let mut v = 0.5;
+                                    ui.add(
+                                        ScalarField::new(&mut v).disabled_because(Some(
+                                            "not clickable: open a file first",
+                                        )),
+                                    )
+                                });
+                            });
+                        Group::new("Choices").show(ui, |ui| {
+                            Segmented::new(&mut self.blend)
+                                .item(0, "Normal", "Segmented: one choice of a few")
+                                .item(1, "Multiply", "Dark where both are dark")
+                                .item_if(2, "Screen", "", Some("needs the wgpu renderer"))
+                                .fill_width()
+                                .show(ui);
+                            ui.horizontal_wrapped(|ui| {
+                                for (on, name) in
+                                    self.layers.iter_mut().zip(["Pads", "Courtyard", "Silk"])
+                                {
+                                    ui.add(
+                                        ToggleChip::new(on, name)
+                                            .tooltip("Toggle chip: shown or not"),
+                                    );
+                                }
+                                let mut off = false;
+                                ui.add(
+                                    ToggleChip::new(&mut off, "Fab")
+                                        .disabled_because(Some("the footprint has no fab layer")),
+                                );
+                            });
+                        });
+                        Facts::new("gallery facts").show(ui, |f| {
+                            f.fact("Footprint", "Package_DFN_QFN:WQFN-20-1EP_3x3mm_P0.4mm", "");
+                            f.fact_mono("Hash", "fp1:f460b103cd5189b2", "The review hash");
+                            f.fact_tone("Status", "unreviewed", Tone::Warn, "No review line yet");
+                        });
+                        notice(ui, Tone::Warn, "Notice: a warning beside what it is about");
+                        hint(ui, "Hint: why something is off and what turns it on");
+                    });
+                SubPane::new("List")
+                    .summary(format!("{} items", ROWS.len()))
+                    .show(ui, |ui| {
+                        filter_field(ui, &mut self.filter, "filter: name or status");
+                        let f = self.filter.to_lowercase();
+                        ListView::new("gallery list")
+                            .max_height(150.0)
+                            .show(ui, |list| {
+                                for (i, (name, word, tone)) in ROWS.into_iter().enumerate() {
+                                    if !f.is_empty()
+                                        && !name.to_lowercase().contains(&f)
+                                        && !word.contains(&f)
+                                    {
+                                        continue;
+                                    }
+                                    if list
+                                        .row(
+                                            ListRow::new(name)
+                                                .lead(word, tone)
+                                                .selected(self.selected == i),
+                                        )
+                                        .clicked()
+                                    {
+                                        self.selected = i;
+                                    }
+                                }
+                                if list.is_empty() {
+                                    list.empty("nothing matches the filter");
+                                }
+                            });
+                    });
+                SubPane::new("Folded")
+                    .default_open(false)
+                    .summary("3 settings inside")
+                    .show(ui, |ui| {
+                        hint(ui, "The body of a folded sub-pane");
+                    });
+            });
+    }
+}

@@ -50,7 +50,8 @@ Cargo workspace, edition 2024, one shared version (`[workspace.package]`).
   transient).
 - `ve_theme/` — the design system: brand `Tokens` (colors, spacing, radii, strokes, shadows, type scale) applied
   as egui dark and light styles, IBM Plex fonts, `UiExt` helpers (primary / danger button, section header,
-  panel title bar, toolbar, muted label, badge), the gallery example.
+  panel title bar, toolbar, muted label, badge), the property-panel widgets (`props.rs`: pane, sub-pane, group,
+  property row, scalar and vec fields, segmented, toggle chip, list view), the gallery example.
 - `ve_dash/` — btop-style dashboard blocks (theme from `ve_theme` tokens, sparkline, meter with a fixed or
   auto block count, tiles) and day charts (`Day`, burndown, Gantt; every tunable in a `*Style` struct).
 - `ve_phosphor/` — the HDR digital-phosphor scope: `Phosphor` (GPU state: compute sweeps into atomic hit counts,

@@ -17,6 +17,8 @@
 //!   toolbar, muted label, badge — each with its tooltip (THM-4).
 //! - [`hue`]: OKLab distance and the red / orange hue range reserved for error and warning, to test that
 //!   categorical colours (labels, chips, series, hosts, models) stay out of it and apart from each other (THM-10).
+//! - [`props`]: property-panel widgets: pane, sub-pane, group, property row, number and axis fields,
+//!   segmented choice, toggle chip, list view (THM-17).
 //! - [`gallery`]: every egui widget and helper in one view, the tuning tool (THM-5);
 //!   `cargo run -p ve_theme --example gallery`.
 //!
@@ -39,6 +41,7 @@ pub mod contrast;
 mod fonts;
 pub mod gallery;
 pub mod hue;
+pub mod props;
 mod status;
 mod tokens;
 pub mod typography;

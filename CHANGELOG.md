@@ -5,6 +5,10 @@ versions follow [Semantic Versioning](https://semver.org/). Feature IDs refer to
 
 ## [Unreleased]
 
+### Added
+
+- `ve_theme::props`: property-panel widgets for an editor's side panel, styled from the tokens in dark and light (THM-17). `Pane` with a tool bar and a quiet title, `SubPane` sections that fold and keep a summary on their header, `Group`, `PropertyRow` (label above the input), `Facts` (read-only label and value pairs), `ScalarField` (drag to change, click to type, units, axis chips), `VecField` (X, Y, Z fields with coloured edges), `Segmented`, `ToggleChip`, `ListView` with a status lead column and an accent scroll bar, `filter_field`, `notice`, `hint`, and `style_ui` to give one panel the ve_theme style. Each interactive part takes its tooltip and a reason when disabled. The gallery has them on a second page, *Property panel*.
+
 ## [0.32.17] - 2026-11-13
 
 ### Added

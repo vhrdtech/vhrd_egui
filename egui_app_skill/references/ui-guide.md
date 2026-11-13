@@ -154,6 +154,29 @@ and height in `Widget::ui_sized`; the shell adds the menu (pop out, other window
 `eframe::App::ui` (egui 0.34+; the old `TopBottomPanel` / `SidePanel` on a `Context` are gone, and 0.36
 deprecated `show_inside` in favour of `show` on a `Ui`).
 
+### Property panels
+
+An editor's side panel (a selected thing's properties, a review's controls) is built from `ve_theme::props`
+(THM-17), not from headings, separators and grids: a `Pane` (tool bar on top, stays put while the body scrolls),
+`SubPane` sections that fold and keep a summary on their header (so a folded one still says what is inside),
+`Group`s of related properties, `PropertyRow` (label above the input) and `Facts` for read-only pairs. Numbers are
+`ScalarField` / `VecField` with their unit, one-of-few choices `Segmented`, on/off `ToggleChip`, lists `ListView`.
+
+```rust
+use ve_theme::props::*;
+SubPane::new("Placement").summary(format!("{x:.2}, {y:.2} mm · {rot:.0}°")).show(ui, |ui| {
+    PropertyRow::new("Position").show(ui, |ui| {
+        ui.add(VecField::new([&mut x, &mut y]).unit("mm").tooltip("The footprint's origin on the page"))
+    });
+    Segmented::new(&mut blend)
+        .item(Blend::Normal, "Normal", "The footprint over the page")
+        .item_if(Blend::Screen, "Screen", "Light where either is", (!gpu).then_some("needs wgpu"))
+        .show(ui);
+});
+```
+
+An app that keeps egui's own style elsewhere calls `ve_theme::props::style_ui(ui)` at the top of the panel.
+
 ## Controls, menus and dialogs ([guide §7](https://github.com/vhrdtech/vhrd_egui/blob/main/docs/ux-guide.md#7-controls-menus-and-dialogs))
 
 ### A list of checkboxes stays open while it is ticked
