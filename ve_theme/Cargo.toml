@@ -15,7 +15,7 @@ fonts = []
 [dependencies]
 egui.workspace = true
 # the gallery shows its helpers (fold_rest)
-ve_basics = { path = "../ve_basics", version = "0.32" }
+ve_basics = { path = "../ve_basics", version = "0.33" }
 
 # build.rs reads the vhrd_brand export (brand/palette.json) into colour constants.
 [build-dependencies]

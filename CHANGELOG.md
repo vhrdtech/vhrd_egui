@@ -5,6 +5,8 @@ versions follow [Semantic Versioning](https://semver.org/). Feature IDs refer to
 
 ## [Unreleased]
 
+## [0.33.0] - 2026-11-13
+
 ### Added
 
 - `ve_spacemouse`: the settings panel says what is not saved: the changed keys in the warning colour, and `SettingsPanel::leave_guard` holds a window close while there are unsaved changes and asks to save to ~/.config, save locally, close without saving, or stay. `Config::plan` gives the keys a save would write without touching the disk (SPM-6).
