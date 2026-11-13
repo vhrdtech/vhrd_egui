@@ -185,6 +185,19 @@ impl Camera {
         };
     }
 
+    /// Orthographic at a fixed scale: one world unit is `points_per_unit` points on the screen in a view `height`
+    /// points high (a model in mm over a drawing at the drawing's scale).
+    pub fn set_ortho_scale(&mut self, points_per_unit: f32, height: f32) {
+        self.projection = Projection::Orthographic;
+        let hh = 0.5 * height.max(1.0) / points_per_unit.max(1e-9);
+        self.distance = hh / (self.fov_y * 0.5).tan();
+    }
+
+    /// Points per world unit at the target in a view `height` points high (orthographic: everywhere).
+    pub fn points_per_unit(&self, height: f32) -> f32 {
+        0.5 * height / self.half_height().max(1e-9)
+    }
+
     /// Look from a preset direction, then fit the box.
     pub fn view(&mut self, preset: ViewPreset, bounds: &Bounds, aspect: f32) {
         self.rotation = preset.rotation();

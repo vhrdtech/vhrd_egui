@@ -260,3 +260,51 @@ fn snapshot_of_the_iso_view() {
         &SnapshotOptions::new().threshold(2.0).max_failed_pixels(400),
     );
 }
+
+/// The overlay at a fixed scale (V3D-3): a 2-unit cube at 20 points per unit, seen from the front, spans 40
+/// points about the target's spot, painted see-through with the tint.
+#[test]
+fn the_overlay_draws_at_its_scale() {
+    let rs = create_render_state(
+        default_wgpu_setup(),
+        egui_wgpu::RendererOptions::PREDICTABLE,
+    );
+    let mut view = View3d::new(&rs);
+    view.set_scene(cube_scene());
+    view.camera.rotation = ViewPreset::Front.rotation();
+    view.camera.target = Vec3::ZERO;
+    let mut h = Harness::builder()
+        .with_size(SIZE)
+        .with_theme(egui::Theme::Dark)
+        .renderer(WgpuTestRenderer::from_render_state(rs))
+        .build_ui_state(
+            |ui, view: &mut View3d| {
+                egui::CentralPanel::default()
+                    .frame(egui::Frame::NONE.fill(Color32::WHITE))
+                    .show_inside(ui, |ui| {
+                        let rect = ui.max_rect();
+                        view.camera.set_ortho_scale(20.0, rect.height());
+                        let painter = ui.painter_at(rect);
+                        view.paint_overlay(ui, &painter, rect, Color32::WHITE);
+                    });
+            },
+            view,
+        );
+    h.run();
+    let rect = h.state().rect().expect("painted");
+    assert!((h.state().camera.points_per_unit(rect.height()) - 20.0).abs() < 1e-3);
+    let img = h.render().expect("render");
+    let c = rect.center();
+    let is_face = |p: Pos2| dist(pixel(&img, p), [FACE.r(), FACE.g(), FACE.b(), 255]) < 90;
+    let is_white = |p: Pos2| dist(pixel(&img, p), [255, 255, 255, 255]) < 30;
+    assert!(is_face(c), "the face at the centre: {:?}", pixel(&img, c));
+    // The face's right edge 20 points right of the centre: inside at 17, outside at 23.
+    assert!(!is_white(c + vec2(17.0, 0.0)));
+    assert!(
+        is_white(c + vec2(23.0, 0.0)),
+        "{:?}",
+        pixel(&img, c + vec2(23.0, 0.0))
+    );
+    assert!(is_white(c + vec2(0.0, -23.0)));
+    assert!(!is_white(c + vec2(0.0, -17.0)));
+}

@@ -14,6 +14,10 @@
 //! - **Picking** on the CPU ([`Picker`]): a ray against the triangles, a BVH for meshes past 10,000 triangles,
 //!   edges within a few points of the pointer that no face hides; a [`Pick`] names the mesh, face, edge and point.
 //!   Hover and selection are highlighted.
+//! - **Snap to a side** ([`SnapSettings`], [`nearest_axis_rotation`]): a turn that lets go finishes onto the
+//!   nearest of the 24 axis-aligned orientations, eased ([`View3d::snap`], off by default; Alt keeps the free
+//!   angle). [`View3d::paint_overlay`] with [`Camera::set_ortho_scale`] draws the model at a fixed scale over other
+//!   content.
 //! - **Measuring** ([`Measurement`]): between two picks, the offset along X, Y and Z and the distance; two
 //!   parallel flat faces give their gap along the normal, two points on one cylindrical face its diameter.
 //!
@@ -49,12 +53,16 @@ mod measure;
 mod pick;
 mod scene;
 pub mod shapes;
+mod snap;
 mod view;
 
 pub use camera::{Camera, Projection, Projector, Ray, ViewPreset, looking_from};
 pub use measure::{Measurement, Relation};
 pub use pick::{EdgePick, FacePick, Item, Pick, Picker, closest_on_segment, ray_triangle};
 pub use scene::{Bounds, LineSet, Mark, MarkShape, Mesh, Scene};
+pub use snap::{
+    Release, SnapAnim, SnapSettings, angle_to_nearest, axis_rotations, nearest_axis_rotation,
+};
 pub use view::{View3d, View3dResponse, View3dStyle};
 
 /// The math types of the API (`Vec3`, `Quat`, `Mat4`), so apps use the same glam version.

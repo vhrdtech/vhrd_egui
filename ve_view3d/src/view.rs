@@ -8,6 +8,7 @@ use crate::camera::{Camera, Projection, Projector, ViewPreset};
 use crate::gpu::{self, Gpu, Keys, MAX_SELECTED, Uniforms};
 use crate::pick::{Item, Pick, Picker};
 use crate::scene::{Bounds, Mark, MarkShape, Scene};
+use crate::snap::{Release, SnapAnim, SnapSettings};
 
 /// How the view looks and how picky it is.
 #[derive(Clone, Debug, PartialEq)]
@@ -57,7 +58,8 @@ pub struct View3dResponse {
 /// Pointer: drag turns the model, right or middle drag (or shift + drag) pans, scroll or pinch zooms about the
 /// point under the pointer, double-click centres the view on the point under it and turns about it from then on, click selects (ctrl or
 /// shift + click adds), click on empty space clears; right-click opens the view menu. The SpaceMouse goes through
-/// [`View3d::navigate`].
+/// [`View3d::navigate`]. With [`View3d::snap`] on, a turn that lets go finishes onto the nearest side (Alt held:
+/// the free angle).
 pub struct View3d {
     /// Where the camera is; keep it as view state (it is `serde`).
     pub camera: Camera,
@@ -67,6 +69,10 @@ pub struct View3d {
     pub marks: Vec<Mark>,
     /// Look and pickiness.
     pub style: View3dStyle,
+    /// Finish a turn onto the nearest of the 24 axis-aligned orientations when it lets go (V3D-3); off by default.
+    pub snap: SnapSettings,
+    release: Release,
+    snap_anim: Option<SnapAnim>,
     scene: Scene,
     bounds: Bounds,
     picker: Picker,
@@ -98,6 +104,9 @@ impl View3d {
             selection: Vec::new(),
             marks: Vec::new(),
             style: View3dStyle::default(),
+            snap: SnapSettings::OFF,
+            release: Release::default(),
+            snap_anim: None,
             scene: Scene::default(),
             bounds: Bounds::EMPTY,
             picker: Picker::default(),
@@ -148,6 +157,7 @@ impl View3d {
 
     /// Look from a preset direction and frame the scene.
     pub fn view(&mut self, preset: ViewPreset) {
+        self.snap_anim = None;
         self.camera.rotation = preset.rotation();
         self.fit();
     }
@@ -157,6 +167,11 @@ impl View3d {
     /// `mapping.apply(&mouse.axes())`.
     pub fn navigate(&mut self, nav: ve_spacemouse::Nav) {
         self.nav = nav;
+    }
+
+    /// A finishing turn onto a side is under way.
+    pub fn snapping(&self) -> bool {
+        self.snap_anim.is_some()
     }
 
     /// What was under the pointer at the last [`View3d::show`].
@@ -217,6 +232,8 @@ impl View3d {
             }
         }
         ui.separator();
+        self.snap.ui(ui);
+        ui.separator();
         let clear = ui.add_enabled(
             !self.selection.is_empty(),
             egui::Button::new("Clear selection"),
@@ -252,7 +269,9 @@ impl View3d {
         });
 
         if ui.is_rect_visible(rect) {
-            self.paint(ui, rect, &projector);
+            let painter = ui.painter_at(rect);
+            self.paint(ui, &painter, rect, &projector, Color32::WHITE);
+            self.paint_marks(ui, &painter, &projector);
         }
         let response = response
             .context_menu(|ui| {
@@ -268,11 +287,24 @@ impl View3d {
         }
     }
 
+    /// Render the scene through [`View3d::camera`] into `rect` and paint it with `painter`, `tint` multiplying
+    /// it (white: as is; a lower alpha: see-through). No input, hover or marks: for a layer over other content,
+    /// such as a drawing, turned by the app. Without wgpu it paints nothing.
+    pub fn paint_overlay(&mut self, ui: &Ui, painter: &egui::Painter, rect: Rect, tint: Color32) {
+        self.rect = Some(rect);
+        self.hovered = None;
+        let projector = self.projector(rect);
+        if self.gpu.is_some() {
+            self.paint(ui, painter, rect, &projector, tint);
+        }
+    }
+
     /// Pointer, scroll and SpaceMouse; returns the click's pick.
     fn input(&mut self, ui: &Ui, rect: Rect, response: &Response) -> Option<Pick> {
-        let (dt, modifiers, scroll, zoom) = ui.input(|i| {
+        let (dt, now, modifiers, scroll, zoom) = ui.input(|i| {
             (
                 i.stable_dt.min(0.1),
+                i.time,
                 i.modifiers,
                 i.smooth_scroll_delta,
                 i.zoom_delta(),
@@ -289,6 +321,24 @@ impl View3d {
             self.camera.pan(response.drag_delta(), rect.height());
         } else if response.dragged_by(egui::PointerButton::Primary) {
             self.camera.orbit(response.drag_delta());
+        }
+        // A turn by the puck or an orbit drag: when it lets go, finish onto the nearest side.
+        let turning = self.nav.rotate.iter().any(|r| *r != 0.0)
+            || (response.dragged_by(egui::PointerButton::Primary) && !pan_drag);
+        if turning {
+            self.snap_anim = None;
+        }
+        if self.release.update(turning) && self.snap.enabled && !modifiers.alt {
+            self.snap_anim = SnapAnim::new(self.camera.rotation, now, self.snap.duration);
+        }
+        if let Some(anim) = self.snap_anim {
+            let (q, done) = anim.at(now);
+            self.camera.rotation = q;
+            if done {
+                self.snap_anim = None;
+            } else {
+                ui.ctx().request_repaint();
+            }
         }
         let projector = self.projector(rect);
         if let Some(pos) = response.hover_pos() {
@@ -346,8 +396,14 @@ impl View3d {
             .unwrap_or(self.camera.target)
     }
 
-    fn paint(&mut self, ui: &Ui, rect: Rect, projector: &Projector) {
-        let painter = ui.painter_at(rect);
+    fn paint(
+        &mut self,
+        ui: &Ui,
+        painter: &egui::Painter,
+        rect: Rect,
+        projector: &Projector,
+        tint: Color32,
+    ) {
         let visuals = ui.visuals();
         let hover_color = self
             .style
@@ -401,7 +457,7 @@ impl View3d {
                     tex,
                     rect,
                     Rect::from_min_max(pos2(0.0, 0.0), pos2(1.0, 1.0)),
-                    Color32::WHITE,
+                    tint,
                 );
             }
         } else {
@@ -413,7 +469,6 @@ impl View3d {
                 visuals.weak_text_color(),
             );
         }
-        self.paint_marks(ui, &painter, projector);
     }
 
     fn paint_marks(&self, ui: &Ui, painter: &egui::Painter, projector: &Projector) {
@@ -456,7 +511,8 @@ impl View3d {
 }
 
 const HELP: &str = "Drag: turn · right or middle drag: pan · scroll: zoom at the pointer\n\
-Double-click: centre and turn about that point · click: select, ctrl+click: add · right-click: views";
+Double-click: centre and turn about that point · click: select, ctrl+click: add · right-click: views\n\
+Snap on: a turn finishes onto the nearest side when it lets go; hold Alt to keep the free angle";
 
 fn capitalize(s: &str) -> String {
     let mut c = s.chars();
