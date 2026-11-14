@@ -107,6 +107,8 @@ pub struct PieStyle {
     pub tap_s: f64,
     /// Width a slice's name wraps at.
     pub label_width: f32,
+    /// How many lines a name may wrap to; a name that needs more grows the ring instead.
+    pub max_lines: usize,
     /// Icon size in a slice, and in a centre half.
     pub icon_size: f32,
     /// Icon size in a centre half.
@@ -126,14 +128,15 @@ pub struct PieStyle {
 impl Default for PieStyle {
     fn default() -> Self {
         Self {
-            outer_radius: 180.0,
-            center_radius: 64.0,
+            outer_radius: 150.0,
+            center_radius: 52.0,
             tap_s: 0.25,
             label_width: 96.0,
-            icon_size: 26.0,
-            center_icon_size: 20.0,
-            label_size: 14.0,
-            center_label_size: 12.0,
+            max_lines: 2,
+            icon_size: 20.0,
+            center_icon_size: 16.0,
+            label_size: 12.0,
+            center_label_size: 11.0,
             fly_s: (0.26, 0.2),
             fly_distance: 50.0,
             fill_alpha: 0.94,
@@ -364,7 +367,7 @@ impl<A: Clone> PieMenu<A> {
         let mut names = Vec::new();
         if n > 0 {
             let step = TAU / n as f32;
-            let label_r = (outer_radius + center_radius) / 2.0;
+            let label_r = (outer_radius + center_radius + 6.0) / 2.0;
             for (i, slot) in ring.iter().enumerate() {
                 let middle = slice_middle(i, n);
                 let dir = vec2(middle.cos(), middle.sin());
@@ -403,13 +406,13 @@ impl<A: Clone> PieMenu<A> {
                     fill(color).gamma_multiply(alpha),
                 );
                 let (icon_c, text_c) = colors(slot.as_ref(), lit);
-                let (size, width) = fit
-                    .ring
-                    .get(i)
-                    .copied()
-                    .unwrap_or((s.label_size, s.label_width));
+                let (size, width, r) =
+                    fit.ring
+                        .get(i)
+                        .copied()
+                        .unwrap_or((s.label_size, s.label_width, label_r));
                 names.push((
-                    c + dir * label_r,
+                    c + dir * r,
                     slot.as_ref(),
                     (s.icon_size, size, width),
                     (icon_c.gamma_multiply(alpha), text_c.gamma_multiply(alpha)),
@@ -507,6 +510,7 @@ impl<A: Clone> PieMenu<A> {
         ]
         .map(f32::to_bits)
         .hash(&mut h);
+        s.max_lines.hash(&mut h);
         let key = Id::new("ve_spacemouse_pie_fit").with(h.finish());
         if let Some(fit) = ctx.data(|d| d.get_temp::<Fit>(key)) {
             return fit;
@@ -516,10 +520,10 @@ impl<A: Clone> PieMenu<A> {
         fit
     }
 
-    /// Fit every name in its slot: the largest text size (down to three quarters of the style's) at which every
-    /// name of the ring, and of the centre, fits with a wrap width that breaks no word. Where even the smallest
-    /// size does not fit, the centre and then the ring grow (up to twice the style's), so every name shows in
-    /// full.
+    /// Fit every name in its slot: the largest text size (down to [`MIN_SIZE`]) at which every name of the ring
+    /// fits in [`PieStyle::max_lines`] rows (the centre's halves, narrow and tall, one more), with a wrap width
+    /// that breaks no word; a slice's name may move along it to where it fits. Where even the smallest size does
+    /// not fit, the centre and then the ring grow (up to twice the style's), so every name shows in full.
     fn fit_with(&self, fonts: &mut FontsView<'_>, ring: Ring) -> Fit {
         let s = &self.style;
         let mut center_radius = s.center_radius;
@@ -530,7 +534,12 @@ impl<A: Clone> PieMenu<A> {
                     fit_width(
                         fonts,
                         self.center(side),
-                        (s.center_icon_size, size, center_radius - 8.0),
+                        (
+                            s.center_icon_size,
+                            size,
+                            center_radius - 8.0,
+                            s.max_lines + 1,
+                        ),
                         pos2(d * center_radius / 2.0, 0.0),
                         |rects| inside_half(rects, center_radius, d),
                     )
@@ -553,25 +562,29 @@ impl<A: Clone> PieMenu<A> {
         let ring_width = s.outer_radius - s.center_radius;
         let mut outer_radius = center_radius + ring_width;
         let ring = loop {
-            let label_r = (outer_radius + center_radius) / 2.0;
-            let chord = 2.0 * label_r * (PI / n.max(1) as f32).min(PI / 2.0).sin();
+            let inner = center_radius + 6.0;
+            let middle_r = (outer_radius + inner) / 2.0;
+            let chord = 2.0 * outer_radius * (PI / n.max(1) as f32).min(PI / 2.0).sin();
             let max_width = s.label_width.max(chord);
+            // Where a name may sit along its slice: the middle first, then out (where the slice is wider) and in.
+            let band = (outer_radius - inner) / 2.0;
+            let radii = [0.0, 0.2, -0.2, 0.4, -0.4].map(|k| middle_r + k * band);
             let fits = sizes(s.label_size).find_map(|size| {
                 slots
                     .iter()
                     .enumerate()
                     .map(|(i, slot)| {
                         let middle = slice_middle(i, n);
-                        let width = fit_width(
-                            fonts,
-                            slot.as_ref(),
-                            (s.icon_size, size, max_width),
-                            pos2(middle.cos(), middle.sin()) * label_r,
-                            |rects| {
-                                inside_slice(rects, (center_radius + 6.0, outer_radius), middle, n)
-                            },
-                        )?;
-                        Some((size, width))
+                        radii.iter().find_map(|&r| {
+                            let width = fit_width(
+                                fonts,
+                                slot.as_ref(),
+                                (s.icon_size, size, max_width, s.max_lines),
+                                pos2(middle.cos(), middle.sin()) * r,
+                                |rects| inside_slice(rects, (inner, outer_radius), middle, n),
+                            )?;
+                            Some((size, width, r))
+                        })
                     })
                     .collect::<Option<Vec<_>>>()
             });
@@ -580,9 +593,9 @@ impl<A: Clone> PieMenu<A> {
             }
             if outer_radius - center_radius >= ring_width * MAX_GROWTH {
                 let last = sizes(s.label_size).last().unwrap_or(s.label_size);
-                break vec![(last, max_width); n];
+                break vec![(last, max_width, middle_r); n];
             }
-            outer_radius += 8.0;
+            outer_radius += 4.0;
         };
         Fit {
             center_radius,
@@ -593,18 +606,20 @@ impl<A: Clone> PieMenu<A> {
     }
 }
 
-/// Where the names fit: the radii the menu is drawn and hit-tested with, and each name's text size and wrap
-/// width (the ring's slices, then the centre's left and right halves).
+/// Where the names fit: the radii the menu is drawn and hit-tested with, each slice's name's text size, wrap
+/// width and distance from the centre, and the centre's left and right halves' text size and wrap width.
 #[derive(Clone, Debug, PartialEq)]
 struct Fit {
     center_radius: f32,
     outer_radius: f32,
-    ring: Vec<(f32, f32)>,
+    ring: Vec<(f32, f32, f32)>,
     center: [(f32, f32); 2],
 }
 
 /// Room kept between a name and the edges of its slot.
 const MARGIN: f32 = 4.0;
+/// The smallest text size a name is set in before the menu grows.
+const MIN_SIZE: f32 = 10.0;
 /// How far the centre and the ring may grow for the names to fit, as a factor of the style's.
 const MAX_GROWTH: f32 = 2.0;
 
@@ -613,20 +628,20 @@ fn slice_middle(i: usize, n: usize) -> f32 {
     -PI / 2.0 + i as f32 * TAU / n as f32
 }
 
-/// The text sizes a name may take: `max` down to three quarters of it, a point at a time.
+/// The text sizes a name may take: `max` down to [`MIN_SIZE`], a point at a time.
 fn sizes(max: f32) -> impl Iterator<Item = f32> {
-    let min = (max * 0.75).round();
+    let min = MIN_SIZE.min(max);
     (0..)
         .map(move |k| max - k as f32)
         .take_while(move |s| *s >= min)
 }
 
 /// A wrap width at which `inside` takes the name's block (icon over text, as row rectangles) centred on
-/// `at`: from `max_width` down to the longest word's, so no word breaks.
+/// `at` in at most `max_lines` rows: from `max_width` down to the longest word's, so no word breaks.
 fn fit_width<A>(
     fonts: &mut FontsView<'_>,
     slot: Option<&Slot<A>>,
-    (icon_size, size, max_width): (f32, f32, f32),
+    (icon_size, size, max_width, max_lines): (f32, f32, f32, usize),
     at: Pos2,
     inside: impl Fn(&[Rect]) -> bool,
 ) -> Option<f32> {
@@ -650,7 +665,8 @@ fn fit_width<A>(
             (icon_size, size, width),
             (Color32::WHITE, Color32::WHITE),
         );
-        inside(&block_rects(icon.as_deref(), &text, at)).then_some(width)
+        (text.rows.len() <= max_lines && inside(&block_rects(icon.as_deref(), &text, at)))
+            .then_some(width)
     })
 }
 

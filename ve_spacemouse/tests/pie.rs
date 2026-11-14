@@ -234,6 +234,8 @@ fn long_names_show_in_full() {
     h.hover_at(O + vec2(0.0, 30.0));
     h.step();
     let (center, outer) = h.state().pie.radii().expect("open");
+    // Compact: the ring grows only a little past the style's for names this long (it took 237 before SPM-8).
+    assert!(outer <= 190.0, "the ring grew to {outer}");
     let menu = long_menu();
     let far = |r: egui::Rect| {
         [
@@ -250,6 +252,12 @@ fn long_names_show_in_full() {
     let mut rects = Vec::new();
     for slot in menu.ring_left.iter().flatten() {
         let r = h.get_by_label(&slot.label).rect();
+        // An icon over at most two rows.
+        assert!(
+            r.height() <= 56.0,
+            "{:?} takes more than two rows: {r:?}",
+            slot.label
+        );
         assert!(
             near(r) >= center && far(r) <= outer,
             "{:?} leaves the ring: {r:?}",
