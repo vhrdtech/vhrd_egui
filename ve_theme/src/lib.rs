@@ -23,6 +23,8 @@
 //!   categorical colours (labels, chips, series, hosts, models) stay out of it and apart from each other (THM-10).
 //! - [`props`]: property-panel widgets: pane, sub-pane, group, property row, number and axis fields,
 //!   segmented choice, toggle chip, list view (THM-17).
+//! - [`topbar`]: `Brand`, the strip every app's top bar starts with — icon, wordmark, the version badge
+//!   that opens `ve_basics::AppMenu` (THM-19).
 //! - [`gallery`]: every egui widget and helper in one view, the tuning tool (THM-5);
 //!   `cargo run -p ve_theme --example gallery`.
 //!
@@ -51,6 +53,8 @@ mod look;
 pub mod props;
 mod status;
 mod tokens;
+#[cfg(feature = "fonts")]
+pub mod topbar;
 pub mod typography;
 mod ui_ext;
 

@@ -3720,6 +3720,7 @@ version = "0.34.0"
 dependencies = [
  "egui",
  "egui_kittest",
+ "image",
  "web-time",
 ]
 

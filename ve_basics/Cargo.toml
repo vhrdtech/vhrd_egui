@@ -10,6 +10,8 @@ repository.workspace = true
 [dependencies]
 egui.workspace = true
 web-time.workspace = true
+# pure-Rust PNG decode for load_icon (BAS-9), the same on native and the web
+image = { version = "0.25", default-features = false, features = ["png"] }
 
 [dev-dependencies]
 egui_kittest = { workspace = true, features = ["snapshot", "wgpu"] }

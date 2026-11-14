@@ -6,7 +6,7 @@ use egui_kittest::kittest::{NodeT, Queryable};
 use std::cell::Cell;
 use std::rc::Rc;
 
-use ve_basics::{BuildInfo, build_info_label, copyable_label, hover_link, setup_labels};
+use ve_basics::{BuildInfo, build_info_label, copyable_label, hover_link, load_icon, setup_labels};
 
 fn info(debug: bool) -> BuildInfo {
     BuildInfo {
@@ -46,6 +46,18 @@ fn build_info_label_shows_marker_and_spells_out_on_hover() {
 #[test]
 fn release_marker() {
     assert_eq!(info(false).short(), "1.2.3 · abc1234-dirty · release");
+}
+
+#[test]
+fn load_icon_decodes_a_png_and_rejects_garbage() {
+    let mut png = Vec::new();
+    image::RgbaImage::from_pixel(2, 2, image::Rgba([255, 0, 0, 255]))
+        .write_to(&mut std::io::Cursor::new(&mut png), image::ImageFormat::Png)
+        .unwrap();
+    let ctx = egui::Context::default();
+    let tex = load_icon(&ctx, "test-icon", &png);
+    assert_eq!(tex.map(|t| t.size()), Some([2, 2]));
+    assert!(load_icon(&ctx, "test-icon", b"not a png").is_none());
 }
 
 #[test]

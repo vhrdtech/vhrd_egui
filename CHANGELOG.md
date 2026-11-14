@@ -5,6 +5,11 @@ versions follow [Semantic Versioning](https://semver.org/). Feature IDs refer to
 
 ## [Unreleased]
 
+### Added
+
+- `ve_theme`: `topbar::Brand` / `topbar::show`, the top bar's brand strip shared across apps — icon, wordmark, the version badge opening the app menu (THM-19).
+- `ve_basics`: `load_icon(ctx, name, png_bytes)` decodes a PNG into a texture, native and the web alike (BAS-9).
+
 ## [0.34.0] - 2026-11-14
 
 ### Added

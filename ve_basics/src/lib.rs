@@ -9,6 +9,7 @@
 //! - [`FoldRest`] / [`fold_rest`]: a list cut for room ends in a fold with the rest, never a bare "N more" (BAS-5).
 //! - [`ScrollStrip`]: a row wider than its room scrolls in place, with arrows that say so (BAS-8).
 //! - [`StartupGuard`]: a start that died before its first frame moves the persisted state aside (PLT-4).
+//! - [`load_icon`]: decode a PNG into a texture, for an app's own icon (BAS-9; `ve_theme::topbar::Brand` draws it).
 //!
 //! The UI guide rule behind these (tooltips everywhere, highlight related items, nothing hidden) is in the repo's `AGENTS.md`.
 
@@ -17,6 +18,7 @@ mod build_info;
 mod checklist;
 mod fold_rest;
 mod hover_link;
+mod icon;
 mod labels;
 mod scroll_strip;
 mod startup_guard;
@@ -26,6 +28,7 @@ pub use build_info::{BuildInfo, build_info_label};
 pub use checklist::{Checklist, checklist_item};
 pub use fold_rest::{FoldRest, fold_rest};
 pub use hover_link::hover_link;
+pub use icon::load_icon;
 pub use labels::{copyable, copyable_label, setup_labels};
 pub use scroll_strip::{ScrollStrip, StripTexts};
 pub use startup_guard::StartupGuard;
