@@ -64,6 +64,7 @@ These hold in a GUI, a web page, a bot and a CLI alike. The CLI guide links here
 
 - **Every app uses the shared theme.** [vhrd_egui AGENTS.md]
   - `ve_theme::setup(&cc.egui_ctx)` at startup installs the IBM Plex fonts and the dark and light styles; egui follows the system preference.
+  - On the desktop, `ve_theme::Look::setup(&cc.egui_ctx, source)` instead: the colours follow the desktop theme (omarchy's accent, background and text) and change with it, with a setting for the brand colours or a fixed accent (THM-18). Every colour stays legible whatever the theme.
   - Colours, spacing, radii and type come from `Tokens` (`ui.tokens()`), never hex literals or `Color32` in app code. What `Style` can't express goes into a `UiExt` helper.
   - The look is tuned in the gallery (`cargo run -p ve_theme --example gallery`), and its snapshots are updated with it.
   - Why: one place to change the look, and apps that look like one family. [UX checklist "the same task done the same way in every app"]

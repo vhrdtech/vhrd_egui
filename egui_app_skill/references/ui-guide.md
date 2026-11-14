@@ -65,6 +65,17 @@ let t = ui.tokens();
 ui.colored_label(t.colors.warn, "disk 91 %"); // never Color32::from_rgb(..) in app code
 ```
 
+A desktop app follows the desktop theme's colours (THM-18; `ve_app`'s Shell does it already): keep the
+`ColorSource` in the app's settings and show its control.
+
+```rust
+let look = ve_theme::Look::setup(&cc.egui_ctx, settings.colors); // instead of ve_theme::setup
+// in the settings UI:
+if let Some(source) = look.ui(ui) {
+    settings.colors = source; // save it
+}
+```
+
 What `Style` can't express goes into a `UiExt` helper in `ve_theme` (primary / danger button, section header,
 muted label, badge). Tune the look in the gallery (`cargo run -p ve_theme --example gallery`) and update its
 snapshots.
