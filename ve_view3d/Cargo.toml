@@ -13,11 +13,11 @@ egui-wgpu.workspace = true
 bytemuck = { version = "1.25", features = ["derive"] }
 glam = { version = "0.34", default-features = false, features = ["std", "serde", "bytemuck"] }
 serde.workspace = true
-ve_spacemouse = { path = "../ve_spacemouse", version = "0.33", default-features = false }
+ve_spacemouse = { path = "../ve_spacemouse", version = "0.34", default-features = false }
 
 [dev-dependencies]
 eframe = { workspace = true, features = ["persistence", "wgpu"] }
 egui_kittest = { workspace = true, features = ["snapshot", "wgpu"] }
-ve_theme = { path = "../ve_theme", version = "0.33" }
-ve_spacemouse = { path = "../ve_spacemouse", version = "0.33" }
+ve_theme = { path = "../ve_theme", version = "0.34" }
+ve_spacemouse = { path = "../ve_spacemouse", version = "0.34" }
 image = { version = "0.25", default-features = false, features = ["png"] }

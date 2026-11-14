@@ -5,6 +5,8 @@ versions follow [Semantic Versioning](https://semver.org/). Feature IDs refer to
 
 ## [Unreleased]
 
+## [0.34.0] - 2026-11-14
+
 ### Added
 
 - `ve_view3d`: `nav_turn(nav, dt)`, the puck's turn as one rotation in the camera frame, for apps that turn their model themselves (better_erc's model over the page) (SPM-9).
