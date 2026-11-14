@@ -5,6 +5,8 @@ versions follow [Semantic Versioning](https://semver.org/). Feature IDs refer to
 
 ## [Unreleased]
 
+## [0.33.4] - 2026-11-14
+
 ### Changed
 
 - `ve_spacemouse`: the pie menu is compact again (SPM-8). A smaller ring (150 / 52 by default), smaller text (12, down to 10 before the ring grows) and smaller icons, each name on at most two lines under its icon (`PieStyle::max_lines`; the centre halves one more), and a name may sit further out or in along its slice where it fits better. better_erc's longest names now take a ring of 178 instead of 237. Every name still shows in full.
