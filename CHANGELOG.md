@@ -5,6 +5,8 @@ versions follow [Semantic Versioning](https://semver.org/). Feature IDs refer to
 
 ## [Unreleased]
 
+## [0.34.1] - 2026-11-14
+
 ### Added
 
 - `ve_theme`: `topbar::Brand` / `topbar::show`, the top bar's brand strip shared across apps — icon, wordmark, the version badge opening the app menu (THM-19).
