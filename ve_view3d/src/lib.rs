@@ -58,7 +58,7 @@ pub mod shapes;
 mod snap;
 mod view;
 
-pub use camera::{Camera, Projection, Projector, Ray, ViewPreset, looking_from};
+pub use camera::{Camera, Projection, Projector, Ray, ViewPreset, looking_from, nav_turn};
 pub use measure::{Measurement, Relation};
 pub use pick::{EdgePick, FacePick, Item, Pick, Picker, closest_on_segment, ray_triangle};
 pub use scene::{Bounds, LineSet, Mark, MarkShape, Mesh, Scene};

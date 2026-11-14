@@ -264,20 +264,15 @@ impl Camera {
     }
 
     /// Apply the SpaceMouse for `dt` seconds in a view `height` points high: the [`ve_spacemouse::Nav`] already
-    /// says what the content does (pan in screen points, growth, tilt forward / roll right / turn clockwise), so
-    /// the puck's convention setting is honoured as is.
+    /// says what the content does (pan in screen points, growth, the turn of [`nav_turn`]), so the puck's
+    /// convention setting is honoured as is.
     pub fn apply_nav(&mut self, nav: &ve_spacemouse::Nav, dt: f32, height: f32) {
         if nav.is_zero() {
             return;
         }
         self.pan(nav.pan_screen() * dt, height);
         self.zoom_about(self.target, (nav.zoom * dt).exp());
-        let [tilt, roll, turn] = nav.rotate.map(|r| r * dt);
-        self.rotate_content(
-            Quat::from_rotation_x(-tilt)
-                * Quat::from_rotation_y(roll)
-                * Quat::from_rotation_z(-turn),
-        );
+        self.rotate_content(nav_turn(nav, dt));
     }
 
     /// The projection for a view of `rect` on the screen, with clip planes around `bounds`.
@@ -319,6 +314,15 @@ impl Camera {
             Projection::Orthographic => (d - r, far.max(d - r + 1e-4)),
         }
     }
+}
+
+/// The SpaceMouse's turn of the content over `dt` seconds, in the camera frame (x right, y up, z towards the
+/// viewer) as [`Camera::rotate_content`] takes it: tilt forward about x (the top goes away), spin clockwise seen
+/// from above about y (the right side comes towards you), turn clockwise on the screen about z (the right side goes
+/// down). An app that turns its model itself takes this too, so every view turns the same way for the same motion.
+pub fn nav_turn(nav: &ve_spacemouse::Nav, dt: f32) -> Quat {
+    let [tilt, spin, turn] = nav.rotate.map(|r| r * dt);
+    Quat::from_rotation_x(-tilt) * Quat::from_rotation_y(-spin) * Quat::from_rotation_z(-turn)
 }
 
 /// Right-handed perspective, depth 0 at `near` to 1 at `far` (wgpu's clip space).
@@ -680,12 +684,12 @@ mod tests {
         cam.apply_nav(&nav(Vec2::ZERO, 0.0, [0.5, 0.0, 0.0]), 0.5, r.height());
         assert!(screen(&cam, top).1 > d0 + 1e-3);
 
-        // Roll right: the right side (+X) goes away.
+        // Spin clockwise seen from above: the right side (+X) comes towards the viewer.
         let mut cam = start();
         let right = Vec3::X;
         let d0 = screen(&cam, right).1;
         cam.apply_nav(&nav(Vec2::ZERO, 0.0, [0.0, 0.5, 0.0]), 0.5, r.height());
-        assert!(screen(&cam, right).1 > d0 + 1e-3);
+        assert!(screen(&cam, right).1 < d0 - 1e-3);
 
         // Turn clockwise: the top point moves right on the screen.
         let mut cam = start();

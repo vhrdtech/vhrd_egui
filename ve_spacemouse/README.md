@@ -60,15 +60,17 @@ The mapping speaks of what the *content* does, not the camera. With `Convention:
 | slide right | moves right |
 | lift up | moves up |
 | push away | gets smaller (zoom out) |
-| twist clockwise | turns clockwise |
-| tilt forward | tilts forward, its top away from you |
-| rock right | rolls right, its right side down |
+| tilt forward | tilts forward, its top going away from you |
+| rock right | turns clockwise on the screen, its right side going down |
+| twist clockwise | spins clockwise seen from above, its right side coming towards you |
+
+The puck is read in the screen's frame: up on the desk is up on the screen, towards you is towards the viewer. The three turns are about the screen's axes: tilt about the horizontal, twist about the vertical, rock about the axis towards you. So in a 3D view, rocking the puck rolls the model on the screen and twisting it spins the model like a turntable; a 2D page that turns on the screen turns with a rock.
 
 `Convention::Camera` turns every output around, for people who think of the puck as the camera: slide right and the view moves right, so the page moves left. `Mapping::apply` applies the convention, so the `Nav` it returns is always what the content does: an app moves its content by it and never thinks about the convention.
 
 #### The settings
 
-`Mapping` is `serde` with `#[serde(default)]`: keep it in the app's settings. Each `Output` (move right, move up, grow, tilt forward, roll right, turn clockwise) takes one raw axis (`x y z rx ry rz`) and a sign: the raw motion that makes the content do it under the content convention. A raw value of `full_scale` gives full speed, and the `dead_zone` part of the travel does nothing. `Speed` sets how fast a full push goes: pan in screen points per second (up to 15 000 in `mapping_ui`), zoom in log scale per second (up to 15), turn in radians per second (up to 30).
+`Mapping` is `serde` with `#[serde(default)]`: keep it in the app's settings. Each `Output` (move right, move up, grow, tilt forward, spin clockwise, turn clockwise) takes one raw axis (`x y z rx ry rz`) and a sign: the raw motion that makes the content do it under the content convention. A raw value of `full_scale` gives full speed, and the `dead_zone` part of the travel does nothing. `Speed` sets how fast a full push goes: pan in screen points per second (up to 15 000 in `mapping_ui`), zoom in log scale per second (up to 15), turn in radians per second (up to 30).
 
 Apps pan in screen pixels, not in their own units: keep the content's offset in screen points and add `nav.pan_screen() * dt` to it, as the demo does. Then a push moves the page across the screen at the same speed at every zoom. Converting the pan to content units first (dividing by the zoom) would make it crawl when zoomed in and race when zoomed out. `mapping_ui` edits it by hand, with the convention and a live bar per output.
 
@@ -100,7 +102,7 @@ They are merged key by key, and the nearest file wins. Tables merge per key (`sp
 pan = 3000.0
 ```
 
-A file holds a `Mapping` at its top level: `convention`, `full_scale`, `dead_zone`, `[speed]` (`pan`, `zoom`, `rotate`), `[buttons]` (`left`, `right`) and six `[[axes]]` (`raw` 0 to 5 for `x y z rx ry rz`, `invert`), in the order move right, move up, grow, tilt forward, roll right, turn clockwise. A file that does not read, or a value of the wrong type, is skipped and said; a key that means nothing is said and ignored.
+A file holds a `Mapping` at its top level: `convention`, `full_scale`, `dead_zone`, `[speed]` (`pan`, `zoom`, `rotate`), `[buttons]` (`left`, `right`) and six `[[axes]]` (`raw` 0 to 5 for `x y z rx ry rz`, `invert`), in the order move right, move up, grow, tilt forward, spin clockwise (about the screen's vertical), turn clockwise (on the screen). A file that does not read, or a value of the wrong type, is skipped and said; a key that means nothing is said and ignored.
 
 `Config` reads the files. `Config::mapping` is the merged mapping, `Config::source(key)` the file a key came from, `Config::layers` the files found and `Config::candidates` every place looked at.
 

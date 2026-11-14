@@ -10,6 +10,12 @@ use crate::event::{AXIS_NAMES, Axes};
 /// [`Output::MoveRight`] moves the page right on the screen. With [`Convention::Content`], the default, the content
 /// follows the hand: slide the puck right and the page moves right. [`Convention::Camera`] turns every output
 /// around, for people who think of the puck as the camera.
+///
+/// All six are in the screen's frame, x right, y up, z towards the viewer, the frame the puck itself is read in
+/// (lifting it moves the content up, pushing it away moves the content away): the three rotations are about the
+/// screen's x ([`Output::TiltForward`]), y ([`Output::SpinClockwise`]) and z ([`Output::TurnClockwise`]). Rocking
+/// the puck to the right turns the content on the screen; twisting it spins the content about the screen's
+/// vertical.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub enum Output {
     /// The page moves right (positive) or left.
@@ -18,11 +24,13 @@ pub enum Output {
     MoveUp,
     /// The page gets bigger (positive: zoom in) or smaller.
     Grow,
-    /// The page tilts forward, its top away from you (positive), or back.
+    /// The page tilts forward about the screen's horizontal axis, its top going away from you (positive), or back.
     TiltForward,
-    /// The page rolls right, its right side going down (positive), or left.
-    RollRight,
-    /// The page turns clockwise on the screen (positive) or counterclockwise.
+    /// The page spins clockwise seen from above, about the screen's vertical axis: its right side comes towards
+    /// you (positive), or goes away.
+    SpinClockwise,
+    /// The page turns clockwise on the screen, about the axis towards you: its right side goes down (positive), or
+    /// up.
     TurnClockwise,
 }
 
@@ -33,7 +41,7 @@ impl Output {
         Output::MoveUp,
         Output::Grow,
         Output::TiltForward,
-        Output::RollRight,
+        Output::SpinClockwise,
         Output::TurnClockwise,
     ];
 
@@ -49,8 +57,8 @@ impl Output {
             Output::MoveUp => "move up",
             Output::Grow => "grow (zoom in)",
             Output::TiltForward => "tilt forward",
-            Output::RollRight => "roll right",
-            Output::TurnClockwise => "turn clockwise",
+            Output::SpinClockwise => "spin clockwise (seen from above)",
+            Output::TurnClockwise => "turn clockwise (on the screen)",
         }
     }
 
@@ -64,12 +72,20 @@ impl Output {
             (Output::MoveUp, false) => "the page moves down",
             (Output::Grow, true) => "the page gets bigger",
             (Output::Grow, false) => "the page gets smaller",
-            (Output::TiltForward, true) => "the page tilts forward",
-            (Output::TiltForward, false) => "the page tilts back",
-            (Output::RollRight, true) => "the page rolls right",
-            (Output::RollRight, false) => "the page rolls left",
-            (Output::TurnClockwise, true) => "the page turns clockwise",
-            (Output::TurnClockwise, false) => "the page turns counterclockwise",
+            (Output::TiltForward, true) => "the page tilts forward, its top going away from you",
+            (Output::TiltForward, false) => "the page tilts back, its top coming towards you",
+            (Output::SpinClockwise, true) => {
+                "the page spins clockwise seen from above, its right side coming towards you"
+            }
+            (Output::SpinClockwise, false) => {
+                "the page spins counterclockwise seen from above, its right side going away"
+            }
+            (Output::TurnClockwise, true) => {
+                "the page turns clockwise on the screen, its right side going down"
+            }
+            (Output::TurnClockwise, false) => {
+                "the page turns counterclockwise on the screen, its right side going up"
+            }
         }
     }
 }
@@ -263,7 +279,10 @@ pub struct Nav {
     pub pan: egui::Vec2,
     /// The content's growth, log scale per second: `scale *= (zoom * dt).exp()`. Positive is zoom in.
     pub zoom: f32,
-    /// The content's rotation in radians per second: tilt forward, roll right, turn clockwise.
+    /// The content's rotation in radians per second about the screen's axes: tilt forward (about x, the top going
+    /// away), spin clockwise seen from above (about y, the right side coming towards you), turn clockwise on the
+    /// screen (about z, the right side going down). In a right-handed frame of x right, y up, z towards the viewer
+    /// that is `[-rx, -ry, -rz]`: every positive output turns the content the negative way about its axis.
     pub rotate: [f32; 3],
 }
 
@@ -311,7 +330,7 @@ impl Mapping {
             zoom: l(Output::Grow) * self.speed.zoom,
             rotate: [
                 l(Output::TiltForward) * self.speed.rotate,
-                l(Output::RollRight) * self.speed.rotate,
+                l(Output::SpinClockwise) * self.speed.rotate,
                 l(Output::TurnClockwise) * self.speed.rotate,
             ],
         }

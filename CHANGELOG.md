@@ -5,6 +5,14 @@ versions follow [Semantic Versioning](https://semver.org/). Feature IDs refer to
 
 ## [Unreleased]
 
+### Added
+
+- `ve_view3d`: `nav_turn(nav, dt)`, the puck's turn as one rotation in the camera frame, for apps that turn their model themselves (better_erc's model over the page) (SPM-9).
+
+### Fixed
+
+- `ve_spacemouse`, `ve_view3d`: after a calibration, rocking the puck sideways and twisting it were swapped in 3D views (SPM-9). The calibrate step put the rock in the fourth output and the twist in the fifth, while the 3D view turned the fourth about the screen's vertical and the fifth on the screen. The outputs are now the screen's axes, as the puck is read: rock right turns the content clockwise on the screen, twist clockwise spins it about the screen's vertical, its right side coming towards you. The calibrate step's table and prompts say that in full ("the page turns clockwise on the screen, its right side going down"), so a swap shows before saving. A 2D page that turns on the screen now turns with a rock, not a twist (the demo canvas). **Breaking:** `Output::RollRight` is now `Output::SpinClockwise` (about the screen's vertical, its sign flipped in the 3D view), and `Nav::rotate[1]` means that spin. A `spacemouse.toml` calibrated with all six motions before this fix has its last two `[[axes]]` the wrong way round: calibrate again, or swap those two blocks. A two-motion (2D) calibration's file is not affected.
+
 ## [0.33.4] - 2026-11-14
 
 ### Changed

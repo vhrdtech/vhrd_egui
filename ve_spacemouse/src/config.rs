@@ -26,7 +26,7 @@
 //! [speed]
 //! pan = 1200.0
 //!
-//! [[axes]]   # one per output: move right, move up, grow, tilt forward, roll right, turn clockwise
+//! [[axes]]   # one per output: move right, move up, grow, tilt forward, spin clockwise, turn clockwise
 //! raw = 0
 //! invert = false
 //! ```
@@ -772,7 +772,7 @@ mod tests {
             ..Default::default()
         };
         m.axes[Output::Grow.index()] = AxisMap::inverted(1);
-        m.axes[Output::RollRight.index()] = AxisMap::default();
+        m.axes[Output::SpinClockwise.index()] = AxisMap::default();
         let old = Table::try_from(&m).unwrap();
         let mut c = t.load();
         c.adopt(&old, "x").unwrap();

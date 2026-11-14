@@ -36,9 +36,9 @@ pub enum Motion {
     PushAway,
     /// Tilt it forward, its top away from you.
     TiltForward,
-    /// Rock it to the right, its right side down.
+    /// Rock it to the right, its right side down: a turn about the axis towards you.
     RockRight,
-    /// Twist it clockwise, seen from above.
+    /// Twist it clockwise, seen from above: a turn about the vertical.
     TwistClockwise,
 }
 
@@ -81,14 +81,18 @@ impl Motion {
 
     /// The output this motion drives with the content following the hand, and the sign: pushing away makes the
     /// page smaller, every other motion moves or turns the page the same way as the hand.
+    ///
+    /// The puck is read in the screen's frame: up on the desk is up on the screen and towards you is towards the
+    /// viewer. So rocking it right (about the axis towards you) turns the content clockwise on the screen, and
+    /// twisting it (about the vertical) spins the content about the screen's vertical (SPM-9).
     pub fn drives(self) -> (Output, f32) {
         match self {
             Motion::SlideRight => (Output::MoveRight, 1.0),
             Motion::LiftUp => (Output::MoveUp, 1.0),
             Motion::PushAway => (Output::Grow, -1.0),
             Motion::TiltForward => (Output::TiltForward, 1.0),
-            Motion::RockRight => (Output::RollRight, 1.0),
-            Motion::TwistClockwise => (Output::TurnClockwise, 1.0),
+            Motion::RockRight => (Output::TurnClockwise, 1.0),
+            Motion::TwistClockwise => (Output::SpinClockwise, 1.0),
         }
     }
 
@@ -510,7 +514,7 @@ pub fn calibration_ui(ui: &mut egui::Ui, cal: &mut Calibration) -> CalibrationAc
         ui.radio_value(&mut convention, Convention::Content, "the content")
             .on_hover_text(
                 "The content follows the hand: slide right and the page moves right, push away and it gets smaller, \
-                 twist clockwise and it turns clockwise (KiCad with reverse pan, FreeCAD's object mode)",
+                 rock right and it turns clockwise on the screen (KiCad with reverse pan, FreeCAD's object mode)",
             );
         ui.radio_value(&mut convention, Convention::Camera, "the camera")
             .on_hover_text(

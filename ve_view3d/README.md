@@ -73,7 +73,7 @@ The camera looks at a target from a distance along its own +Z (x right, y up, z 
 - **Zoom** scales the camera about an anchor (the point picked under the pointer, else the pointer on the target's plane), so that point stays put on the screen in both projections.
 - **Orthographic** shows as much at the target as perspective would, so switching keeps the size.
 - **Clip planes** follow the scene's bounding sphere, so the depth buffer's precision goes where the model is.
-- **The SpaceMouse's** `Nav` says what the content does: pan in screen points, growth, tilt forward, roll right, turn clockwise. The camera applies the inverse rotation in its own frame.
+- **The SpaceMouse's** `Nav` says what the content does: pan in screen points, growth, and a turn about the screen's axes: tilt forward (about the horizontal), spin clockwise seen from above (about the vertical, from a twist of the puck), turn clockwise on the screen (about the axis towards you, from a rock). `nav_turn` makes that one rotation in the camera frame; the camera applies its inverse, and an app turning its model itself (better_erc's model over the page) takes the same `nav_turn`.
 
 ### Picking
 

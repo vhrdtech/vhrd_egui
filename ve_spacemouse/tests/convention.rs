@@ -1,7 +1,8 @@
 //! The signs the calibrate step derives (SPM-2): a calibration sequence goes through a fake spacenavd and the
 //! client, as the person would do it, and the mapping that comes out makes the content follow the hand. Slide right
-//! and the page moves right, lift and it moves up, push away and it gets smaller, twist clockwise and it turns
-//! clockwise. The camera convention turns all of them around.
+//! and the page moves right, lift and it moves up, push away and it gets smaller, rock right and it turns clockwise
+//! on the screen, twist clockwise and it spins clockwise seen from above. The camera convention turns all of them
+//! around. `ve_view3d/tests/puck_calibration.rs` plays a calibration through to the 3D camera.
 //!
 //! The sequence is shaped like spacenavd's stream on a device set up with `swap-yz` (each motion ramps up, holds
 //! with a little cross-talk on the other axes, and comes back to a zero event); the raw signs in it are arbitrary
@@ -141,16 +142,17 @@ fn the_content_follows_the_hand() {
 
     let twist = response(&m, Motion::TwistClockwise);
     assert!(
-        twist.rotate[2] > 0.0,
-        "twist clockwise: the page turns clockwise, {twist:?}"
+        twist.rotate[1] > 0.0 && twist.rotate[2] == 0.0,
+        "twist clockwise: the page spins clockwise seen from above, {twist:?}"
     );
     assert!(
         response(&m, Motion::TiltForward).rotate[0] > 0.0,
         "tilt forward: the page tilts forward"
     );
+    let rock = response(&m, Motion::RockRight);
     assert!(
-        response(&m, Motion::RockRight).rotate[1] > 0.0,
-        "rock right: the page rolls right"
+        rock.rotate[2] > 0.0 && rock.rotate[1] == 0.0,
+        "rock right: the page turns clockwise on the screen, {rock:?}"
     );
 
     // Each motion moves only its own output.
@@ -175,7 +177,8 @@ fn the_camera_convention_turns_every_motion_around() {
         response(&m, Motion::PushAway).zoom > 0.0,
         "the camera goes in: the page gets bigger"
     );
-    assert!(response(&m, Motion::TwistClockwise).rotate[2] < 0.0);
+    assert!(response(&m, Motion::TwistClockwise).rotate[1] < 0.0);
+    assert!(response(&m, Motion::RockRight).rotate[2] < 0.0);
 }
 
 #[test]
@@ -194,7 +197,15 @@ fn the_table_says_what_the_page_does() {
     );
     assert_eq!(
         Motion::TwistClockwise.effect(Convention::Content),
-        "the page turns clockwise"
+        "the page spins clockwise seen from above, its right side coming towards you"
+    );
+    assert_eq!(
+        Motion::RockRight.effect(Convention::Content),
+        "the page turns clockwise on the screen, its right side going down"
+    );
+    assert_eq!(
+        Motion::TiltForward.effect(Convention::Camera),
+        "the page tilts back, its top coming towards you"
     );
     assert_eq!(
         Motion::SlideRight.effect(Convention::Camera),

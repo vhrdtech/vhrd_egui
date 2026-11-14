@@ -63,7 +63,7 @@ fn main() -> eframe::Result {
         Box::new(move |cc| {
             ve_theme::setup(&cc.egui_ctx);
             ve_spacemouse::install_icons(&cc.egui_ctx);
-            // All six motions: twist turns this canvas.
+            // All six motions: a rock turns this canvas on the screen.
             let settings = SettingsPanel::load(CalibrateSteps::Full);
             let mouse = SpaceMouse::start(Options {
                 socket,
