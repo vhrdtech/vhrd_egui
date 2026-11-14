@@ -12,7 +12,7 @@ use egui::{Pos2, pos2, vec2};
 use egui_kittest::Harness;
 use egui_kittest::kittest::Queryable;
 use menu::{Action, Can};
-use ve_spacemouse::{ButtonEvent, Fired, PieState, Side};
+use ve_spacemouse::{ButtonEvent, Fired, PieMenu, PieState, Side, Slot, icons};
 
 const O: Pos2 = pos2(450.0, 320.0);
 
@@ -29,6 +29,8 @@ struct App {
     fired: Vec<Fired<Action>>,
     clicks_below: u32,
     fonts: bool,
+    /// Show [`long_menu`] instead of the demo's.
+    long: bool,
 }
 
 fn harness() -> Harness<'static, App> {
@@ -53,11 +55,39 @@ fn harness() -> Harness<'static, App> {
                     }
                 });
                 let pending = std::mem::take(&mut app.pending);
+                let menu = if app.long {
+                    long_menu()
+                } else {
+                    menu::menu(app.can)
+                };
                 app.fired
-                    .extend(menu::menu(app.can).show(ui.ctx(), &mut app.pie, &pending));
+                    .extend(menu.show(ui.ctx(), &mut app.pie, &pending));
             },
             App::default(),
         )
+}
+
+/// Names as long as better_erc's (a name, then its key), ten slices on the left ring.
+fn long_menu() -> PieMenu<Action> {
+    use Action::*;
+    let s = |label: &str, a| Some(Slot::new(label, icons::RULER, a));
+    PieMenu {
+        center_left: Some(Slot::new("Ruler · R", icons::RULER, AddDot)),
+        center_right: Some(Slot::new("Move footprint · Tab", icons::TRASH, DeleteDot)),
+        ring_left: vec![
+            s("Full width · W", Copy),
+            s("Zoom on a ruler end · Z", Paste),
+            s("Type the length · L", Cut),
+            s("The dimension's number · N", Measure),
+            s("Back to Move · Esc", ZoomToFit),
+            s("Stop measuring the PDF · Shift+M", Recenter),
+            s("Select the drawing · S", Snap),
+            s("Next page · PgDn", Highlight),
+            s("Invert the page · I", Route),
+            s("Previous page · PgUp", Flip),
+        ],
+        ..Default::default()
+    }
 }
 
 fn button(h: &mut Harness<'_, App>, side: Side, pressed: bool) {
@@ -191,4 +221,70 @@ fn the_open_menu_looks_right() {
     h.hover_at(O - vec2(0.0, 120.0));
     h.step();
     h.snapshot("pie_right_ring");
+}
+
+#[test]
+fn long_names_show_in_full() {
+    let mut h = harness();
+    h.state_mut().long = true;
+    h.hover_at(O);
+    h.step();
+    button(&mut h, Side::Left, true);
+    h.run_steps(10);
+    h.hover_at(O + vec2(0.0, 30.0));
+    h.step();
+    let (center, outer) = h.state().pie.radii().expect("open");
+    let menu = long_menu();
+    let far = |r: egui::Rect| {
+        [
+            r.left_top(),
+            r.right_top(),
+            r.left_bottom(),
+            r.right_bottom(),
+        ]
+        .map(|q| (q - O).length())
+        .into_iter()
+        .fold(0.0, f32::max)
+    };
+    let near = |r: egui::Rect| (O.clamp(r.min, r.max) - O).length();
+    let mut rects = Vec::new();
+    for slot in menu.ring_left.iter().flatten() {
+        let r = h.get_by_label(&slot.label).rect();
+        assert!(
+            near(r) >= center && far(r) <= outer,
+            "{:?} leaves the ring: {r:?}",
+            slot.label
+        );
+        rects.push((slot.label.clone(), r));
+    }
+    // The centre's names are rounder than their boxes (shorter rows top and bottom): their edges' middles.
+    let edges = |r: egui::Rect| {
+        [
+            r.center_top(),
+            r.center_bottom(),
+            r.left_center(),
+            r.right_center(),
+        ]
+        .map(|q| (q - O).length())
+        .into_iter()
+        .fold(0.0, f32::max)
+    };
+    for slot in [&menu.center_left, &menu.center_right]
+        .into_iter()
+        .flatten()
+    {
+        let r = h.get_by_label(&slot.label).rect();
+        assert!(
+            edges(r) <= center,
+            "{:?} leaves the centre: {r:?}",
+            slot.label
+        );
+        rects.push((slot.label.clone(), r));
+    }
+    for (i, (a, ra)) in rects.iter().enumerate() {
+        for (b, rb) in &rects[i + 1..] {
+            assert!(!ra.intersects(*rb), "{a:?} overlaps {b:?}");
+        }
+    }
+    h.snapshot("pie_long_names");
 }

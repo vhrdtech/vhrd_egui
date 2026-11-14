@@ -5,6 +5,10 @@ versions follow [Semantic Versioning](https://semver.org/). Feature IDs refer to
 
 ## [Unreleased]
 
+### Fixed
+
+- `ve_spacemouse`: the pie menu shows every name in full. Fills are drawn before the names, so no slice covers its neighbour's name, and long names are fitted into their slots: smaller text (down to three quarters), wrapped between words, and a larger ring where even that is not enough. `PieState::radii` gives the radii the open menu is drawn and hit-tested with (SPM-7).
+
 ## [0.33.2] - 2026-11-13
 
 ### Added
