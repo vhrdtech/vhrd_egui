@@ -5,6 +5,8 @@ versions follow [Semantic Versioning](https://semver.org/). Feature IDs refer to
 
 ## [Unreleased]
 
+## [0.33.3] - 2026-11-14
+
 ### Added
 
 - `ve_theme`: colours from the desktop theme (THM-18). `ColorSource` (desktop, brand, or a fixed accent; a setting) picks them; with *desktop*, omarchy's `colors.toml` gives the accent and, in the style of its mode, background and text (`DesktopColors`, `Tokens::with_desktop`, `Tokens::with_accent`); every colour is kept legible (`Tokens::contrast_problems`). `Look::setup` replaces `setup` in an app that follows the desktop and applies a theme switch live; `Look::ui` is the setting's control. New feature `serde` for `ColorSource`.
