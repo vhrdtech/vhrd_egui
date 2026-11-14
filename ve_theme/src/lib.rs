@@ -15,6 +15,10 @@
 //! - [`typography`]: the type scale on egui's text styles plus `title` and `caption` (THM-3).
 //! - [`UiExt`]: what `Style` cannot express — primary / danger buttons, section header, panel title bar,
 //!   toolbar, muted label, badge — each with its tooltip (THM-4).
+//! - [`ColorSource`]: where the colours come from, a setting: the desktop theme (omarchy's `colors.toml`,
+//!   [`DesktopColors`], [`Tokens::with_desktop`]), the brand, or a fixed accent ([`Tokens::with_accent`]);
+//!   every text colour stays legible ([`Tokens::contrast_problems`]). [`Look::setup`] (native) installs it in
+//!   place of [`setup`] and follows a desktop theme switch live (THM-18).
 //! - [`hue`]: OKLab distance and the red / orange hue range reserved for error and warning, to test that
 //!   categorical colours (labels, chips, series, hosts, models) stay out of it and apart from each other (THM-10).
 //! - [`props`]: property-panel widgets: pane, sub-pane, group, property row, number and axis fields,
@@ -37,21 +41,27 @@
 //! IBM Plex Mono, © IBM Corp., SIL Open Font License 1.1 (`fonts/LICENSE.txt`), which permits embedding.
 
 pub mod contrast;
+mod desktop;
 #[cfg(feature = "fonts")]
 mod fonts;
 pub mod gallery;
 pub mod hue;
+#[cfg(not(target_arch = "wasm32"))]
+mod look;
 pub mod props;
 mod status;
 mod tokens;
 pub mod typography;
 mod ui_ext;
 
+pub use desktop::{ColorSource, DesktopColors, parse_hex, to_hex};
 #[cfg(feature = "fonts")]
 pub use fonts::{
     BRAND_FAMILY, NUMBER_FAMILY, PLEX_MONO, PLEX_MONO_BOLD, PLEX_SANS, PLEX_SANS_BOLD, brand_font,
     install_fonts, number_font, number_text,
 };
+#[cfg(not(target_arch = "wasm32"))]
+pub use look::{Look, omarchy_colors_path};
 pub use status::{STATUS_GLYPHS, StatusGlyph, status_glyph, status_icon, status_icon_with};
 pub use tokens::{Elevation, Palette, Radius, Ramp, Space, Status, Strokes, Tokens, vhrd};
 pub use ui_ext::{Tone, UiExt};

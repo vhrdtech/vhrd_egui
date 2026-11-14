@@ -17,13 +17,15 @@ pub(crate) fn show(
     behavior: &mut Behavior,
     options: &mut ShellOptions,
     cx: &Context,
+    look: &ve_theme::Look,
 ) {
-    let open = &mut state.windows;
+    let colors = &mut state.colors;
     Window::new("Settings")
-        .open(&mut open.settings)
+        .open(&mut state.windows.settings)
         .collapsible(true)
         .scroll([false, true])
-        .show(ctx, |ui| settings(ui, options, cx));
+        .show(ctx, |ui| settings(ui, options, cx, look, colors));
+    let open = &mut state.windows;
     Window::new("Debug")
         .open(&mut open.debug)
         .collapsible(true)
@@ -33,13 +35,24 @@ pub(crate) fn show(
         });
 }
 
-fn settings(ui: &mut Ui, options: &mut ShellOptions, cx: &Context) {
+fn settings(
+    ui: &mut Ui,
+    options: &mut ShellOptions,
+    cx: &Context,
+    look: &ve_theme::Look,
+    colors: &mut ve_theme::ColorSource,
+) {
     ui.section_header("Appearance", "How the app looks");
     ui.horizontal(|ui| {
         ui.label("Theme")
             .on_hover_text("Follow the system, or force dark or light");
         egui::widgets::global_theme_preference_buttons(ui);
     });
+    ui.label("Colours")
+        .on_hover_text("Where the accent, background and text colours come from");
+    if let Some(source) = look.ui(ui) {
+        *colors = source;
+    }
     if let Some(app_settings) = &mut options.settings {
         ui.add_space(8.0);
         ui.section_header(&options.app_name, "Settings of this app");

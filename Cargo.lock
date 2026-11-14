@@ -3829,6 +3829,8 @@ dependencies = [
  "eframe",
  "egui",
  "egui_kittest",
+ "log",
+ "serde",
  "serde_json",
  "ve_basics",
 ]

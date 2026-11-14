@@ -27,7 +27,25 @@ fn options() -> ShellOptions {
         build_time: "8 Oct 2026 12:00",
         debug: false,
     };
+    // The brand colours, whatever this machine's desktop theme.
+    options.desktop_theme = None;
     options
+}
+
+/// A synthetic omarchy theme (Tokyo Night's colours) in a temp folder; the folder's path for cleanup.
+// A native test on a temp folder.
+#[allow(clippy::disallowed_methods)]
+fn tokyo_night(name: &str) -> std::path::PathBuf {
+    let dir = std::env::temp_dir().join(format!("ve_app_theme_{name}_{}", std::process::id()));
+    std::fs::create_dir_all(&dir).unwrap();
+    let file = dir.join("colors.toml");
+    std::fs::write(
+        &file,
+        "mode = \"dark\"\naccent = \"#7aa2f7\"\nselection = \"#292e42\"\nbackground = \"#1a1b26\"\n\
+         lighter_background = \"#24283b\"\nforeground = \"#a9b1d6\"\ndark_foreground = \"#565f89\"\n",
+    )
+    .unwrap();
+    file
 }
 
 fn harness(options: ShellOptions) -> Harness<'static, Shell> {
@@ -354,4 +372,46 @@ fn shell_snapshot() {
     let mut h = harness(options());
     h.run();
     h.snapshot("shell");
+}
+
+/// THM-18: with the colour setting on *Desktop theme* (the default) the shell takes the desktop theme's colours;
+/// the Settings window says so and switches to the brand colours.
+#[test]
+fn colours_follow_the_desktop_theme_and_the_setting() {
+    let file = tokyo_night("follow");
+    let mut opts = options();
+    opts.desktop_theme = Some(file.clone());
+    let mut h = harness(opts);
+    let accent = |h: &Harness<'_, Shell>| {
+        ve_theme::Tokens::of(&h.ctx, egui::Theme::Dark)
+            .colors
+            .accent
+    };
+    assert_eq!(accent(&h), ve_theme::parse_hex("#7aa2f7").unwrap());
+    assert_eq!(
+        h.ctx.style_of(egui::Theme::Dark).visuals.panel_fill,
+        ve_theme::parse_hex("#1a1b26").unwrap()
+    );
+    open_menu(&mut h, "File");
+    h.get_by_label("Settings…").click();
+    h.run();
+    h.get_by_label_contains("Following the desktop theme");
+    h.get_by_label("Brand").click();
+    h.run();
+    assert_eq!(accent(&h), ve_theme::Tokens::dark().colors.accent);
+    h.get_by_label_contains("The vhrd brand colours.");
+    #[allow(clippy::disallowed_methods)]
+    std::fs::remove_dir_all(file.parent().unwrap()).ok();
+}
+
+#[test]
+fn snapshot_with_a_desktop_theme() {
+    let file = tokyo_night("snapshot");
+    let mut opts = options();
+    opts.desktop_theme = Some(file.clone());
+    let mut h = harness(opts);
+    h.run();
+    h.snapshot("shell_tokyo_night");
+    #[allow(clippy::disallowed_methods)]
+    std::fs::remove_dir_all(file.parent().unwrap()).ok();
 }

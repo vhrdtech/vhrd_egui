@@ -37,6 +37,9 @@ pub(crate) struct State {
     pub(crate) side_panel_open: bool,
     #[serde(default)]
     pub(crate) windows: OpenWindows,
+    /// Where the colours come from: the desktop theme, the brand, or a fixed accent (THM-18).
+    #[serde(default)]
+    pub(crate) colors: ve_theme::ColorSource,
 }
 
 /// Which of the shell's windows are open.
@@ -57,6 +60,7 @@ impl State {
             extra: BTreeMap::new(),
             side_panel_open: options.side_panel.is_some(),
             windows: OpenWindows::default(),
+            colors: ve_theme::ColorSource::default(),
         }
     }
 

@@ -11,9 +11,13 @@ repository.workspace = true
 default = ["fonts"]
 # Embed IBM Plex Sans / Plex Mono (the vhrd_brand faces, OFL) and install them in `setup`.
 fonts = []
+# `ColorSource` as a setting: "desktop", "brand" or "#rrggbb".
+serde = ["dep:serde"]
 
 [dependencies]
 egui.workspace = true
+serde = { workspace = true, optional = true }
+log.workspace = true
 # the gallery shows its helpers (fold_rest)
 ve_basics = { path = "../ve_basics", version = "0.33" }
 

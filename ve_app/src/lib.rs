@@ -13,7 +13,8 @@
 //! }
 //! ```
 //!
-//! [`Shell::new`] turns on the VHRD theme (`ve_theme::setup`) and non-selectable labels
+//! [`Shell::new`] turns on the VHRD theme (`ve_theme::Look`: following the desktop theme by default, a setting in
+//! the Settings window, THM-18) and non-selectable labels
 //! (`ve_basics::setup_labels`), restores the saved layout and calls [`Widget::init`] on every widget.
 //! Widgets register themselves with `inventory::submit!(WidgetInfo { .. })` and show up in
 //! *View → Open widget* (and the ➕ of every tab bar), grouped by [`ve_widget::WidgetInfo::group_path`] (WID-3).
@@ -21,7 +22,7 @@
 //! - Menus (WID-8): *File* (Settings, Quit), *View* (Open widget, side panel, reset layout), *Windows*
 //!   (Debug, center), *Help* (the app menu of `ve_basics::AppMenu`, BAS-4: name, description, build, reset
 //!   storage to defaults); theme switch on the right. The status bar's version badge opens the same menu.
-//! - Windows (WID-8): Settings (theme plus the app's own
+//! - Windows (WID-8): Settings (theme, colours plus the app's own
 //!   [`ShellOptions::settings`]), Debug (tile tree, tab bar settings, egui inspection).
 //! - Quit (WID-9): when a widget says it is not closeable ([`Widget::is_closeable`]), quitting asks first and
 //!   names the busy widgets.
@@ -84,6 +85,10 @@ pub struct ShellOptions {
     /// The app's transport to other machines: with it the widgets' menus offer *Send to another machine*;
     /// without it the entry is disabled and says why. The receiving side calls [`Shell::receive`].
     pub remote: Option<Box<dyn Remote>>,
+    /// The desktop theme's colours file the shell follows while the colour setting says *Desktop theme*
+    /// (THM-18): omarchy's by default ([`ve_theme::omarchy_colors_path`]); `None` for none (tests: the brand
+    /// colours whatever the machine's theme).
+    pub desktop_theme: Option<std::path::PathBuf>,
 }
 
 impl ShellOptions {
@@ -100,12 +105,19 @@ impl ShellOptions {
             side_panel: None,
             settings: None,
             remote: None,
+            desktop_theme: ve_theme::omarchy_colors_path(),
         }
     }
 
     /// See [`Self::description`].
     pub fn description(mut self, description: impl Into<String>) -> Self {
         self.description = description.into();
+        self
+    }
+
+    /// See [`Self::desktop_theme`].
+    pub fn desktop_theme(mut self, path: Option<std::path::PathBuf>) -> Self {
+        self.desktop_theme = path;
         self
     }
 
@@ -160,6 +172,8 @@ pub struct Shell {
     behavior: Behavior,
     close: CloseDialog,
     repainter: Repainter,
+    /// The fonts and styles, following the desktop theme while the setting says so.
+    look: ve_theme::Look,
     /// How the last send to another machine went, for the status bar.
     notice: String,
 }
@@ -167,10 +181,14 @@ pub struct Shell {
 impl Shell {
     /// Set up theme and labels, restore the saved layout (if [`ShellOptions::persist`]) and init every widget.
     pub fn new(cc: &eframe::CreationContext<'_>, cx: Context, options: ShellOptions) -> Self {
-        ve_theme::setup(&cc.egui_ctx);
-        ve_basics::setup_labels(&cc.egui_ctx);
         let storage = if options.persist { cc.storage } else { None };
         let state = State::load(storage, &options);
+        let look = ve_theme::Look::setup_with_path(
+            &cc.egui_ctx,
+            state.colors,
+            options.desktop_theme.clone(),
+        );
+        ve_basics::setup_labels(&cc.egui_ctx);
         let mut shell = Self {
             behavior: Behavior::new(cx.clone(), options.widget_filter),
             cx,
@@ -178,6 +196,7 @@ impl Shell {
             state,
             close: CloseDialog::default(),
             repainter: Repainter::new(cc.egui_ctx.clone()),
+            look,
             notice: String::new(),
         };
         shell.init_widgets();
@@ -247,6 +266,7 @@ impl Shell {
             &mut self.behavior,
             &mut self.options,
             &self.cx,
+            &self.look,
         );
 
         let moves = self.state.widgets.moves(self.options.remote.as_deref());

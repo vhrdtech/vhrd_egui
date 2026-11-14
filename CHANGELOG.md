@@ -5,6 +5,14 @@ versions follow [Semantic Versioning](https://semver.org/). Feature IDs refer to
 
 ## [Unreleased]
 
+### Added
+
+- `ve_theme`: colours from the desktop theme (THM-18). `ColorSource` (desktop, brand, or a fixed accent; a setting) picks them; with *desktop*, omarchy's `colors.toml` gives the accent and, in the style of its mode, background and text (`DesktopColors`, `Tokens::with_desktop`, `Tokens::with_accent`); every colour is kept legible (`Tokens::contrast_problems`). `Look::setup` replaces `setup` in an app that follows the desktop and applies a theme switch live; `Look::ui` is the setting's control. New feature `serde` for `ColorSource`.
+
+### Changed
+
+- `ve_app`: the Shell follows the desktop theme's colours by default; *Settings → Colours* switches to the brand colours or a fixed accent and is saved with the layout. `ShellOptions::desktop_theme` names the theme file (`None`: the brand colours, as tests want) (THM-18).
+
 ### Fixed
 
 - `ve_spacemouse`: the pie menu shows every name in full. Fills are drawn before the names, so no slice covers its neighbour's name, and long names are fitted into their slots: smaller text (down to three quarters), wrapped between words, and a larger ring where even that is not enough. `PieState::radii` gives the radii the open menu is drawn and hit-tested with (SPM-7).
