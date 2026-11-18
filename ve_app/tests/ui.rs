@@ -4,17 +4,20 @@
 //! widgets' frames (pop out and back, another OS window, another machine); the
 //! demo shell is rendered through wgpu and pixel-compared against `tests/snapshots/shell.png`. After an
 //! intended visual change: `UPDATE_SNAPSHOTS=1 cargo test -p ve_app --test ui` and commit the PNG.
+//! The frame recording (WID-11) runs on a hand-moved clock, so every time it reports is exact.
 
 #[path = "../examples/shell_demo/main.rs"]
 mod demo;
 
 use std::collections::HashMap;
+use std::time::Duration;
 
 use egui::vec2;
 use egui_kittest::Harness;
 use egui_kittest::kittest::{NodeT, Queryable};
 use ve_app::{Shell, ShellOptions};
 use ve_basics::BuildInfo;
+use ve_basics::perf::{BudgetSource, ManualClock, Recorder, RingRecorder, ScopeKind, Settings};
 use ve_widget::context::Context;
 
 /// Demo options with a fixed build info, so the snapshot doesn't change with every commit.
@@ -414,4 +417,156 @@ fn snapshot_with_a_desktop_theme() {
     h.snapshot("shell_tokyo_night");
     #[allow(clippy::disallowed_methods)]
     std::fs::remove_dir_all(file.parent().unwrap()).ok();
+}
+
+/// A widget that spends time on the test's clock: `work_ms` in its ui and `panel_ms` in a scope that does not
+/// count, the way a performance panel inside it would.
+#[derive(serde::Serialize, serde::Deserialize)]
+struct Spender {
+    work_ms: f64,
+    panel_ms: f64,
+    #[serde(skip)]
+    clock: Option<ManualClock>,
+}
+
+#[typetag::serde]
+impl ve_widget::Widget for Spender {
+    fn init(&mut self, _cx: &Context) {}
+
+    fn base_title(&self) -> &'static str {
+        "Spender"
+    }
+
+    fn ui(&mut self, ui: &mut egui::Ui, _cx: &Context, _id: egui::Id) {
+        let Some(clock) = &self.clock else {
+            return;
+        };
+        clock.advance_ms(self.work_ms);
+        let rec = ve_basics::perf::recorder(ui.ctx())
+            .expect("the shell puts its recorder into the context");
+        let _panel = rec.scope_not_counted("perf panel");
+        clock.advance_ms(self.panel_ms);
+        ui.label("spending");
+    }
+}
+
+/// Medians come from a log histogram: within 1.1 % of `ms`.
+fn near(d: Duration, ms: f64) -> bool {
+    (d.as_secs_f64() * 1000.0 - ms).abs() <= ms * 0.011
+}
+
+/// The shell with a recorder on `clock`, judging frames at 60 Hz.
+fn recorded(clock: &ManualClock) -> (Harness<'static, Shell>, Recorder) {
+    let settings = Settings {
+        budget: BudgetSource::Hz(60.0),
+        ..Settings::default()
+    };
+    let rec = Recorder::new(RingRecorder::with_clock(settings, clock.clone()));
+    (harness(options().recorder(rec.clone())), rec)
+}
+
+/// WID-11: every frame is recorded, each widget's logic and ui in a scope of its own; a scope that does not count
+/// (the performance panel) is left out of the frame's CPU time, the widget's row and every statistic.
+#[test]
+fn frames_are_recorded_with_a_scope_per_widget_and_the_panel_left_out() {
+    let clock = ManualClock::new();
+    let (mut h, rec) = recorded(&clock);
+    h.state_mut().open_widget(Box::new(Spender {
+        work_ms: 3.0,
+        panel_ms: 5.0,
+        clock: Some(clock.clone()),
+    }));
+    for _ in 0..20 {
+        clock.advance_ms(10.0);
+        h.step();
+    }
+    let window = Duration::from_secs(60);
+    let s = rec.stats(window);
+    assert!(s.frames >= 20, "{}", s.frames);
+    assert_eq!(
+        s.cpu.worst,
+        Duration::from_millis(3),
+        "the panel's 5 ms are not the app's"
+    );
+    assert!(near(s.cpu.median, 3.0), "{:?}", s.cpu);
+
+    let mut b = ve_basics::perf::Breakdown::default();
+    rec.breakdown(window, &mut b);
+    let row = |name: &str| b.scopes.iter().find(|s| s.name == name).copied();
+    for name in ["Note", "Level"] {
+        assert!(row(name).is_some(), "a scope for the demo widget {name}");
+    }
+    let spender = row("Spender").expect("a scope for the opened widget");
+    assert_eq!(spender.time.worst, Duration::from_millis(3));
+    let panel = row("perf panel").expect("the panel's own row");
+    assert_eq!(panel.kind, ScopeKind::NotCounted);
+    assert!(near(panel.time.median, 5.0), "{:?}", panel.time);
+    assert!(panel.share.abs() < f32::EPSILON);
+    assert_eq!(
+        b.rest_total,
+        Duration::ZERO,
+        "nothing else moved the test's clock"
+    );
+}
+
+/// WID-11: the shown numbers change at the readout's rate (5 Hz) while frames keep coming every 10 ms.
+#[test]
+fn the_readout_holds_its_numbers_between_ticks() {
+    let clock = ManualClock::new();
+    let (mut h, _rec) = recorded(&clock);
+    h.state_mut().open_widget(Box::new(Spender {
+        work_ms: 2.0,
+        panel_ms: 0.0,
+        clock: Some(clock.clone()),
+    }));
+    let mut changes = 0;
+    let mut shown = *h.state().readout();
+    for _ in 0..100 {
+        clock.advance_ms(10.0);
+        h.step();
+        let now = *h.state().readout();
+        if now != shown {
+            changes += 1;
+            shown = now;
+        }
+    }
+    // 1 s of frames: five ticks, give or take the first.
+    assert!((5..=6).contains(&changes), "{changes}");
+    assert!(near(shown.cpu, 2.0), "{shown:?}");
+    assert_eq!(shown.budget, Duration::from_secs_f64(1.0 / 60.0));
+}
+
+/// WID-11: recording off costs the shell nothing and records nothing.
+#[test]
+fn recording_off_records_nothing() {
+    let clock = ManualClock::new();
+    let (mut h, rec) = recorded(&clock);
+    rec.set_enabled(false);
+    for _ in 0..5 {
+        clock.advance_ms(10.0);
+        h.step();
+    }
+    assert_eq!(rec.stats(Duration::from_secs(60)).frames, 0);
+    rec.set_enabled(true);
+    clock.advance_ms(10.0);
+    h.step();
+    clock.advance_ms(10.0);
+    h.step();
+    assert_eq!(rec.stats(Duration::from_secs(60)).frames, 2);
+}
+
+/// WID-11: a frame no repaint request asked for is counted as input when there was input in it.
+#[test]
+fn repaint_causes_are_recorded() {
+    let clock = ManualClock::new();
+    let (mut h, rec) = recorded(&clock);
+    clock.advance_ms(10.0);
+    h.get_by_label("View").click();
+    h.step();
+    clock.advance_ms(10.0);
+    h.step();
+    let mut causes = Vec::new();
+    rec.causes(Duration::from_secs(60), &mut causes);
+    assert!(causes.iter().any(|c| c.label == "input"), "{causes:?}");
+    assert!(causes.iter().all(|c| c.frames > 0));
 }

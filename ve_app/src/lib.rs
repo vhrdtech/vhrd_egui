@@ -31,6 +31,10 @@
 //!   another machine when the app gives a transport ([`ShellOptions::remote`], [`Shell::receive`]). What
 //!   [`Widget::frame_spec`] returns adds an LED, an ⓘ and the size switch.
 //! - [`Repainter`]: a cheap handle background tasks use to wake the UI.
+//! - Frame recording (WID-11): every frame goes into a `ve_basics::perf` recorder ([`ShellOptions::recorder`],
+//!   on by default), each widget's `logic` and `ui` in a scope named by its [`Widget::base_title`], with egui's
+//!   repaint causes, eframe's CPU time of the whole frame and the monitor's refresh rate. Code with a `Ui` marks
+//!   its own scopes through `ve_basics::perf::recorder(ui.ctx())`; [`Shell::readout`] holds the numbers to show.
 //! - [`prelude`]: what a widget implementation needs in one `use`.
 //!
 //! Persistence: with [`ShellOptions::persist`] (default on) the tile tree, side panel and open windows go
@@ -38,6 +42,7 @@
 //! type was renamed or removed — or when [`ShellOptions::layout_version`] changed.
 
 mod close_dialog;
+mod perf;
 pub mod prelude;
 mod repainter;
 mod state;
@@ -45,10 +50,12 @@ mod tiles;
 mod widget_menu;
 mod windows;
 
+pub use perf::CAUSES_PER_FRAME_MAX;
 pub use repainter::Repainter;
 pub use widget_menu::registered_widgets;
 
 use egui::{CentralPanel, MenuBar, Panel, Ui};
+use ve_basics::perf::{ReadoutSettings, Recorder, Shown};
 use ve_basics::{AppMenu, AppMenuAction, BuildInfo};
 use ve_frame::{Applied, FrameAction, FrameState, Parcel, Remote, SlotId, ViewportSlot};
 use ve_widget::Widget;
@@ -89,6 +96,11 @@ pub struct ShellOptions {
     /// (THM-18): omarchy's by default ([`ve_theme::omarchy_colors_path`]); `None` for none (tests: the brand
     /// colours whatever the machine's theme).
     pub desktop_theme: Option<std::path::PathBuf>,
+    /// Where frames are recorded; `None` for a `ve_basics::perf::RingRecorder` with the default settings,
+    /// recording (setting S18; turn it off through the recorder).
+    pub recorder: Option<Recorder>,
+    /// How the shown performance numbers refresh (settings S15, S16).
+    pub readout: ReadoutSettings,
 }
 
 impl ShellOptions {
@@ -106,6 +118,8 @@ impl ShellOptions {
             settings: None,
             remote: None,
             desktop_theme: ve_theme::omarchy_colors_path(),
+            recorder: None,
+            readout: ReadoutSettings::default(),
         }
     }
 
@@ -162,6 +176,18 @@ impl ShellOptions {
         self.remote = Some(Box::new(remote));
         self
     }
+
+    /// See [`Self::recorder`].
+    pub fn recorder(mut self, recorder: Recorder) -> Self {
+        self.recorder = Some(recorder);
+        self
+    }
+
+    /// See [`Self::readout`].
+    pub fn readout(mut self, readout: ReadoutSettings) -> Self {
+        self.readout = readout;
+        self
+    }
 }
 
 /// The app shell. Implements [`eframe::App`]; apps with more around it call [`Shell::ui`] themselves.
@@ -176,11 +202,14 @@ pub struct Shell {
     look: ve_theme::Look,
     /// How the last send to another machine went, for the status bar.
     notice: String,
+    perf: perf::Perf,
 }
 
 impl Shell {
     /// Set up theme and labels, restore the saved layout (if [`ShellOptions::persist`]) and init every widget.
-    pub fn new(cc: &eframe::CreationContext<'_>, cx: Context, options: ShellOptions) -> Self {
+    pub fn new(cc: &eframe::CreationContext<'_>, cx: Context, mut options: ShellOptions) -> Self {
+        let perf = perf::Perf::new(options.recorder.take(), options.readout);
+        ve_basics::perf::install(&cc.egui_ctx, perf.recorder.clone());
         let storage = if options.persist { cc.storage } else { None };
         let state = State::load(storage, &options);
         let look = ve_theme::Look::setup_with_path(
@@ -190,7 +219,7 @@ impl Shell {
         );
         ve_basics::setup_labels(&cc.egui_ctx);
         let mut shell = Self {
-            behavior: Behavior::new(cx.clone(), options.widget_filter),
+            behavior: Behavior::new(cx.clone(), perf.recorder.clone(), options.widget_filter),
             cx,
             options,
             state,
@@ -198,6 +227,7 @@ impl Shell {
             repainter: Repainter::new(cc.egui_ctx.clone()),
             look,
             notice: String::new(),
+            perf,
         };
         shell.init_widgets();
         shell
@@ -206,6 +236,22 @@ impl Shell {
     /// A handle background tasks use to request a repaint.
     pub fn repainter(&self) -> Repainter {
         self.repainter.clone()
+    }
+
+    /// The recorder every frame goes into; also in the egui context (`ve_basics::perf::recorder`).
+    pub fn recorder(&self) -> &Recorder {
+        &self.perf.recorder
+    }
+
+    /// The performance numbers to show, held at the readout's rate ([`ShellOptions::readout`]).
+    pub fn readout(&self) -> &Shown {
+        self.perf.readout.shown()
+    }
+
+    /// Hand eframe's frame info to the recorder: the whole previous frame's CPU time and the monitor's refresh.
+    /// [`eframe::App::ui`] does this; an app that calls [`Self::ui`] itself calls this first.
+    pub fn host_frame(&mut self, frame: &eframe::Frame) {
+        self.perf.host(frame);
     }
 
     /// The shared context handed to every widget.
@@ -244,7 +290,10 @@ impl Shell {
     /// Draw the whole shell into the root `ui`: menu bar, status bar, side panel, windows, tiles, floating
     /// widgets, the other OS windows, quit dialog.
     pub fn ui(&mut self, ui: &mut Ui) {
+        self.perf.begin(ui.ctx());
+        let rec = self.perf.recorder.clone();
         for slot in self.state.widgets.iter_mut() {
+            let _g = rec.scope(slot.widget.base_title());
             slot.widget.logic(&self.cx);
         }
 
@@ -293,7 +342,7 @@ impl Shell {
                 tree.ui(&mut pass, ui);
             }
             let floating = widgets.show_windows(ui, ViewportSlot::MAIN, |ui, slot| {
-                tiles::framed(ui, slot, cx, &moves, false)
+                tiles::framed(ui, slot, cx, &rec, &moves, false)
             });
             picked.extend(floating);
         });
@@ -317,7 +366,7 @@ impl Shell {
                 tree.ui(&mut pass, ui);
             }
             let floating = widgets.show_windows(ui, viewport, |ui, slot| {
-                tiles::framed(ui, slot, cx, &moves, false)
+                tiles::framed(ui, slot, cx, &rec, &moves, false)
             });
             picked.extend(floating);
         });
@@ -342,6 +391,7 @@ impl Shell {
 
         let busy = busy_widgets(&self.state);
         self.close.ui(ui.ctx(), &self.options.app_name, busy);
+        self.perf.end(ui.ctx());
     }
 
     /// Carry out what a widget's menu picked.
@@ -505,7 +555,8 @@ impl Shell {
 }
 
 impl eframe::App for Shell {
-    fn ui(&mut self, ui: &mut Ui, _frame: &mut eframe::Frame) {
+    fn ui(&mut self, ui: &mut Ui, frame: &mut eframe::Frame) {
+        self.host_frame(frame);
         Shell::ui(self, ui);
     }
 

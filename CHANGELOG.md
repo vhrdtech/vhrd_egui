@@ -8,6 +8,7 @@ versions follow [Semantic Versioning](https://semver.org/). Feature IDs refer to
 ### Added
 
 - `ve_basics`: `perf`, a frame recorder: frame times, named scopes, counters, repaint causes, statistics over a window (BAS-10).
+- `ve_app`: the shell records every frame, a scope per widget and repaint causes; `Shell::readout` holds the numbers (WID-11).
 
 ## [0.34.2] - 2026-11-19
 

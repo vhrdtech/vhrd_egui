@@ -2,6 +2,7 @@
 
 use egui::{Id, Response, Ui, UiKind, WidgetText};
 use egui_tiles::{SimplificationOptions, Tile, TileId, Tiles, UiResponse};
+use ve_basics::perf::Recorder;
 use ve_frame::{FrameAction, Moves, Slot, SlotId, ViewportSlot, WidgetFrame};
 use ve_widget::context::Context;
 use ve_widget::{Widget, WidgetInfo};
@@ -11,6 +12,8 @@ use crate::state::{Tree, Widgets};
 /// The tile settings that outlive a frame, and what was picked in an open-widget menu.
 pub(crate) struct Behavior {
     pub(crate) cx: Context,
+    /// Each widget's ui runs in a scope of it (WID-11).
+    pub(crate) recorder: Recorder,
     pub(crate) simplification: SimplificationOptions,
     pub(crate) tab_bar_height: f32,
     pub(crate) gap_width: f32,
@@ -20,9 +23,14 @@ pub(crate) struct Behavior {
 }
 
 impl Behavior {
-    pub(crate) fn new(cx: Context, widget_filter: fn(&WidgetInfo) -> bool) -> Self {
+    pub(crate) fn new(
+        cx: Context,
+        recorder: Recorder,
+        widget_filter: fn(&WidgetInfo) -> bool,
+    ) -> Self {
         Self {
             cx,
+            recorder,
             simplification: SimplificationOptions {
                 prune_empty_tabs: true,
                 prune_empty_containers: true,
@@ -101,7 +109,14 @@ impl Pass<'_> {
 impl egui_tiles::Behavior<SlotId> for Pass<'_> {
     fn pane_ui(&mut self, ui: &mut Ui, _tile_id: TileId, id: &mut SlotId) -> UiResponse {
         if let Some(slot) = self.widgets.get_mut(*id) {
-            let action = framed(ui, slot, &self.behavior.cx, self.moves, true);
+            let action = framed(
+                ui,
+                slot,
+                &self.behavior.cx,
+                &self.behavior.recorder,
+                self.moves,
+                true,
+            );
             self.picked.extend(action.map(|a| (*id, a)));
         }
         UiResponse::None
@@ -181,6 +196,7 @@ pub(crate) fn framed(
     ui: &mut Ui,
     slot: &mut Slot<Box<dyn Widget>>,
     cx: &Context,
+    rec: &Recorder,
     moves: &Moves,
     in_tile: bool,
 ) -> Option<FrameAction> {
@@ -222,7 +238,8 @@ pub(crate) fn framed(
         });
     }
     f.show_area(ui, frame, |ui, area| {
-        widget.ui_sized(ui, cx, widget_id, area.size, area.height)
+        let _g = rec.scope(widget.base_title());
+        widget.ui_sized(ui, cx, widget_id, area.size, area.height);
     })
     .action
 }
