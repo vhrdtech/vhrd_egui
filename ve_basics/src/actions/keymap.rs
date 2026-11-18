@@ -115,6 +115,16 @@ pub enum ProblemKind {
         /// The action's id.
         id: String,
     },
+    /// A global Alt+letter chord on the letter that opens a top-level menu ([`super::Actions::menu_mnemonic`]);
+    /// left out, the menu keeps it.
+    MenuMnemonicTaken {
+        /// The action's id.
+        id: String,
+        /// The chord.
+        chord: Chord,
+        /// The menu it would shadow.
+        menu: String,
+    },
     /// A chord a focused text edit keeps (Ctrl+C, Ctrl+Z, ...): it reaches the action only while no text edit
     /// has focus. A warning: [`super::Actions::warnings`].
     TextEditKeeps {
@@ -158,8 +168,13 @@ pub struct Problem {
 
 impl fmt::Display for Problem {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "{}: ", self.origin)?;
-        match &self.kind {
+        write!(f, "{}: {}", self.origin, self.kind)
+    }
+}
+
+impl fmt::Display for ProblemKind {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
             ProblemKind::BadId { id } => write!(
                 f,
                 "\"{id}\" is no action id (lower case, digits, '.', '_', '-'; at most 96)"
@@ -188,6 +203,15 @@ impl fmt::Display for Problem {
                     "mnemonic '{letter}' of {id} is not a letter of its title"
                 )
             }
+            _ => self.fmt_binding(f),
+        }
+    }
+}
+
+impl ProblemKind {
+    /// The problems of chords and of the keymap file.
+    fn fmt_binding(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
             ProblemKind::BadChord { id, text, error } => {
                 write!(f, "\"{text}\" for {id}: {error}; left out")
             }
@@ -200,6 +224,9 @@ impl fmt::Display for Problem {
             ),
             ProblemKind::DestructiveEnter { id } => {
                 write!(f, "{id} is destructive and never takes Enter; left out")
+            }
+            ProblemKind::MenuMnemonicTaken { id, chord, menu } => {
+                write!(f, "{chord} for {id} opens the {menu} menu; left out")
             }
             ProblemKind::TextEditKeeps { id, chord } => write!(
                 f,
@@ -215,8 +242,13 @@ impl fmt::Display for Problem {
             ProblemKind::Unreadable { message } => {
                 write!(f, "{message}; nothing applied, saving over it is refused")
             }
-            // spirit-level: allow(ui-more-count) the rest is not kept: the cap bounds memory on a hostile file
-            ProblemKind::Truncated { more } => write!(f, "{more} more problems not listed"),
+            ProblemKind::Truncated { more } => write!(f, "{more} more problems not listed"), // spirit-level: allow(ui-more-count) the rest is not kept: the cap bounds memory on a hostile file
+            Self::BadId { .. }
+            | Self::RepeatedId { .. }
+            | Self::BadGroup { .. }
+            | Self::BadMnemonic { .. } => {
+                unreachable!("declaration problems are formatted by Display")
+            }
         }
     }
 }

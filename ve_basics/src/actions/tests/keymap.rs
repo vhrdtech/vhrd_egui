@@ -215,7 +215,7 @@ fn a_rebind_at_run_time_is_refused_when_taken() {
         .rebind("edit.find", vec![chord("Ctrl+Shift+F")])
         .unwrap();
     assert_eq!(actions.by_chord(chord("Ctrl+Shift+F")), Some("edit.find"));
-    actions.reset_keys("edit.find");
+    actions.reset_keys("edit.find").unwrap();
     assert_eq!(actions.by_chord(chord("Ctrl+F")), Some("edit.find"));
     assert_eq!(actions.by_chord(chord("Ctrl+Shift+F")), None);
 }
@@ -255,4 +255,34 @@ fn many_rebinds_keep_one_entry() {
         actions.keymap_text().unwrap(),
         "\"edit.find\" = [\"Ctrl+H\"]\n"
     );
+}
+
+// Re-check B: a reset that would take a chord another action holds now is refused, naming the holder.
+#[test]
+fn a_reset_never_takes_a_chord_from_another_action() {
+    let mut actions = app();
+    assert_eq!(
+        actions.apply_keymap("\"file.save\" = \"F1\"\n", "k.toml"),
+        []
+    );
+    actions.rebind("view.theme", vec![chord("Ctrl+S")]).unwrap();
+    let refused = actions.reset_keys("file.save").unwrap_err();
+    assert_eq!(
+        refused.kind,
+        ProblemKind::ChordTaken {
+            id: "file.save".into(),
+            chord: chord("Ctrl+S"),
+            holder: "view.theme"
+        }
+    );
+    assert_eq!(
+        actions.get("file.save").unwrap().keys,
+        [chord("F1")],
+        "unchanged"
+    );
+    assert_eq!(actions.get("view.theme").unwrap().keys, [chord("Ctrl+S")]);
+    assert_eq!(actions.problems().count(), 0);
+    actions.rebind("view.theme", vec![]).unwrap();
+    actions.reset_keys("file.save").unwrap();
+    assert_eq!(actions.by_chord(chord("Ctrl+S")), Some("file.save"));
 }

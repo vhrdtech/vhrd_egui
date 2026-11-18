@@ -1,6 +1,6 @@
 //! Binding chords to actions: declared defaults, the keymap file, rebinds; saving the keymap.
 
-use super::doc::{KeymapBroken, KeymapDoc};
+use super::doc::{KeymapDoc, KeymapSaveError};
 use super::keymap::{self, Lines, Origin, Parsed, Problem, ProblemKind};
 use super::registry::Override;
 use super::{Actions, Chord, KEYMAP_CHORDS_PER_ACTION_MAX};
@@ -25,11 +25,11 @@ impl Actions {
         let mut problems = Vec::new();
         match keymap::parse(text, file, &lines) {
             Parsed::Unreadable(problem) => {
-                self.doc = KeymapDoc::broken(text, problem.clone());
+                self.doc = KeymapDoc::broken(text, file, problem.clone());
                 problems.push(problem);
             }
             Parsed::Entries(raw) => {
-                self.doc = KeymapDoc::loaded(text, &raw);
+                self.doc = KeymapDoc::loaded(text, file, &raw);
                 let mut seen: HashMap<&str, usize> = HashMap::new();
                 for r in &raw {
                     let origin = Origin::File {
@@ -109,7 +109,6 @@ impl Actions {
         if keys.len() > KEYMAP_CHORDS_PER_ACTION_MAX {
             return Err(refused(ProblemKind::BadValue { id: id.to_owned() }));
         }
-        let before = self.bind_problems.clone();
         let old = self.entries[i].over.take();
         // The newest claim comes last, so a chord held elsewhere refuses this rebind, not the holder.
         let seq = self.next_seq;
@@ -119,13 +118,7 @@ impl Actions {
             keys: keys.clone(),
             origin: Origin::Rebind,
         });
-        self.bind();
-        if let Some(problem) = self
-            .bind_problems
-            .iter()
-            .find(|p| !before.contains(p))
-            .cloned()
-        {
+        if let Err(problem) = self.rebound() {
             self.entries[i].over = old;
             self.bind();
             return Err(problem);
@@ -134,25 +127,82 @@ impl Actions {
         Ok(())
     }
 
-    /// Back to the declared chords for one action; its keymap entries go when the keymap is saved.
-    pub fn reset_keys(&mut self, id: &str) {
-        if let Some(i) = self.index(id) {
-            self.entries[i].over = None;
-            self.doc.remove(id);
-            self.bind();
+    /// Back to the declared chords for one action; saving then removes its keymap entries, every one of them
+    /// (an ignored repeat of the id would otherwise apply on the next load). Refused, with nothing changed,
+    /// when another action of its scope holds one of those chords now, naming it.
+    pub fn reset_keys(&mut self, id: &str) -> Result<(), Problem> {
+        let i = self.index(id).ok_or_else(|| Problem {
+            origin: Origin::Rebind,
+            kind: ProblemKind::UnknownAction { id: id.to_owned() },
+        })?;
+        let scope = self.entries[i].action.scope;
+        for &chord in &self.entries[i].defaults {
+            if let Some(holder) = self.holder(scope, chord).filter(|&h| h != i) {
+                return Err(Problem {
+                    origin: Origin::Rebind,
+                    kind: ProblemKind::ChordTaken {
+                        id: id.to_owned(),
+                        chord,
+                        holder: self.entries[holder].action.id,
+                    },
+                });
+            }
         }
+        let old = self.entries[i].over.take();
+        if let Err(problem) = self.rebound() {
+            self.entries[i].over = old;
+            self.bind();
+            return Err(problem);
+        }
+        self.doc.remove(id);
+        Ok(())
     }
 
-    /// The keymap file to save: the file last applied, with rebinds and resets patched in where they stand.
-    /// Comments, order, entries for unknown ids and refused chords stay as the user wrote them; new entries go
-    /// before the first table header. Saving is safe whenever this returns `Ok`; it is refused while the file
-    /// last applied could not be read, since writing over it would lose it.
-    pub fn keymap_text(&self) -> Result<String, KeymapBroken> {
-        self.doc.text(|id| {
-            self.index(id)
-                .map(|i| self.entries[i].defaults.iter().map(Chord::text).collect())
-                .unwrap_or_default()
-        })
+    /// A preview of the keymap file: the file last applied, with rebinds and resets patched in where they
+    /// stand. Comments, order, entries for unknown ids and refused chords stay as the user wrote them; new
+    /// entries go before the first table header. It does not see the file as it is on disk now: to save, use
+    /// [`Actions::save_keymap`] with the current text, so an outside edit is not overwritten.
+    pub fn keymap_text(&self) -> Result<String, KeymapSaveError> {
+        self.doc.text(|id| self.default_texts(id))
+    }
+
+    /// The text to write to the keymap file: `current`, the file as it is on disk now (empty when there is
+    /// none), with the rebinds and resets patched in. Refused when `current` cannot be read, or when an entry
+    /// this registry edits changed there since it was loaded ([`KeymapSaveError::Changed`]); entries the
+    /// registry did not edit may have changed freely. On success the result counts as loaded: write it.
+    pub fn save_keymap(&mut self, current: &str) -> Result<String, KeymapSaveError> {
+        let defaults: HashMap<&'static str, Vec<String>> = self
+            .entries
+            .iter()
+            .map(|e| (e.action.id, e.defaults.iter().map(Chord::text).collect()))
+            .collect();
+        self.doc
+            .save_onto(current, |id| defaults.get(id).cloned().unwrap_or_default())
+    }
+
+    /// The letter that opens a top-level menu with Alt: its name's first letter (`F` for File). A global
+    /// Alt+letter chord on that letter is refused ([`ProblemKind::MenuMnemonicTaken`]).
+    pub fn menu_mnemonic(name: &str) -> Option<char> {
+        name.chars()
+            .find(char::is_ascii_alphabetic)
+            .map(|c| c.to_ascii_uppercase())
+    }
+
+    fn default_texts(&self, id: &str) -> Vec<String> {
+        self.index(id)
+            .map(|i| self.entries[i].defaults.iter().map(Chord::text).collect())
+            .unwrap_or_default()
+    }
+
+    /// Bind again after an entry's override changed; a problem the change made is returned (the caller
+    /// reverts). The binding problems still describe the state before the change.
+    fn rebound(&mut self) -> Result<(), Problem> {
+        let before = self.bind_problems.clone();
+        self.bind();
+        match self.bind_problems.iter().find(|p| !before.contains(p)) {
+            Some(problem) => Err(problem.clone()),
+            None => Ok(()),
+        }
     }
 
     /// Bind every chord again: declared chords of actions without an override first (by id), then the
@@ -163,6 +213,33 @@ impl Actions {
         for e in &mut self.entries {
             e.keys.clear();
         }
+        let menus = self.top_menus();
+        let mut problems = Vec::new();
+        let mut warnings = Vec::new();
+        for (i, chord, origin) in self.claims() {
+            let id = self.entries[i].action.id.to_owned();
+            if let Some(kind) = self.refusal(i, chord, &menus) {
+                problems.push(Problem { origin, kind });
+                continue;
+            }
+            self.by_chord.entry(chord).or_default().push(i);
+            self.entries[i].keys.push(chord);
+            if chord.is_text_editing() {
+                warnings.push(Problem {
+                    origin,
+                    kind: ProblemKind::TextEditKeeps { id, chord },
+                });
+            }
+        }
+        keymap::cap(&mut problems);
+        keymap::cap(&mut warnings);
+        self.bind_problems = problems;
+        self.warnings = warnings;
+    }
+
+    /// Every chord claim in binding order: declared chords of actions without an override (by id), then the
+    /// overrides by their order.
+    fn claims(&self) -> Vec<(usize, Chord, Origin)> {
         let mut claims: Vec<(usize, Chord, Origin)> = Vec::new();
         for (i, e) in self.entries.iter().enumerate() {
             if e.over.is_none() {
@@ -181,41 +258,52 @@ impl Actions {
                 claims.extend(o.keys.iter().map(|&c| (i, c, o.origin.clone())));
             }
         }
-        let mut problems = Vec::new();
-        let mut warnings = Vec::new();
-        for (i, chord, origin) in claims {
-            let action = self.entries[i].action;
-            let id = action.id.to_owned();
-            if action.destructive && chord.key == Key::Enter && !chord.command && !chord.alt {
-                problems.push(Problem {
-                    origin,
-                    kind: ProblemKind::DestructiveEnter { id },
-                });
-                continue;
-            }
-            if let Some(holder) = self.holder(action.scope, chord) {
-                problems.push(Problem {
-                    origin,
-                    kind: ProblemKind::ChordTaken {
-                        id,
-                        chord,
-                        holder: self.entries[holder].action.id,
-                    },
-                });
-                continue;
-            }
-            self.by_chord.entry(chord).or_default().push(i);
-            self.entries[i].keys.push(chord);
-            if chord.is_text_editing() {
-                warnings.push(Problem {
-                    origin,
-                    kind: ProblemKind::TextEditKeeps { id, chord },
-                });
-            }
+        claims
+    }
+
+    /// The top-level menus with the letter that opens each.
+    fn top_menus(&self) -> Vec<(char, String)> {
+        let mut menus: Vec<&str> = self
+            .entries
+            .iter()
+            .filter_map(|e| e.menu.first().map(String::as_str))
+            .collect();
+        menus.sort_unstable();
+        menus.dedup();
+        menus
+            .into_iter()
+            .filter_map(|m| Some((Self::menu_mnemonic(m)?, m.to_owned())))
+            .collect()
+    }
+
+    /// Why entry `i` may not have `chord` now, if it may not.
+    fn refusal(&self, i: usize, chord: Chord, menus: &[(char, String)]) -> Option<ProblemKind> {
+        let action = &self.entries[i].action;
+        let id = action.id.to_owned();
+        let name = chord.key.name();
+        let alt_letter = chord.alt
+            && !chord.command
+            && !chord.shift
+            && action.scope.is_empty()
+            && name.len() == 1;
+        if let Some((_, menu)) = menus
+            .iter()
+            .find(|(m, _)| alt_letter && name.starts_with(*m))
+        {
+            return Some(ProblemKind::MenuMnemonicTaken {
+                id,
+                chord,
+                menu: menu.clone(),
+            });
         }
-        keymap::cap(&mut problems);
-        keymap::cap(&mut warnings);
-        self.bind_problems = problems;
-        self.warnings = warnings;
+        if action.destructive && chord.key == Key::Enter && !chord.command && !chord.alt {
+            return Some(ProblemKind::DestructiveEnter { id });
+        }
+        self.holder(action.scope, chord)
+            .map(|holder| ProblemKind::ChordTaken {
+                id,
+                chord,
+                holder: self.entries[holder].action.id,
+            })
     }
 }

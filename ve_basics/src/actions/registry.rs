@@ -56,7 +56,8 @@ pub struct Actions {
     pub(super) warnings: Vec<Problem>,
     pub(super) doc: KeymapDoc,
     pub(super) next_seq: u64,
-    pub(super) scopes: Vec<String>,
+    /// The active scopes, as the declarations spell them: setting them each frame allocates nothing.
+    pub(super) scopes: Vec<&'static str>,
     fired: VecDeque<Fired>,
     fired_dropped: usize,
     pub(super) menu_order: Vec<String>,
@@ -196,6 +197,16 @@ impl Actions {
         self.holder(scope, chord).map(|i| self.entries[i].action.id)
     }
 
+    /// Every action bound to `chord`, in any scope, as (scope, id), `""` for global: a settings window shows
+    /// where a chord is used and what it would clash with.
+    pub fn bound_to(&self, chord: Chord) -> Vec<(&'static str, &'static str)> {
+        self.by_chord.get(&chord).map_or_else(Vec::new, |held| {
+            held.iter()
+                .map(|&i| (self.entries[i].action.scope, self.entries[i].action.id))
+                .collect()
+        })
+    }
+
     /// Everything wrong with the declarations, the keymap file and binding, in that order, at most
     /// [`super::KEYMAP_PROBLEMS_MAX`] of the file's. Empty in a healthy app; a test can assert so.
     pub fn problems(&self) -> impl Iterator<Item = &Problem> {
@@ -212,10 +223,19 @@ impl Actions {
     }
 
     /// The keyboard scopes active now, innermost first (`["tracks"]` while the tracks panel has focus). An
-    /// action with a scope fires on its keys only while its scope is named here.
+    /// action with a scope fires on its keys only while its scope is named here; a scope no action has is
+    /// ignored. Meant for every frame: it reuses its storage.
     pub fn set_scopes(&mut self, scopes: &[&str]) {
         self.scopes.clear();
-        self.scopes.extend(scopes.iter().map(|&s| s.to_owned()));
+        for &scope in scopes {
+            if let Some(e) = self
+                .entries
+                .iter()
+                .find(|e| !scope.is_empty() && e.action.scope == scope)
+            {
+                self.scopes.push(e.action.scope);
+            }
+        }
     }
 
     /// Whether the action can run now: `Ok(())`, or `Err(reason)` saying why not and what enables it ("Nothing to

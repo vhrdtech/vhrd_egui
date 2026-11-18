@@ -1,8 +1,9 @@
 use super::*;
 use egui::{Id, Ui};
 
-/// Draw `ui` for two frames (focus settles), then a frame whose input is `events`: dispatch at its start, as
-/// an app does. Returns the events left for the widgets.
+/// Attach, draw `ui` for two frames (focus settles; `popup` then opens one, as a menu shown last frame), then
+/// a frame whose input is `events`: dispatch at its start, as an app does. Returns the events left for the
+/// widgets.
 fn frame_after(
     actions: &mut Actions,
     ui: impl Fn(&mut Ui),
@@ -10,18 +11,19 @@ fn frame_after(
     popup: bool,
 ) -> Vec<Event> {
     let ctx = egui::Context::default();
+    actions.attach(&ctx);
     for _ in 0..2 {
         ctx.run_ui(egui::RawInput::default(), |u| ui(u))
             .textures_delta
             .clear();
     }
+    if popup {
+        egui::Popup::open_id(&ctx, Id::new("menu"));
+    }
     ctx.begin_pass(egui::RawInput {
         events,
         ..Default::default()
     });
-    if popup {
-        egui::Popup::open_id(&ctx, Id::new("menu"));
-    }
     assert_eq!(actions.handle_input(&ctx), []);
     let left = ctx.input(|i| i.events.clone());
     ctx.end_pass().textures_delta.clear();
@@ -103,9 +105,8 @@ fn a_focused_slider_and_an_open_popup_keep_escape_and_the_arrows() {
             press(Key::G, Modifiers::NONE),
         ]
     };
-    // egui itself drops a widget's focus on Escape before the frame starts, so the slider keeps the arrows.
-    let left = frame_after(&mut actions, focused_slider, keys()[1..].to_vec(), false);
-    assert_eq!(left, keys()[1..2]);
+    let left = frame_after(&mut actions, focused_slider, keys(), false);
+    assert_eq!(left, keys()[..2]);
     assert_eq!(fired_ids(&mut actions), ["view.grid"]);
 
     let left = frame_after(&mut actions, nothing, keys(), true);
@@ -168,4 +169,42 @@ fn option_chords_type_in_a_mac_text_edit() {
     actions.handle_events(&mut events, Platform::Other, Focus::TextEdit);
     assert_eq!(events, []);
     assert_eq!(fired_ids(&mut actions), ["view.split"]);
+}
+
+// Re-check A: Escape leaves the field, the widget or the popup only, though egui drops the focus on it first.
+#[test]
+fn escape_stays_with_what_had_the_keyboard() {
+    let mut actions = Actions::from_list([Action::new("view.close", "Close").keys(&["Escape"])]);
+    let escape = || vec![press(Key::Escape, Modifiers::NONE)];
+    for ui in [focused_text, focused_button, focused_slider] {
+        assert_eq!(frame_after(&mut actions, ui, escape(), false), escape());
+        assert_eq!(actions.take_fired(), []);
+    }
+    let multiline = |ui: &mut Ui| {
+        let mut text = String::from("a\nb");
+        ui.text_edit_multiline(&mut text).request_focus();
+    };
+    assert_eq!(
+        frame_after(&mut actions, multiline, escape(), false),
+        escape()
+    );
+    assert_eq!(frame_after(&mut actions, nothing, escape(), true), escape());
+    assert_eq!(actions.take_fired(), []);
+
+    assert_eq!(frame_after(&mut actions, nothing, escape(), false), []);
+    assert_eq!(fired_ids(&mut actions), ["view.close"]);
+}
+
+#[test]
+fn the_focus_before_input_is_recorded_once_attached() {
+    let ctx = egui::Context::default();
+    assert_eq!(Focus::before_input(&ctx), None);
+    app().attach(&ctx);
+    ctx.run_ui(egui::RawInput::default(), focused_text)
+        .textures_delta
+        .clear();
+    ctx.run_ui(egui::RawInput::default(), nothing)
+        .textures_delta
+        .clear();
+    assert_eq!(Focus::before_input(&ctx), Some(Focus::TextEdit));
 }

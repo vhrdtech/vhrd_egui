@@ -24,8 +24,9 @@
 //!   ([`Chord::is_text_editing`]: Ctrl with A, Z, Y, C, X, V, arrows, Backspace, Delete, Home, End), Copy, Cut
 //!   and Paste, and on macOS every Option chord, which types characters there.
 //! - A focused widget (a button, a slider), an open popup or menu keeps Enter, Space, Escape, Tab and the
-//!   arrows without Ctrl or Alt ([`Chord::is_navigation`]). egui itself drops a widget's focus on Escape
-//!   before the frame starts, so Escape then reaches the actions; an open popup still keeps it.
+//!   arrows without Ctrl or Alt ([`Chord::is_navigation`]). Escape leaves the field or popup only: the focus
+//!   that counts is the one before egui handled the frame's input ([`Focus::before_input`], recorded once
+//!   [`Actions::attach`] or the first [`Actions::handle_input`] ran), since egui drops a focus on Escape there.
 //! - Everything else goes to the action bound in the innermost active scope, else to the global one.
 //!
 //! A chord is one key with modifiers: sequences (`Ctrl+K Ctrl+S`) are not supported. `Actions` holds handlers
@@ -45,9 +46,9 @@ mod tests;
 pub use inventory;
 
 pub use chord::{CHORD_CHARS_MAX, Chord, ChordError, Platform};
-pub use doc::KeymapBroken;
+pub use doc::KeymapSaveError;
 pub use find::{Found, MenuItem, MenuNode, QUERY_CHARS_MAX};
-pub use input::Focus;
+pub use input::{Focus, PASTED_BYTES_MAX};
 pub use keymap::{
     KEYMAP_BYTES_MAX, KEYMAP_CHORDS_PER_ACTION_MAX, KEYMAP_ENTRIES_MAX, KEYMAP_PROBLEMS_MAX,
     Origin, Problem, ProblemKind,
@@ -283,6 +284,13 @@ pub enum Refused {
         /// What tried to fire it.
         source: Source,
     },
+    /// The platform's Paste carried more than [`PASTED_BYTES_MAX`]; the text is dropped.
+    PasteTooLarge {
+        /// The action's id.
+        id: &'static str,
+        /// The pasted text's size.
+        size_bytes: usize,
+    },
 }
 
 impl fmt::Display for Refused {
@@ -290,6 +298,10 @@ impl fmt::Display for Refused {
         match self {
             Self::Unknown(id) => write!(f, "no action \"{id}\""),
             Self::Disabled { id, reason, .. } => write!(f, "{id}: {reason}"),
+            Self::PasteTooLarge { id, size_bytes } => write!(
+                f,
+                "{id}: the pasted text is {size_bytes} bytes, more than {PASTED_BYTES_MAX}; not pasted"
+            ),
         }
     }
 }

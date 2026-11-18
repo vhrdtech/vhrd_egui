@@ -232,3 +232,23 @@ fn scoped_keys_fire_only_while_their_scope_is_active() {
         "the scope wins, global keys still work"
     );
 }
+
+// Re-check D: a paste over the bound is refused, not queued.
+#[test]
+fn a_paste_over_the_bound_is_refused() {
+    let mut actions = app();
+    let big = "x".repeat(PASTED_BYTES_MAX + 1);
+    let mut events = vec![Event::Paste(big), Event::Paste("ok".into())];
+    let refused = actions.handle_events(&mut events, Platform::Other, Focus::None);
+    assert_eq!(
+        refused,
+        [Refused::PasteTooLarge {
+            id: "edit.paste",
+            size_bytes: PASTED_BYTES_MAX + 1
+        }]
+    );
+    assert_eq!(events, []);
+    let fired = actions.take_fired();
+    assert_eq!(fired.len(), 1);
+    assert_eq!(fired[0].pasted.as_deref(), Some("ok"));
+}

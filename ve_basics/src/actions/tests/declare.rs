@@ -260,3 +260,45 @@ fn scoped_chords_may_repeat_global_ones() {
         }]
     );
 }
+
+// Re-check E: every holder of a chord across scopes, for a settings window.
+#[test]
+fn bound_to_lists_every_scope() {
+    let mut actions = app();
+    let mut held = actions.bound_to(chord("Ctrl+F"));
+    held.sort_unstable();
+    assert_eq!(held, [("", "edit.find"), ("tracks", "tracks.remove")]);
+    assert_eq!(actions.bound_to(chord("Ctrl+Q")), []);
+    // A scope no action has is ignored.
+    actions.set_scopes(&["nowhere", "tracks"]);
+    assert_eq!(actions.scopes, ["tracks"]);
+}
+
+// Re-check E: a global Alt+letter would shadow the menu that letter opens.
+#[test]
+fn alt_letters_of_top_level_menus_are_refused() {
+    let actions = Actions::from_list([
+        Action::new("file.open", "Open").group("File"),
+        Action::new("edit.fill", "Fill").keys(&["Alt+F", "Alt+Shift+F", "Alt+G"]),
+        Action::new("tracks.fold", "Fold")
+            .scope("tracks")
+            .keys(&["Alt+F"]),
+    ]);
+    assert_eq!(Actions::menu_mnemonic("File"), Some('F'));
+    assert_eq!(
+        kinds(&actions),
+        [ProblemKind::MenuMnemonicTaken {
+            id: "edit.fill".into(),
+            chord: chord("Alt+F"),
+            menu: "File".into()
+        }]
+    );
+    assert_eq!(
+        actions.get("edit.fill").unwrap().keys,
+        [chord("Alt+Shift+F"), chord("Alt+G")]
+    );
+    assert_eq!(
+        actions.by_chord_in("tracks", chord("Alt+F")),
+        Some("tracks.fold")
+    );
+}
