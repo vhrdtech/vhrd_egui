@@ -3727,6 +3727,13 @@ dependencies = [
 ]
 
 [[package]]
+name = "ve_basics_benchmarks"
+version = "0.34.1"
+dependencies = [
+ "ve_basics",
+]
+
+[[package]]
 name = "ve_dash"
 version = "0.34.2"
 dependencies = [

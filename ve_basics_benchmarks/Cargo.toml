@@ -1,0 +1,16 @@
+[package]
+name = "ve_basics_benchmarks"
+description = "Benchmarks of ve_basics: the frame recorder's cost per frame and per scope, on and off"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+repository.workspace = true
+publish = false
+
+[dev-dependencies]
+ve_basics = { path = "../ve_basics", features = ["alloc-count"] }
+
+[[bench]]
+name = "recorder"
+harness = false

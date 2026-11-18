@@ -86,7 +86,8 @@ Cargo workspace, edition 2024, one shared version (`[workspace.package]`).
   (`gpu.rs`, `view3d.wgsl`), the `View3d` widget (`view.rs`), procedural `shapes`, the `view3d_demo` example.
   Rendering needs eframe's wgpu renderer; without it the view says so and picking still works.
 - `ve_basics/` — build info, non-selectable labels, hover cross-reference highlight, the fold for the rest of a
-  cut list (`FoldRest`), startup crash guard.
+  cut list (`FoldRest`), startup crash guard, the frame recorder (`perf/`: the `FrameRecorder` trait, the ring
+  behind it in `ring/`, its reads in `ring/read.rs`). `ve_basics_benchmarks/` measures what the recorder costs.
 - `ve_template/` — the app template as a command (`new`, `check-answers`, `compare`); the files it renders and the
   agent skill around it live in `egui_app_skill/` (`SKILL.md`, `templates/`, `references/`). A change to what gets
   generated gets a CHANGELOG entry marked `(PLT-2)` with upgrade notes; `cargo test -p ve_template` renders every

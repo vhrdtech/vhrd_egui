@@ -14,6 +14,7 @@ members = [
     "ve_frame",
     "ve_settle",
     "ve_basics",
+    "ve_basics_benchmarks",
     "ve_theme",
     "ve_backdrop",
     "ve_phosphor",

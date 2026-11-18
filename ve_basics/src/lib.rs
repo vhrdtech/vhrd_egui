@@ -11,6 +11,8 @@
 //! - [`StartupGuard`]: a start that died before its first frame moves the persisted state aside (PLT-4).
 //! - [`actions`]: one registry of the app's actions for menus, palette and keys, with a user keymap (CHR-1).
 //! - [`load_icon`]: decode a PNG into a texture, for an app's own icon (BAS-9; `ve_theme::topbar::Brand` draws it).
+//! - [`perf`]: the frame recorder behind the performance panel: frame times, named scopes, counters, repaint
+//!   causes, statistics over a window (BAS-10).
 //!
 //! The UI guide rule behind these (tooltips everywhere, highlight related items, nothing hidden) is in the repo's `AGENTS.md`.
 
@@ -22,6 +24,7 @@ mod fold_rest;
 mod hover_link;
 mod icon;
 mod labels;
+pub mod perf;
 mod scroll_strip;
 mod startup_guard;
 

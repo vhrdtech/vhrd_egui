@@ -17,5 +17,11 @@ inventory.workspace = true
 # the keymap file, with spans for file:line problems (CHR-1)
 toml = { workspace = true, features = ["std", "parse"] }
 
+[features]
+# perf::CountingAlloc, an allocator an app installs to count allocations per frame; holds the crate's only unsafe
+alloc-count = []
+# perf::ManualClock, a clock tests move by hand
+test-support = []
+
 [dev-dependencies]
 egui_kittest = { workspace = true, features = ["snapshot", "wgpu"] }
