@@ -201,6 +201,7 @@ pub(crate) fn framed(
     in_tile: bool,
 ) -> Option<FrameAction> {
     let Slot { id, widget, frame } = slot;
+    let instance = id.0;
     let spec = widget.frame_spec();
     let closeable = if widget.is_closeable() {
         Ok(())
@@ -238,7 +239,7 @@ pub(crate) fn framed(
         });
     }
     f.show_area(ui, frame, |ui, area| {
-        let _g = rec.scope(widget.base_title());
+        let _g = rec.scope_of(widget.base_title(), instance);
         widget.ui_sized(ui, cx, widget_id, area.size, area.height);
     })
     .action

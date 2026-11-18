@@ -32,9 +32,12 @@
 //!   [`Widget::frame_spec`] returns adds an LED, an ⓘ and the size switch.
 //! - [`Repainter`]: a cheap handle background tasks use to wake the UI.
 //! - Frame recording (WID-11): every frame goes into a `ve_basics::perf` recorder ([`ShellOptions::recorder`],
-//!   on by default), each widget's `logic` and `ui` in a scope named by its [`Widget::base_title`], with egui's
-//!   repaint causes, eframe's CPU time of the whole frame and the monitor's refresh rate. Code with a `Ui` marks
-//!   its own scopes through `ve_basics::perf::recorder(ui.ctx())`; [`Shell::readout`] holds the numbers to show.
+//!   on by default), one frame across egui's passes. Each widget's `ui` runs in a scope named by its
+//!   [`Widget::base_title`] and its `logic` in one named [`LOGIC_SCOPE`], both with the widget's slot as the
+//!   instance, so each widget has rows of its own. Also recorded: egui's repaint causes, eframe's CPU time of the
+//!   whole frame and the monitor's refresh rate. Code with a `Ui` marks its own scopes through the recorder
+//!   `ve_basics::perf::recorder(ui.ctx())` finds (fetch it once). [`Shell::readout`] holds the numbers to show;
+//!   once frames stop, the shell wakes once to show the readout as idle, and that frame is not recorded.
 //! - [`prelude`]: what a widget implementation needs in one `use`.
 //!
 //! Persistence: with [`ShellOptions::persist`] (default on) the tile tree, side panel and open windows go
@@ -50,7 +53,7 @@ mod tiles;
 mod widget_menu;
 mod windows;
 
-pub use perf::CAUSES_PER_FRAME_MAX;
+pub use perf::{CAUSES_PER_FRAME_MAX, LOGIC_SCOPE};
 pub use repainter::Repainter;
 pub use widget_menu::registered_widgets;
 
@@ -293,7 +296,7 @@ impl Shell {
         self.perf.begin(ui.ctx());
         let rec = self.perf.recorder.clone();
         for slot in self.state.widgets.iter_mut() {
-            let _g = rec.scope(slot.widget.base_title());
+            let _g = rec.scope_of(perf::LOGIC_SCOPE, slot.id.0);
             slot.widget.logic(&self.cx);
         }
 

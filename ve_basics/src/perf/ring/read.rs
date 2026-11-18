@@ -3,165 +3,55 @@
 use std::ops::Range;
 use std::time::Duration;
 
-use super::{Acc, COUNTER, Inner, NameKind, RingRecorder, State, TOP, ns};
+use super::{Acc, COUNTER, IDLE_AFTER, Inner, NameKind, Record, RingRecorder, State, TOP};
 use crate::perf::{
-    Bin, Breakdown, CauseCount, CounterStats, FrameSeries, Histogram, IDLE_AFTER, ScopeKind,
-    ScopeStats, Series, Stats,
+    Bin, Breakdown, CauseCount, CounterStats, FrameSeries, Histogram, ScopeId, ScopeKind,
+    ScopeStats, Series, Span, Stats, Summary,
 };
 
+/// Count `n` frames whose values sum to `sum` with the largest `max`: the largest as itself, the rest as their
+/// mean. Exact when `n` is 1.
+fn add_spread(h: &mut Histogram, sum: u64, max: u64, n: u32) {
+    match n {
+        0 => {}
+        1 => h.add(sum),
+        _ => {
+            h.add(max);
+            h.add_n(sum.saturating_sub(max) / u64::from(n - 1), n - 1);
+        }
+    }
+}
+
+/// Fold a name's sum over its current record into its histogram.
+fn flush(a: &mut Acc, h: &mut Histogram) {
+    if a.cur_seq.take().is_some() && a.cur_frames > 0 {
+        let mean = a.cur / u64::from(a.cur_frames);
+        h.add_n(mean, a.cur_frames);
+        a.last.get_or_insert(mean);
+    }
+}
+
 impl State {
-    pub(super) fn stats(&self, now: u64, window: Duration, inner: &Inner) -> Stats {
-        let t0 = self.t0(now, window, inner.settings.retention);
-        let (mut cpu, mut gap) = (Histogram::new(), Histogram::new());
-        let (mut frames, mut dropped) = (0u32, 0u32);
-        for (seq, _) in self.window(t0) {
-            let Some(r) = self.records.get(seq) else {
-                continue;
-            };
-            frames += u32::from(r.frames);
-            dropped += u32::from(r.dropped);
-            add_spread(
-                &mut cpu,
-                r.cpu_sum_ns,
-                r.cpu_max_ns,
-                self.cpu_frames(seq, r),
-            );
-            add_spread(&mut gap, r.gap_sum_ns, r.gap_max_ns, u32::from(r.smooth));
-        }
-        let span = self.first_ns.map_or(0, |f| now.saturating_sub(f.max(t0)));
-        #[expect(
-            clippy::cast_precision_loss,
-            reason = "a frame count and a span in nanoseconds, shown with 3 digits"
-        )]
-        let fps = if span > 0 {
-            f64::from(frames) * 1e9 / span as f64
-        } else {
-            0.0
-        };
-        let (budget, refresh_hz) = inner.budget_ns(self.measured_hz);
-        let idle = match (self.in_frame, self.last_end_ns) {
-            (false, Some(end)) => Some(Duration::from_nanos(now.saturating_sub(end)))
-                .filter(|idle| *idle > IDLE_AFTER),
-            _ => None,
-        };
-        #[expect(
-            clippy::cast_possible_truncation,
-            reason = "frames per second fit an f32"
-        )]
-        let fps = fps as f32;
-        Stats {
-            window,
-            frames,
-            fps,
-            interval: gap.summary(self.last_gap_ns),
-            cpu: cpu.summary(self.last_cpu_ns),
-            dropped,
-            budget: Duration::from_nanos(budget),
-            refresh_hz,
-            idle,
-        }
+    fn counted(&self, id: u16) -> bool {
+        self.names[usize::from(id)].kind == NameKind::Scope(ScopeKind::Counted)
     }
 
-    pub(super) fn breakdown(&mut self, t0: u64, out: &mut Breakdown) {
-        out.scopes.clear();
-        let mut acc = std::mem::take(&mut self.acc);
-        acc.clear();
-        acc.resize(self.names.len(), Acc::default());
-        let mut rest = Histogram::new();
-        let (mut cpu_total, mut rest_total) = (0u64, 0u64);
-        let mut seqs = std::mem::take(&mut self.seqs);
-        seqs.clear();
-        seqs.extend(self.window(t0));
-        for (seq, range) in &seqs {
-            let Some(r) = self.records.get(*seq) else {
-                continue;
-            };
-            let mut top = 0u64;
-            for e in range.clone().filter_map(|s| self.entries.get(s)) {
-                if e.parent == COUNTER {
-                    continue;
-                }
-                let Some(a) = acc.get_mut(usize::from(e.id)) else {
-                    continue;
-                };
-                a.total += u64::from(e.value);
-                a.seen = true;
-                if e.parent == TOP {
-                    a.top_level = true;
-                    if self.names[usize::from(e.id)].kind == NameKind::Scope(ScopeKind::Counted) {
-                        top += u64::from(e.value);
-                    }
-                } else if self.names[usize::from(e.id)].kind == NameKind::Scope(ScopeKind::Counted)
-                    && let Some(p) = acc.get_mut(usize::from(e.parent))
-                {
-                    p.children += u64::from(e.value);
-                }
-            }
-            let frames = self.cpu_frames(*seq, r);
-            let cpu = u64::from(r.cpu_sum_ns);
-            let r_rest = cpu.saturating_sub(top);
-            cpu_total += cpu;
-            rest_total += r_rest;
-            if frames > 0 {
-                rest.add_n(r_rest / u64::from(frames), frames);
-            }
-        }
-        let last_rest = seqs
-            .first()
-            .and_then(|(seq, range)| self.series_value(*seq, range.clone(), Series::Rest, None))
-            .map_or(0, |(mean, _, _)| mean);
-        for (id, a) in acc.iter().enumerate() {
-            if !a.seen {
-                continue;
-            }
-            let NameKind::Scope(kind) = self.names[id].kind else {
-                continue;
-            };
-            let id16 = u16::try_from(id).unwrap_or(u16::MAX);
-            let mut h = Histogram::new();
-            let mut last = None;
-            for (seq, range) in &seqs {
-                if let Some((mean, _, n)) =
-                    self.series_value(*seq, range.clone(), Series::Scope(""), Some(id16))
-                {
-                    last.get_or_insert(mean);
-                    h.add_n(mean, n);
-                }
-            }
-            #[expect(clippy::cast_precision_loss, reason = "a share shown with 2 digits")]
-            let share = match (kind, cpu_total) {
-                (ScopeKind::Counted, c) if c > 0 => a.total as f32 / c as f32,
-                _ => 0.0,
-            };
-            out.scopes.push(ScopeStats {
-                name: self.names[id].name,
-                kind,
-                time: h.summary(last.unwrap_or(0)),
-                total: Duration::from_nanos(a.total),
-                self_total: Duration::from_nanos(a.total.saturating_sub(a.children)),
-                share,
-                top_level: a.top_level,
-            });
-        }
-        out.scopes.sort_by_key(|s| std::cmp::Reverse(s.total));
-        out.rest = rest.summary(last_rest);
-        out.rest_total = Duration::from_nanos(rest_total);
-        self.acc = acc;
-        self.seqs = seqs;
-    }
-
-    /// One record's mean, largest value and frames of `series` (for a scope: `scope`, its id); `None` when it
-    /// has none.
-    pub(super) fn series_value(
+    /// One record's `series`: the sum over its frames, the largest of them and how many there are.
+    fn series_value(
         &self,
-        seq: u64,
-        entries: Range<u64>,
+        r: &Record,
+        entries: Option<Range<u64>>,
         series: Series,
-        scope: Option<u16>,
     ) -> Option<(u64, u64, u32)> {
-        let r = self.records.get(seq)?;
-        let frames = self.cpu_frames(seq, r);
-        let entries = || entries.clone().filter_map(|s| self.entries.get(s));
+        let frames = u32::from(r.frames);
+        let held = entries.is_some();
+        let entries = || {
+            entries
+                .clone()
+                .into_iter()
+                .flatten()
+                .filter_map(|s| self.entries.get(s))
+        };
         let (sum, max, n) = match series {
             Series::Cpu => (u64::from(r.cpu_sum_ns), u64::from(r.cpu_max_ns), frames),
             Series::Interval => (
@@ -169,47 +59,212 @@ impl State {
                 u64::from(r.gap_max_ns),
                 u32::from(r.smooth),
             ),
-            Series::Scope(_) => {
-                let id = scope?;
-                let v: u64 = entries()
-                    .filter(|e| e.id == id && e.parent != COUNTER)
-                    .map(|e| u64::from(e.value))
-                    .sum();
-                if v == 0 {
+            Series::Scope(ScopeId(id)) => {
+                if !held {
                     return None;
                 }
-                (v, v, u32::from(r.frames))
+                let mut found = false;
+                let sum: u64 = entries()
+                    .filter(|e| u32::from(e.id) == id && e.parent != COUNTER)
+                    .map(|e| {
+                        found = true;
+                        u64::from(e.value)
+                    })
+                    .sum();
+                if !found {
+                    return None;
+                }
+                (sum, sum / u64::from(frames.max(1)), frames)
             }
             Series::Rest => {
+                if !held {
+                    return None;
+                }
                 let top: u64 = entries()
-                    .filter(|e| {
-                        e.parent == TOP
-                            && self.names[usize::from(e.id)].kind
-                                == NameKind::Scope(ScopeKind::Counted)
-                    })
+                    .filter(|e| e.parent == TOP && self.counted(e.id))
                     .map(|e| u64::from(e.value))
                     .sum();
                 let sum = u64::from(r.cpu_sum_ns).saturating_sub(top);
-                (sum, sum, frames)
+                (sum, sum / u64::from(frames.max(1)), frames)
             }
         };
-        (n > 0).then(|| (sum / u64::from(n), max.max(sum / u64::from(n)), n))
+        (n > 0).then_some((sum, max, n))
     }
 
-    /// The repaint causes of the records from `t0` on, into `out`, most frequent first.
-    pub(super) fn causes(&self, t0: u64, out: &mut Vec<CauseCount>) {
-        let st = self;
-        let mut counts = [0u32; 16];
-        for (seq, _) in st.window(t0) {
-            if let Some(r) = st.records.get(seq) {
-                for (bit, c) in counts.iter_mut().enumerate() {
-                    if r.causes & (1 << bit) != 0 {
-                        *c += 1;
+    pub(super) fn stats(&self, now: u64, span: Span, inner: &Inner) -> Stats {
+        let (mut cpu, mut gap) = (Histogram::new(), Histogram::new());
+        let (mut frames, mut dropped, mut pauses) = (0u32, 0u32, 0u32);
+        let (mut oldest, mut newest) = (None, None);
+        for (_, r, _) in self.window(span) {
+            newest.get_or_insert(*r);
+            oldest = Some(r.start_ns);
+            frames += u32::from(r.frames);
+            dropped += u32::from(r.dropped);
+            pauses += u32::from(r.paused());
+            add_spread(
+                &mut cpu,
+                u64::from(r.cpu_sum_ns),
+                u64::from(r.cpu_max_ns),
+                u32::from(r.frames),
+            );
+            add_spread(
+                &mut gap,
+                u64::from(r.gap_sum_ns),
+                u64::from(r.gap_max_ns),
+                u32::from(r.smooth),
+            );
+        }
+        let covered = Span {
+            from_ns: oldest.map_or(span.to_ns, |o| span.from_ns.max(o.min(span.to_ns))),
+            to_ns: span.to_ns.min(now.saturating_add(1)),
+        };
+        // The newest frame exactly when the span reaches it, else its record's mean.
+        let reaches_now = self.last_end_ns.is_some_and(|e| e < span.to_ns);
+        let mean = |sum: u32, n: u8| u64::from(sum) / u64::from(n.max(1));
+        let (last_cpu, last_gap) = match (reaches_now, newest) {
+            (true, _) => (self.last_cpu_ns, self.last_gap_ns),
+            (false, Some(r)) => (mean(r.cpu_sum_ns, r.frames), mean(r.gap_sum_ns, r.smooth)),
+            (false, None) => (0, 0),
+        };
+        let len = covered.len().as_secs_f64();
+        #[expect(
+            clippy::cast_possible_truncation,
+            reason = "frames per second fit an f32"
+        )]
+        let fps = if len > 0.0 {
+            (f64::from(frames) / len) as f32
+        } else {
+            0.0
+        };
+        let (budget, refresh_hz) = inner.budget(self.measured_hz);
+        let idle = match (self.open, self.last_end_ns) {
+            (None, Some(end)) => Some(Duration::from_nanos(now.saturating_sub(end)))
+                .filter(|idle| *idle > IDLE_AFTER),
+            _ => None,
+        };
+        Stats {
+            span,
+            covered,
+            frames,
+            fps,
+            interval: gap.summary(last_gap),
+            cpu: cpu.summary(last_cpu),
+            dropped,
+            pauses,
+            budget: Duration::from_nanos(budget),
+            refresh_hz,
+            idle,
+        }
+    }
+
+    pub(super) fn breakdown(&mut self, span: Span, out: &mut Breakdown) {
+        out.scopes.clear();
+        let mut acc = std::mem::take(&mut self.acc);
+        let mut hists = std::mem::take(&mut self.hists);
+        acc.clear();
+        acc.resize(self.names.len(), Acc::default());
+        hists.resize_with(self.names.len(), Histogram::new);
+        let mut rest = Histogram::new();
+        let (mut cpu_total, mut rest_total, mut last_rest) = (0u64, 0u64, None);
+        let mut covered_from = span.to_ns;
+        for (record, r, entries) in self.window(span) {
+            let Some(entries) = entries else {
+                break;
+            };
+            covered_from = r.start_ns;
+            let frames = u32::from(r.frames);
+            if frames == 0 {
+                continue;
+            }
+            let mut top = 0u64;
+            for e in entries.filter_map(|s| self.entries.get(s)) {
+                if e.parent == COUNTER {
+                    continue;
+                }
+                let id = usize::from(e.id);
+                let v = u64::from(e.value);
+                if e.parent == TOP {
+                    if self.counted(e.id) {
+                        top += v;
                     }
+                } else if self.counted(e.id)
+                    && let Some(p) = acc.get_mut(usize::from(e.parent))
+                {
+                    p.children += v;
+                }
+                let (Some(a), Some(h)) = (acc.get_mut(id), hists.get_mut(id)) else {
+                    continue;
+                };
+                if !a.seen {
+                    a.seen = true;
+                    h.clear();
+                }
+                a.total += v;
+                a.top_level |= e.parent == TOP;
+                if a.cur_seq == Some(record) {
+                    a.cur += v;
+                } else {
+                    flush(a, h);
+                    a.cur_seq = Some(record);
+                    a.cur = v;
+                    a.cur_frames = frames;
+                }
+            }
+            let cpu = u64::from(r.cpu_sum_ns);
+            let r_rest = cpu.saturating_sub(top);
+            cpu_total += cpu;
+            rest_total += r_rest;
+            last_rest.get_or_insert(r_rest / u64::from(frames));
+            rest.add_n(r_rest / u64::from(frames), frames);
+        }
+        for (id, (a, h)) in acc.iter_mut().zip(&mut hists).enumerate() {
+            if !a.seen {
+                continue;
+            }
+            flush(a, h);
+            let name = &self.names[id];
+            let NameKind::Scope(kind) = name.kind else {
+                continue;
+            };
+            #[expect(clippy::cast_precision_loss, reason = "a share shown with 2 digits")]
+            let share = match (kind, cpu_total) {
+                (ScopeKind::Counted, c) if c > 0 => a.total as f32 / c as f32,
+                _ => 0.0,
+            };
+            out.scopes.push(ScopeStats {
+                id: ScopeId(u32::try_from(id).unwrap_or(u32::MAX)),
+                name: name.shared.clone(),
+                instance: name.key.instance,
+                kind,
+                time: h.summary(a.last.unwrap_or(0)),
+                total: Duration::from_nanos(a.total),
+                self_total: Duration::from_nanos(a.total.saturating_sub(a.children)),
+                share,
+                top_level: a.top_level,
+            });
+        }
+        out.scopes.sort_by_key(|s| std::cmp::Reverse(s.total));
+        out.covered = Span {
+            from_ns: covered_from,
+            to_ns: span.to_ns,
+        };
+        out.rest = rest.summary(last_rest.unwrap_or(0));
+        out.rest_total = Duration::from_nanos(rest_total);
+        self.acc = acc;
+        self.hists = hists;
+    }
+
+    /// The repaint causes of the records in `span`, into `out`, most frequent first.
+    pub(super) fn causes(&self, span: Span, out: &mut Vec<CauseCount>) {
+        let mut counts = [0u32; 16];
+        for (_, r, _) in self.window(span) {
+            for (bit, c) in counts.iter_mut().enumerate() {
+                if r.causes & (1 << bit) != 0 {
+                    *c += 1;
                 }
             }
         }
-        for (slot, &frames) in st.causes.iter().zip(&counts) {
+        for (slot, &frames) in self.causes.iter().zip(&counts) {
             if frames > 0 {
                 out.push(CauseCount {
                     label: slot.label.clone(),
@@ -219,31 +274,36 @@ impl State {
         }
         if counts[15] > 0 {
             out.push(CauseCount {
-                label: "other causes".to_owned(),
+                label: "other causes".into(),
                 frames: counts[15],
             });
         }
         out.sort_by_key(|c| std::cmp::Reverse(c.frames));
     }
 
-    /// The counters of the records from `t0` on, into `out`.
-    pub(super) fn counters(&self, t0: u64, out: &mut Vec<CounterStats>) {
-        let st = self;
-        for (_, range) in st.window(t0) {
-            for e in range.filter_map(|s| st.entries.get(s)) {
+    /// The counters of the records in `span` whose entries are held, into `out`.
+    pub(super) fn counters(&self, span: Span, out: &mut Vec<CounterStats>) {
+        for (_, _, entries) in self.window(span) {
+            let Some(entries) = entries else {
+                break;
+            };
+            for e in entries.filter_map(|s| self.entries.get(s)) {
                 if e.parent != COUNTER {
                     continue;
                 }
-                let name = st.names[usize::from(e.id)].name;
+                let name = &self.names[usize::from(e.id)].shared;
                 let v = u64::from(e.value);
-                match out.iter_mut().find(|c| std::ptr::eq(c.name, name)) {
+                match out
+                    .iter_mut()
+                    .find(|c| std::sync::Arc::ptr_eq(&c.name, name))
+                {
                     Some(c) => {
                         c.total += v;
                         c.worst = c.worst.max(v);
                         c.frames += 1;
                     }
                     None => out.push(CounterStats {
-                        name,
+                        name: name.clone(),
                         total: v,
                         worst: v,
                         frames: 1,
@@ -252,74 +312,75 @@ impl State {
             }
         }
     }
-}
 
-/// Count `n` frames whose values sum to `sum` with the largest `max`: the largest as itself, the rest as their
-/// mean. Exact when `n` is 1.
-fn add_spread(h: &mut Histogram, sum: u32, max: u32, n: u32) {
-    match n {
-        0 => {}
-        1 => h.add(u64::from(sum)),
-        _ => {
-            h.add(u64::from(max));
-            let rest = u64::from(sum.saturating_sub(max)) / u64::from(n - 1);
-            h.add_n(rest, n - 1);
+    fn bins(&self, series: Series, span: Span, out: &mut [Bin]) {
+        let len = span.to_ns.saturating_sub(span.from_ns);
+        if out.is_empty() || len == 0 {
+            return;
+        }
+        let cols = out.len() as u64;
+        let mut h = Histogram::new();
+        let mut col = None;
+        for (_, r, entries) in self.window(span) {
+            let Some((sum, max, n)) = self.series_value(r, entries, series) else {
+                continue;
+            };
+            // Below `cols`, a usize.
+            let c = (u128::from(r.start_ns - span.from_ns) * u128::from(cols) / u128::from(len))
+                as usize;
+            if col != Some(c) {
+                if let Some(prev) = col {
+                    finish(&mut out[prev], &h);
+                }
+                h.clear();
+                col = Some(c);
+            }
+            add_spread(&mut h, sum, max, n);
+            let b = &mut out[c];
+            let mean = sum / u64::from(n);
+            let (mean_d, max_d) = (Duration::from_nanos(mean), Duration::from_nanos(max));
+            b.min = if b.count == 0 {
+                mean_d
+            } else {
+                b.min.min(mean_d)
+            };
+            b.max = b.max.max(max_d);
+            b.count = b.count.saturating_add(n);
+        }
+        if let Some(c) = col {
+            finish(&mut out[c], &h);
+        }
+    }
+
+    fn histogram(&self, series: Series, span: Span, out: &mut Histogram) {
+        for (_, r, entries) in self.window(span) {
+            if let Some((sum, max, n)) = self.series_value(r, entries, series) {
+                add_spread(out, sum, max, n);
+            }
         }
     }
 }
 
+/// Mean, median and p99 of a finished column from its histogram.
+fn finish(b: &mut Bin, h: &Histogram) {
+    let s: Summary = h.summary(0);
+    b.mean = s.mean;
+    b.median = s.median;
+    b.p99 = s.p99;
+}
+
 impl FrameSeries for RingRecorder {
-    fn bins(&self, series: Series, t0_ns: u64, t1_ns: u64, out: &mut [Bin]) {
+    fn bins(&self, series: Series, span: Span, out: &mut [Bin]) {
         out.fill(Bin::default());
-        let inner = self.lock();
-        let Some(st) = &inner.state else {
-            return;
-        };
-        if out.is_empty() || t1_ns <= t0_ns {
-            return;
+        if let Some(st) = &self.lock().state {
+            st.bins(series, span, out);
         }
-        let scope = match series {
-            Series::Scope(name) => st
-                .names
-                .iter()
-                .position(|n| {
-                    n.kind != NameKind::Counter && n.kind != NameKind::Gauge && n.name == name
-                })
-                .and_then(|i| u16::try_from(i).ok()),
-            _ => None,
-        };
-        let span = t1_ns - t0_ns;
-        let cols = out.len() as u64;
-        for (seq, range) in st.window(t0_ns) {
-            let Some(r) = st.records.get(seq) else {
-                continue;
-            };
-            if r.start_ns >= t1_ns {
-                continue;
-            }
-            let Some((mean, max, n)) = st.series_value(seq, range, series, scope) else {
-                continue;
-            };
-            let col = usize::try_from(
-                ((r.start_ns - t0_ns) as u128 * u128::from(cols) / u128::from(span)) as u64,
-            )
-            .unwrap_or(usize::MAX)
-            .min(out.len() - 1);
-            let b = &mut out[col];
-            let (mean_d, max_d) = (Duration::from_nanos(mean), Duration::from_nanos(max));
-            if b.count == 0 {
-                b.min = mean_d;
-                b.max = max_d;
-                b.mean = Duration::ZERO;
-            } else {
-                b.min = b.min.min(mean_d);
-                b.max = b.max.max(max_d);
-            }
-            // Running mean weighted by frames.
-            let total = u64::from(b.count) + u64::from(n);
-            let prev = ns(b.mean) * u64::from(b.count);
-            b.mean = Duration::from_nanos((prev + mean * u64::from(n)) / total.max(1));
-            b.count = u32::try_from(total).unwrap_or(u32::MAX);
+    }
+
+    fn histogram(&self, series: Series, span: Span, out: &mut Histogram) {
+        out.clear();
+        if let Some(st) = &self.lock().state {
+            st.histogram(series, span, out);
         }
     }
 }

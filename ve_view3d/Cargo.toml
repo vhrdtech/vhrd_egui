@@ -21,3 +21,6 @@ egui_kittest = { workspace = true, features = ["snapshot", "wgpu"] }
 ve_theme = { path = "../ve_theme", version = "0.34" }
 ve_spacemouse = { path = "../ve_spacemouse", version = "0.34" }
 image = { version = "0.25", default-features = false, features = ["png"] }
+
+[lints]
+workspace = true

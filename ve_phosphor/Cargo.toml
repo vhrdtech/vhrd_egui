@@ -44,3 +44,6 @@ required-features = ["host"]
 [dev-dependencies]
 # Validates the WGSL in unit tests without a GPU (the same naga wgpu uses).
 naga = { version = "30", default-features = false, features = ["wgsl-in"] }
+
+[lints]
+workspace = true

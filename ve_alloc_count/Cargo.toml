@@ -1,0 +1,13 @@
+[package]
+name = "ve_alloc_count"
+description = "A counting global allocator: allocations and their bytes, process-wide, for the frame recorder"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+
+# The one crate here with unsafe code (a GlobalAlloc impl); it cannot inherit the workspace's forbid.
+[lints.rust]
+unsafe_code = "deny"

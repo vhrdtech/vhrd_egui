@@ -42,3 +42,6 @@ egui_kittest = { workspace = true, features = ["snapshot", "wgpu"] }
 ve_theme = { path = "../ve_theme", version = "0.34" }
 egui-wgpu.workspace = true
 image = { version = "0.25", default-features = false, features = ["png"] }
+
+[lints]
+workspace = true

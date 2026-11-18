@@ -16,3 +16,6 @@ inventory.workspace = true
 ve_macro = { path = "../ve_macro" }
 ve_frame = { path = "../ve_frame", version = "0.34" }
 tokio = { workspace = true }
+
+[lints]
+workspace = true

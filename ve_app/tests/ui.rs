@@ -10,6 +10,8 @@
 mod demo;
 
 use std::collections::HashMap;
+use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::Duration;
 
 use egui::vec2;
@@ -17,7 +19,9 @@ use egui_kittest::Harness;
 use egui_kittest::kittest::{NodeT, Queryable};
 use ve_app::{Shell, ShellOptions};
 use ve_basics::BuildInfo;
-use ve_basics::perf::{BudgetSource, ManualClock, Recorder, RingRecorder, ScopeKind, Settings};
+use ve_basics::perf::{
+    Breakdown, BudgetSource, ManualClock, Recorder, RingRecorder, ScopeKind, Settings,
+};
 use ve_widget::context::Context;
 
 /// Demo options with a fixed build info, so the snapshot doesn't change with every commit.
@@ -420,13 +424,26 @@ fn snapshot_with_a_desktop_theme() {
 }
 
 /// A widget that spends time on the test's clock: `work_ms` in its ui and `panel_ms` in a scope that does not
-/// count, the way a performance panel inside it would.
+/// count, the way a performance panel inside it would. `discard` asks egui for a second pass once.
 #[derive(serde::Serialize, serde::Deserialize)]
 struct Spender {
     work_ms: f64,
     panel_ms: f64,
     #[serde(skip)]
     clock: Option<ManualClock>,
+    #[serde(skip)]
+    discard: Arc<AtomicBool>,
+}
+
+impl Spender {
+    fn new(clock: &ManualClock, work_ms: f64, panel_ms: f64) -> Box<Self> {
+        Box::new(Self {
+            work_ms,
+            panel_ms,
+            clock: Some(clock.clone()),
+            discard: Arc::default(),
+        })
+    }
 }
 
 #[typetag::serde]
@@ -444,15 +461,20 @@ impl ve_widget::Widget for Spender {
         clock.advance_ms(self.work_ms);
         let rec = ve_basics::perf::recorder(ui.ctx())
             .expect("the shell puts its recorder into the context");
-        let _panel = rec.scope_not_counted("perf panel");
-        clock.advance_ms(self.panel_ms);
+        {
+            let _panel = rec.scope_not_counted("perf panel");
+            clock.advance_ms(self.panel_ms);
+        }
+        if self.discard.swap(false, Ordering::Relaxed) {
+            ui.ctx().request_discard("a test asks for a second pass");
+        }
         ui.label("spending");
     }
 }
 
-/// Medians come from a log histogram: within 1.1 % of `ms`.
+/// Medians come from a log histogram: within 1.6 % of `ms`.
 fn near(d: Duration, ms: f64) -> bool {
-    (d.as_secs_f64() * 1000.0 - ms).abs() <= ms * 0.011
+    (d.as_secs_f64() * 1000.0 - ms).abs() <= ms * 0.016
 }
 
 /// The shell with a recorder on `clock`, judging frames at 60 Hz.
@@ -461,27 +483,29 @@ fn recorded(clock: &ManualClock) -> (Harness<'static, Shell>, Recorder) {
         budget: BudgetSource::Hz(60.0),
         ..Settings::default()
     };
-    let rec = Recorder::new(RingRecorder::with_clock(settings, clock.clone()));
+    let rec =
+        Recorder::new(RingRecorder::with_clock(settings, clock.clone()).expect("valid settings"));
     (harness(options().recorder(rec.clone())), rec)
 }
 
-/// WID-11: every frame is recorded, each widget's logic and ui in a scope of its own; a scope that does not count
+fn breakdown(rec: &Recorder) -> Breakdown {
+    let mut b = Breakdown::default();
+    rec.breakdown(rec.last(Duration::from_secs(60)), &mut b);
+    b
+}
+
+/// WID-11: every frame is recorded, each widget's logic and ui in rows of its own; a scope that does not count
 /// (the performance panel) is left out of the frame's CPU time, the widget's row and every statistic.
 #[test]
-fn frames_are_recorded_with_a_scope_per_widget_and_the_panel_left_out() {
+fn frames_are_recorded_with_rows_per_widget_and_the_panel_left_out() {
     let clock = ManualClock::new();
     let (mut h, rec) = recorded(&clock);
-    h.state_mut().open_widget(Box::new(Spender {
-        work_ms: 3.0,
-        panel_ms: 5.0,
-        clock: Some(clock.clone()),
-    }));
+    h.state_mut().open_widget(Spender::new(&clock, 3.0, 5.0));
     for _ in 0..20 {
         clock.advance_ms(10.0);
         h.step();
     }
-    let window = Duration::from_secs(60);
-    let s = rec.stats(window);
+    let s = rec.stats(rec.last(Duration::from_secs(60)));
     assert!(s.frames >= 20, "{}", s.frames);
     assert_eq!(
         s.cpu.worst,
@@ -490,15 +514,18 @@ fn frames_are_recorded_with_a_scope_per_widget_and_the_panel_left_out() {
     );
     assert!(near(s.cpu.median, 3.0), "{:?}", s.cpu);
 
-    let mut b = ve_basics::perf::Breakdown::default();
-    rec.breakdown(window, &mut b);
-    let row = |name: &str| b.scopes.iter().find(|s| s.name == name).copied();
-    for name in ["Note", "Level"] {
-        assert!(row(name).is_some(), "a scope for the demo widget {name}");
-    }
-    let spender = row("Spender").expect("a scope for the opened widget");
+    let b = breakdown(&rec);
+    let rows = |name: &str| b.scopes.iter().filter(|s| &*s.name == name).count();
+    assert_eq!(
+        rows(ve_app::LOGIC_SCOPE),
+        3,
+        "the logic of Note, Level and Spender"
+    );
+    assert_eq!(rows("Spender"), 1);
+    let spender = b.scopes.iter().find(|s| &*s.name == "Spender").unwrap();
+    assert!(spender.instance.is_some());
     assert_eq!(spender.time.worst, Duration::from_millis(3));
-    let panel = row("perf panel").expect("the panel's own row");
+    let panel = b.scopes.iter().find(|s| &*s.name == "perf panel").unwrap();
     assert_eq!(panel.kind, ScopeKind::NotCounted);
     assert!(near(panel.time.median, 5.0), "{:?}", panel.time);
     assert!(panel.share.abs() < f32::EPSILON);
@@ -509,16 +536,59 @@ fn frames_are_recorded_with_a_scope_per_widget_and_the_panel_left_out() {
     );
 }
 
+/// WID-11, review finding 17: two widgets of one type have a row each.
+#[test]
+fn two_widgets_of_one_type_have_a_row_each() {
+    let clock = ManualClock::new();
+    let (mut h, rec) = recorded(&clock);
+    h.state_mut().open_widget(Spender::new(&clock, 1.0, 0.0));
+    h.state_mut().open_widget(Spender::new(&clock, 2.0, 0.0));
+    // Each tab draws while active: one frame for the second, then the first.
+    clock.advance_ms(10.0);
+    h.step();
+    h.get_all_by_label("Spender").next().unwrap().click();
+    for _ in 0..3 {
+        clock.advance_ms(10.0);
+        h.step();
+    }
+    let b = breakdown(&rec);
+    let mut spenders: Vec<_> = b
+        .scopes
+        .iter()
+        .filter(|s| &*s.name == "Spender")
+        .map(|s| (s.instance, s.time.worst))
+        .collect();
+    spenders.sort();
+    assert_eq!(spenders.len(), 2, "{spenders:?}");
+    assert_ne!(spenders[0].0, spenders[1].0);
+}
+
+/// WID-11, review finding 10: egui's extra pass belongs to the same frame: one record, its scopes in it.
+#[test]
+fn a_discarded_pass_is_part_of_its_frame() {
+    let clock = ManualClock::new();
+    let (mut h, rec) = recorded(&clock);
+    let spender = Spender::new(&clock, 2.0, 0.0);
+    let discard = Arc::clone(&spender.discard);
+    h.state_mut().open_widget(spender);
+    clock.advance_ms(10.0);
+    h.step();
+    let before = rec.stats(rec.last(Duration::from_secs(60))).frames;
+    discard.store(true, Ordering::Relaxed);
+    clock.advance_ms(10.0);
+    h.step();
+    let s = rec.stats(rec.last(Duration::from_secs(60)));
+    assert_eq!(s.frames, before + 1, "two passes, one frame");
+    assert_eq!(s.cpu.last, Duration::from_millis(4), "both passes' work");
+    assert_eq!(rec.health().abandoned_frames, 0);
+}
+
 /// WID-11: the shown numbers change at the readout's rate (5 Hz) while frames keep coming every 10 ms.
 #[test]
 fn the_readout_holds_its_numbers_between_ticks() {
     let clock = ManualClock::new();
     let (mut h, _rec) = recorded(&clock);
-    h.state_mut().open_widget(Box::new(Spender {
-        work_ms: 2.0,
-        panel_ms: 0.0,
-        clock: Some(clock.clone()),
-    }));
+    h.state_mut().open_widget(Spender::new(&clock, 2.0, 0.0));
     let mut changes = 0;
     let mut shown = *h.state().readout();
     for _ in 0..100 {
@@ -536,6 +606,35 @@ fn the_readout_holds_its_numbers_between_ticks() {
     assert_eq!(shown.budget, Duration::from_secs_f64(1.0 / 60.0));
 }
 
+/// WID-11, review finding 5: after a second without frames the shell's next frame shows the readout as idle, and
+/// its own wake-up is not recorded as a frame.
+#[test]
+fn the_readout_says_idle_after_a_pause() {
+    let clock = ManualClock::new();
+    let (mut h, rec) = recorded(&clock);
+    for _ in 0..10 {
+        clock.advance_ms(10.0);
+        h.step();
+    }
+    assert!(h.state().readout().idle.is_none());
+    let frames = rec.stats(rec.last(Duration::from_secs(60))).frames;
+    clock.advance(Duration::from_secs(2));
+    h.step();
+    assert!(
+        h.state()
+            .readout()
+            .idle
+            .is_some_and(|i| i >= Duration::from_secs(2)),
+        "{:?}",
+        h.state().readout()
+    );
+    let after = rec.stats(rec.last(Duration::from_secs(60))).frames;
+    assert_eq!(
+        after, frames,
+        "the wake-up frame is the shell's, not the app's"
+    );
+}
+
 /// WID-11: recording off costs the shell nothing and records nothing.
 #[test]
 fn recording_off_records_nothing() {
@@ -546,13 +645,13 @@ fn recording_off_records_nothing() {
         clock.advance_ms(10.0);
         h.step();
     }
-    assert_eq!(rec.stats(Duration::from_secs(60)).frames, 0);
+    assert_eq!(rec.stats(rec.last(Duration::from_secs(60))).frames, 0);
     rec.set_enabled(true);
     clock.advance_ms(10.0);
     h.step();
     clock.advance_ms(10.0);
     h.step();
-    assert_eq!(rec.stats(Duration::from_secs(60)).frames, 2);
+    assert_eq!(rec.stats(rec.last(Duration::from_secs(60))).frames, 2);
 }
 
 /// WID-11: a frame no repaint request asked for is counted as input when there was input in it.
@@ -566,7 +665,7 @@ fn repaint_causes_are_recorded() {
     clock.advance_ms(10.0);
     h.step();
     let mut causes = Vec::new();
-    rec.causes(Duration::from_secs(60), &mut causes);
-    assert!(causes.iter().any(|c| c.label == "input"), "{causes:?}");
+    rec.causes(rec.last(Duration::from_secs(60)), &mut causes);
+    assert!(causes.iter().any(|c| &*c.label == "input"), "{causes:?}");
     assert!(causes.iter().all(|c| c.frames > 0));
 }

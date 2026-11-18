@@ -26,3 +26,6 @@ tempfile = "3"
 eframe = { workspace = true, features = ["persistence", "wgpu"] }
 egui_kittest = { workspace = true, features = ["snapshot", "wgpu"] }
 ve_theme = { path = "../ve_theme", version = "0.34" }
+
+[lints]
+workspace = true

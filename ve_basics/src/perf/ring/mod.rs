@@ -2,20 +2,23 @@
 
 mod read;
 
+use std::collections::HashMap;
 use std::ops::Range;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex, MutexGuard};
 use std::time::Duration;
 
 use super::{
-    BUDGET_FALLBACK_HZ, Breakdown, BudgetSource, Cause, CauseCount, Clock, CounterStats,
-    FrameBegin, FrameEnd, FrameRecorder, GaugeValue, Granularity, ScopeKind, ScopeToken, Settings,
-    Stats, SystemClock, snap_refresh_hz,
+    Breakdown, BudgetSource, Cause, CauseCount, Clock, CounterStats, FrameBegin, FrameEnd,
+    FrameRecorder, GaugeValue, Granularity, Health, IDLE_AFTER, ScopeKind, ScopeName, ScopeToken,
+    Settings, SettingsError, Span, Stats, SystemClock, snap_refresh_hz,
 };
 
-/// Distinct names (scopes, counters, gauges) a recorder keeps; further names are not recorded.
+/// Distinct names (scopes and their instances, counters, gauges) a recorder keeps; further ones are not
+/// recorded.
 pub const NAMES_MAX: usize = 256;
-/// Distinct repaint causes a recorder tells apart; further ones count as "other causes".
+/// Repaint causes a recorder tells apart at once; one no longer in its history makes room for a new one,
+/// further ones count as "other causes".
 pub const CAUSES_MAX: usize = 15;
 /// Scopes open inside each other at most; deeper ones are not recorded.
 pub const SCOPE_DEPTH_MAX: usize = 32;
@@ -23,8 +26,10 @@ pub const SCOPE_DEPTH_MAX: usize = 32;
 pub const ENTRIES_PER_RECORD_MAX: usize = 1024;
 /// Frames one aggregate holds at most (a coarse granularity at a high refresh rate starts a new one).
 pub const FRAMES_PER_RECORD_MAX: u8 = u8::MAX;
-/// Records a ring holds at most, whatever the retention: 160 MiB of them.
+/// Records a ring holds at most, whatever the retention: 128 MiB of them.
 pub const RECORDS_MAX: usize = 1 << 22;
+/// Scope and counter entries a ring holds at most: 128 MiB of them.
+pub const ENTRIES_MAX: usize = 1 << 24;
 /// Continuous intervals kept to measure the display's refresh.
 const GAPS_KEPT: usize = 128;
 /// The measured refresh is recomputed every this many continuous frames.
@@ -38,6 +43,10 @@ const COUNTER: u16 = u16::MAX - 1;
 const OTHER_CAUSE: u16 = 1 << 15;
 /// Token flag: the outermost open scope that does not count.
 const OUTERMOST_NOT_COUNTED: u16 = 1;
+/// Token flag: a scope inside one of the same name, whose time is the outer one's.
+const RECURSIVE: u16 = 2;
+/// `Record::entries` bit: its first frame came after a pause.
+const PAUSED: u16 = 1 << 15;
 const _: () = assert!(
     CAUSES_MAX < 16,
     "causes are bits of a u16 with the top bit for other causes"
@@ -46,21 +55,27 @@ const _: () = assert!(
     NAMES_MAX < COUNTER as usize,
     "name ids stay below the parent markers"
 );
+const _: () = assert!(
+    ENTRIES_PER_RECORD_MAX < PAUSED as usize,
+    "a record's entry count leaves its top bit to the pause flag"
+);
 
 /// How a [`RingRecorder`] sizes its rings for its retention.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct Sizing {
     /// The highest frame rate the retention holds at; faster, the oldest frames go sooner.
     pub rate_hz: u32,
-    /// Scope and counter entries per record on average; more, and scope history is shorter than the frames'.
-    pub entries_per_record: u32,
+    /// Bytes for scope and counter entries (8 each); more scopes a frame than they hold for the retention, and
+    /// scope history is shorter than the frames' ([`Breakdown::covered`] says how long).
+    pub entries_bytes: usize,
 }
 
 impl Default for Sizing {
     fn default() -> Self {
         Self {
             rate_hz: 120,
-            entries_per_record: 2,
+            // Two entries a frame for 5 min at 120 Hz.
+            entries_bytes: 576_000,
         }
     }
 }
@@ -83,14 +98,14 @@ impl Sizing {
         n.clamp(16, RECORDS_MAX)
     }
 
-    /// Scope and counter entries for `settings`' retention.
-    pub fn entries(&self, settings: &Settings) -> usize {
-        (self.records(settings) * self.entries_per_record as usize).max(2 * ENTRIES_PER_RECORD_MAX)
+    /// Scope and counter entries: [`Self::entries_bytes`] worth, within two records' limit and [`ENTRIES_MAX`].
+    pub fn entries(&self) -> usize {
+        (self.entries_bytes / size_of::<Entry>()).clamp(2 * ENTRIES_PER_RECORD_MAX, ENTRIES_MAX)
     }
 
     /// Bytes the rings take when full.
     pub fn bytes(&self, settings: &Settings) -> usize {
-        self.records(settings) * size_of::<Record>() + self.entries(settings) * size_of::<Entry>()
+        self.records(settings) * size_of::<Record>() + self.entries() * size_of::<Entry>()
     }
 }
 
@@ -106,11 +121,22 @@ struct Record {
     gap_max_ns: u32,
     causes: u16,
     dropped: u16,
-    /// Its scope and counter entries: the newest this many before the next record's first.
+    /// Its scope and counter entries (the newest this many before the next record's first), and [`PAUSED`].
     entries: u16,
+    /// Its ended frames.
     frames: u8,
     /// Its continuous frames: those with an interval in `gap_*`.
     smooth: u8,
+}
+
+impl Record {
+    fn entry_count(&self) -> u16 {
+        self.entries & !PAUSED
+    }
+
+    fn paused(&self) -> bool {
+        self.entries & PAUSED != 0
+    }
 }
 
 /// A scope's time or a counter's value within one record.
@@ -174,28 +200,37 @@ impl<T: Copy> Ring<T> {
     fn newest_mut(&mut self) -> Option<&mut T> {
         self.total.checked_sub(1).and_then(|s| self.get_mut(s))
     }
+
+    fn newest(&self) -> Option<&T> {
+        self.total.checked_sub(1).and_then(|s| self.get(s))
+    }
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 enum NameKind {
     Scope(ScopeKind),
     Counter,
     Gauge,
 }
 
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Debug)]
 struct Name {
-    name: &'static str,
+    key: ScopeName,
     kind: NameKind,
+    shared: Arc<str>,
     gauge: u64,
     gauge_at_ns: u64,
+    /// The record, entry and parent of its newest entry, so a repeat within a record adds to it.
+    last_entry: Option<(u64, u64, u16)>,
 }
 
 #[derive(Clone, Debug)]
 struct CauseSlot {
     file: &'static str,
     line: u32,
-    label: String,
+    label: Arc<str>,
+    /// The newest record it was seen in; once that is gone, the slot may go to another cause.
+    last_record: u64,
 }
 
 /// The frame whose CPU time the host may still report ([`FrameRecorder::previous_frame_cpu`]).
@@ -207,13 +242,14 @@ struct Prev {
     newest: bool,
 }
 
-/// What was not recorded because a limit was reached.
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
-struct Lost {
-    names: u32,
-    depth: u32,
-    entries: u32,
-    outside_frame: u32,
+/// The frame in progress: what its begin found, booked at its end.
+#[derive(Clone, Copy, Debug)]
+struct Open {
+    start_ns: u64,
+    gap_ns: u64,
+    smooth: bool,
+    pause: bool,
+    dropped: u64,
 }
 
 /// Per-name sums of a breakdown read, reused between reads.
@@ -223,6 +259,26 @@ struct Acc {
     children: u64,
     top_level: bool,
     seen: bool,
+    /// The record being summed, its sum and frames, before it goes into the histogram.
+    cur_seq: Option<u64>,
+    cur: u64,
+    cur_frames: u32,
+    last: Option<u64>,
+}
+
+thread_local! {
+    // One byte per thread whose address tells threads apart; owned by `thread_mark`. Cheaper than
+    // `thread::current()`, which clones an `Arc` on every call.
+    static MARK: u8 = const { 0 };
+}
+
+/// An id of the calling thread, unique among live threads.
+fn thread_mark() -> usize {
+    MARK.with(|m| std::ptr::from_ref(m) as usize)
+}
+
+fn bump(n: &mut u32) {
+    *n = n.saturating_add(1);
 }
 
 /// The history and the frame in progress; exists only while recording.
@@ -231,13 +287,16 @@ struct State {
     records: Ring<Record>,
     entries: Ring<Entry>,
     names: Vec<Name>,
+    /// Name ids by the static name's address, instance and kind; a name with the same text at another address
+    /// is found by text once and then cached by its address too.
+    index: HashMap<(usize, usize, Option<u64>, NameKind), u16>,
     causes: Vec<CauseSlot>,
     stack: [u16; SCOPE_DEPTH_MAX],
     /// Per open scope: time of the not-counted scopes inside it so far, taken out of its own time.
     not_counted_inside: [u64; SCOPE_DEPTH_MAX],
     depth: usize,
-    in_frame: bool,
-    frame_start_ns: u64,
+    open: Option<Open>,
+    frame_thread: Option<usize>,
     not_counted_ns: u64,
     not_counted_open: u16,
     first_ns: Option<u64>,
@@ -249,9 +308,9 @@ struct State {
     gaps: [u32; GAPS_KEPT],
     gaps_total: usize,
     measured_hz: Option<f32>,
-    lost: Lost,
+    health: Health,
     acc: Vec<Acc>,
-    seqs: Vec<(u64, Range<u64>)>,
+    hists: Vec<super::Histogram>,
     #[cfg(feature = "alloc-count")]
     alloc_at_begin: Option<(u64, u64)>,
 }
@@ -265,7 +324,8 @@ struct Inner {
 }
 
 /// The default [`FrameRecorder`]: rings sized from the retention ([`Sizing`]), allocated when recording turns
-/// on and dropped when it turns off; nothing allocates per frame once the name and cause tables have filled.
+/// on and dropped when it turns off; nothing allocates per frame once the name and cause tables hold their
+/// entries.
 pub struct RingRecorder {
     enabled: AtomicBool,
     clock: Arc<dyn Clock>,
@@ -273,19 +333,27 @@ pub struct RingRecorder {
 }
 
 impl RingRecorder {
-    /// A recording recorder on the system clock.
-    pub fn new(settings: Settings) -> Self {
+    /// A recording recorder on the system clock; `Err` for settings out of range.
+    pub fn new(settings: Settings) -> Result<Self, SettingsError> {
         Self::with_clock(settings, SystemClock::default())
     }
 
     /// A recording recorder on `clock`.
-    pub fn with_clock(settings: Settings, clock: impl Clock + 'static) -> Self {
+    pub fn with_clock(
+        settings: Settings,
+        clock: impl Clock + 'static,
+    ) -> Result<Self, SettingsError> {
         Self::with_sizing(settings, Sizing::default(), clock)
     }
 
     /// A recording recorder on `clock`, its rings sized by `sizing`.
-    pub fn with_sizing(settings: Settings, sizing: Sizing, clock: impl Clock + 'static) -> Self {
-        Self {
+    pub fn with_sizing(
+        settings: Settings,
+        sizing: Sizing,
+        clock: impl Clock + 'static,
+    ) -> Result<Self, SettingsError> {
+        settings.validate()?;
+        Ok(Self {
             enabled: AtomicBool::new(true),
             clock: Arc::new(clock),
             inner: Mutex::new(Inner {
@@ -294,7 +362,7 @@ impl RingRecorder {
                 display_hz: None,
                 state: Some(State::new(&settings, &sizing)),
             }),
-        }
+        })
     }
 
     /// Bytes its rings take when full; 0 while off.
@@ -334,14 +402,26 @@ fn sat32(v: u64) -> u32 {
     u32::try_from(v).unwrap_or(u32::MAX)
 }
 
+/// The file's last two parts: `src/anim.rs` of `/home/x/app/src/anim.rs`.
+fn short_file(file: &str) -> &str {
+    let mut cut = file.len();
+    for _ in 0..2 {
+        match file[..cut].rfind(['/', '\\']) {
+            Some(i) => cut = i,
+            None => return file,
+        }
+    }
+    &file[cut + 1..]
+}
+
 impl Inner {
-    fn budget_ns(&self, measured_hz: Option<f32>) -> (u64, f32) {
+    fn budget(&self, measured_hz: Option<f32>) -> (u64, f32) {
         let hz = match self.settings.budget {
             BudgetSource::Hz(hz) => hz,
             BudgetSource::Display => self
                 .display_hz
                 .or(measured_hz)
-                .unwrap_or(BUDGET_FALLBACK_HZ),
+                .unwrap_or(super::BUDGET_FALLBACK_HZ),
         };
         (ns(super::budget_at(hz)), hz)
     }
@@ -351,14 +431,15 @@ impl State {
     fn new(settings: &Settings, sizing: &Sizing) -> Self {
         Self {
             records: Ring::new(sizing.records(settings)),
-            entries: Ring::new(sizing.entries(settings)),
+            entries: Ring::new(sizing.entries()),
             names: Vec::with_capacity(32),
+            index: HashMap::with_capacity(64),
             causes: Vec::with_capacity(CAUSES_MAX),
             stack: [0; SCOPE_DEPTH_MAX],
             not_counted_inside: [0; SCOPE_DEPTH_MAX],
             depth: 0,
-            in_frame: false,
-            frame_start_ns: 0,
+            open: None,
+            frame_thread: None,
             not_counted_ns: 0,
             not_counted_open: 0,
             first_ns: None,
@@ -370,60 +451,91 @@ impl State {
             gaps: [0; GAPS_KEPT],
             gaps_total: 0,
             measured_hz: None,
-            lost: Lost::default(),
+            health: Health::default(),
             acc: Vec::new(),
-            seqs: Vec::new(),
+            hists: Vec::new(),
             #[cfg(feature = "alloc-count")]
             alloc_at_begin: None,
         }
     }
 
-    fn intern(&mut self, name: &'static str, kind: NameKind) -> Option<u16> {
-        let same = |n: &Name| n.kind == kind && std::ptr::eq(n.name, name);
-        let found = self.names.iter().position(same).or_else(|| {
-            self.names
-                .iter()
-                .position(|n| n.kind == kind && n.name == name)
-        });
-        if let Some(i) = found {
-            return u16::try_from(i).ok();
-        }
-        if self.names.len() >= NAMES_MAX {
-            self.lost.names += 1;
-            return None;
-        }
-        self.names.push(Name {
-            name,
+    fn intern(&mut self, key: ScopeName, kind: NameKind) -> Option<u16> {
+        let by_addr = (
+            key.name.as_ptr() as usize,
+            key.name.len(),
+            key.instance,
             kind,
-            gauge: 0,
-            gauge_at_ns: 0,
-        });
-        u16::try_from(self.names.len() - 1).ok()
+        );
+        if let Some(&id) = self.index.get(&by_addr) {
+            return Some(id);
+        }
+        let by_text = self
+            .names
+            .iter()
+            .position(|n| n.kind == kind && n.key == key)
+            .and_then(|i| u16::try_from(i).ok());
+        let id = match by_text {
+            Some(id) => id,
+            None if self.names.len() < NAMES_MAX => {
+                self.names.push(Name {
+                    key,
+                    kind,
+                    shared: key.name.into(),
+                    gauge: 0,
+                    gauge_at_ns: 0,
+                    last_entry: None,
+                });
+                u16::try_from(self.names.len() - 1).ok()?
+            }
+            None => {
+                bump(&mut self.health.lost_names);
+                return None;
+            }
+        };
+        self.index.insert(by_addr, id);
+        Some(id)
     }
 
     fn cause_bit(&mut self, cause: &Cause<'_>) -> u16 {
+        let current = self.records.total.saturating_sub(1);
         let found = self.causes.iter().position(|c| {
             c.line == cause.line
                 && c.file == cause.file
-                && (!cause.file.is_empty() || c.label == cause.reason)
+                && (!cause.file.is_empty() || &*c.label == cause.reason)
         });
+        let free = || {
+            // A slot no held record names any more.
+            self.causes
+                .iter()
+                .position(|c| c.last_record < self.records.oldest())
+        };
         let i = match found {
             Some(i) => i,
-            None if self.causes.len() < CAUSES_MAX => {
-                let label = if cause.reason.is_empty() {
-                    format!("{}:{}", cause.file, cause.line)
+            None => {
+                let label: Arc<str> = if cause.reason.is_empty() {
+                    format!("{}:{}", short_file(cause.file), cause.line).into()
                 } else {
-                    cause.reason.to_owned()
+                    cause.reason.into()
                 };
-                self.causes.push(CauseSlot {
+                let slot = CauseSlot {
                     file: cause.file,
                     line: cause.line,
                     label,
-                });
-                self.causes.len() - 1
+                    last_record: current,
+                };
+                if self.causes.len() < CAUSES_MAX {
+                    self.causes.push(slot);
+                    self.causes.len() - 1
+                } else if let Some(i) = free() {
+                    self.causes[i] = slot;
+                    i
+                } else {
+                    bump(&mut self.health.lost_causes);
+                    return OTHER_CAUSE;
+                }
             }
-            None => return OTHER_CAUSE,
         };
+        self.causes[i].last_record = current;
         1 << i
     }
 
@@ -435,8 +547,7 @@ impl State {
         let mut gaps = self.gaps;
         let gaps = &mut gaps[..n];
         // The display's refresh is the shortest interval the app reaches; a low percentile ignores outliers.
-        let k = n / 10;
-        let (_, p10, _) = gaps.select_nth_unstable(k);
+        let (_, p10, _) = gaps.select_nth_unstable(n / 10);
         if *p10 > 0 {
             #[expect(
                 clippy::cast_precision_loss,
@@ -448,49 +559,46 @@ impl State {
     }
 
     fn begin(&mut self, now: u64, begin: FrameBegin, settings: &Settings, budget_ns: u64) {
-        if self.in_frame {
-            // The host began a frame without ending the last: that one is dropped from CPU statistics.
-            self.in_frame = false;
+        if self.open.take().is_some() {
+            // The host began a frame without ending the last: that one is not booked.
+            bump(&mut self.health.abandoned_frames);
         }
         let gap = self.last_start_ns.map(|s| now.saturating_sub(s));
-        let mut dropped = 0;
         let continuous = begin.continuous && gap.is_some();
-        if let (true, Some(gap)) = (continuous, gap) {
+        let gap = gap.unwrap_or(0);
+        let pause = continuous && gap > ns(IDLE_AFTER);
+        let smooth = continuous && !pause;
+        let mut dropped = 0;
+        if smooth {
             self.gaps[self.gaps_total % GAPS_KEPT] = sat32(gap);
             self.gaps_total += 1;
             if self.gaps_total.is_multiple_of(GAPS_REMEASURE) {
                 self.remeasure();
             }
-            let budgets = (gap + budget_ns / 2) / budget_ns.max(1);
-            dropped = budgets.saturating_sub(1);
-            self.last_gap_ns = gap;
+            dropped = ((gap + budget_ns / 2) / budget_ns.max(1)).saturating_sub(1);
         }
-        let new_record = match (settings.granularity, self.records.newest_mut()) {
-            (Granularity::EveryFrame, _) | (_, None) => true,
-            (Granularity::Every(span), Some(r)) => {
-                let span = ns(span).max(1);
-                r.start_ns / span != now / span || r.frames == FRAMES_PER_RECORD_MAX
-            }
-        };
+        let new_record = pause
+            || match (settings.granularity, self.records.newest()) {
+                (Granularity::EveryFrame, _) | (_, None) => true,
+                (Granularity::Every(span), Some(r)) => {
+                    let span = ns(span).max(1);
+                    r.start_ns / span != now / span || r.frames == FRAMES_PER_RECORD_MAX
+                }
+            };
         if new_record {
             self.records.push(Record {
                 start_ns: now,
                 ..Record::default()
             });
         }
-        if let Some(r) = self.records.newest_mut() {
-            r.frames = r.frames.saturating_add(1);
-            if let (true, Some(gap)) = (continuous, gap) {
-                r.smooth = r.smooth.saturating_add(1);
-                r.gap_sum_ns = r.gap_sum_ns.saturating_add(sat32(gap));
-                r.gap_max_ns = r.gap_max_ns.max(sat32(gap));
-            }
-            r.dropped = r
-                .dropped
-                .saturating_add(u16::try_from(dropped).unwrap_or(u16::MAX));
-        }
-        self.in_frame = true;
-        self.frame_start_ns = now;
+        self.open = Some(Open {
+            start_ns: now,
+            gap_ns: gap,
+            smooth,
+            pause,
+            dropped,
+        });
+        self.frame_thread = Some(thread_mark());
         self.not_counted_ns = 0;
         self.not_counted_open = 0;
         self.depth = 0;
@@ -501,33 +609,46 @@ impl State {
         }
         #[cfg(feature = "alloc-count")]
         {
-            self.alloc_at_begin = super::alloc_totals();
+            self.alloc_at_begin = ve_alloc_count::totals();
         }
     }
 
     fn end(&mut self, now: u64, end: &FrameEnd<'_>) {
-        if !self.in_frame {
+        let Some(open) = self.open.take() else {
             return;
-        }
+        };
         let cpu = now
-            .saturating_sub(self.frame_start_ns)
+            .saturating_sub(open.start_ns)
             .saturating_sub(self.not_counted_ns);
         let mut bits = 0;
         for c in end.causes {
             bits |= self.cause_bit(c);
         }
         #[cfg(feature = "alloc-count")]
-        if let (Some((n0, b0)), Some((n1, b1))) = (self.alloc_at_begin, super::alloc_totals()) {
+        if let (Some((n0, b0)), Some((n1, b1))) = (self.alloc_at_begin, ve_alloc_count::totals()) {
             for (name, v) in [("alloc.count", n1 - n0), ("alloc.bytes", b1 - b0)] {
-                if let Some(id) = self.intern(name, NameKind::Counter) {
+                if let Some(id) = self.intern(name.into(), NameKind::Counter) {
                     self.add_entry(id, COUNTER, v);
                 }
             }
         }
         if let Some(r) = self.records.newest_mut() {
+            r.frames += 1;
             r.cpu_sum_ns = r.cpu_sum_ns.saturating_add(sat32(cpu));
             r.cpu_max_ns = r.cpu_max_ns.max(sat32(cpu));
             r.causes |= bits;
+            r.dropped = r
+                .dropped
+                .saturating_add(u16::try_from(open.dropped).unwrap_or(u16::MAX));
+            if open.smooth {
+                r.smooth += 1;
+                r.gap_sum_ns = r.gap_sum_ns.saturating_add(sat32(open.gap_ns));
+                r.gap_max_ns = r.gap_max_ns.max(sat32(open.gap_ns));
+                self.last_gap_ns = open.gap_ns;
+            }
+            if open.pause {
+                r.entries |= PAUSED;
+            }
         }
         self.prev = Some(Prev {
             record: self.records.total - 1,
@@ -537,7 +658,7 @@ impl State {
         });
         self.last_cpu_ns = cpu;
         self.last_end_ns = Some(now);
-        self.in_frame = false;
+        self.depth = 0;
     }
 
     fn previous_frame_cpu(&mut self, cpu: Duration) {
@@ -550,86 +671,76 @@ impl State {
             r.cpu_sum_ns = sat32(sum);
             r.cpu_max_ns = r.cpu_max_ns.max(sat32(full));
         }
-        if prev.newest || self.in_frame {
+        if prev.newest || self.open.is_some() {
             self.last_cpu_ns = full;
         }
     }
 
-    /// Entry sequence numbers of the newest record.
-    fn newest_entries(&self) -> Range<u64> {
-        let n = self
-            .records
-            .total
-            .checked_sub(1)
-            .and_then(|s| self.records.get(s))
-            .map_or(0, |r| u64::from(r.entries));
-        let oldest = self.entries.oldest();
-        self.entries.total.saturating_sub(n).max(oldest)..self.entries.total
-    }
-
     fn add_entry(&mut self, id: u16, parent: u16, value: u64) {
-        if self.records.total == 0 {
+        let Some(newest) = self.records.total.checked_sub(1) else {
+            return;
+        };
+        let name = &mut self.names[usize::from(id)];
+        if let Some((record, seq, p)) = name.last_entry
+            && record == newest
+            && p == parent
+            && let Some(e) = self.entries.get_mut(seq)
+        {
+            e.value = e.value.saturating_add(sat32(value));
             return;
         }
-        let range = self.newest_entries();
-        for seq in range.clone() {
-            if let Some(e) = self.entries.get_mut(seq)
-                && e.id == id
-                && e.parent == parent
-            {
-                e.value = e.value.saturating_add(sat32(value));
-                return;
-            }
-        }
-        if (range.end - range.start) as usize >= ENTRIES_PER_RECORD_MAX {
-            self.lost.entries += 1;
+        let Some(r) = self.records.newest_mut() else {
+            return;
+        };
+        if usize::from(r.entry_count()) >= ENTRIES_PER_RECORD_MAX {
+            bump(&mut self.health.lost_entries);
             return;
         }
+        r.entries += 1;
+        name.last_entry = Some((newest, self.entries.total, parent));
         self.entries.push(Entry {
             value: sat32(value),
             id,
             parent,
         });
-        if let Some(r) = self.records.newest_mut() {
-            r.entries += 1;
-        }
     }
 
-    /// The records whose begin is at or after `t0`, newest first, with the sequence numbers of their entries
-    /// still held; without the newest when it holds only the frame in progress.
-    fn window(&self, t0: u64) -> impl Iterator<Item = (u64, Range<u64>)> + '_ {
-        let skip = usize::from(
-            self.in_frame
-                && self
-                    .records
-                    .total
-                    .checked_sub(1)
-                    .and_then(|s| self.records.get(s))
-                    .is_some_and(|r| r.frames <= 1),
-        );
+    /// The records whose begin falls into `span`, newest first, with the sequence numbers of their entries
+    /// when all of them are still held.
+    fn window(&self, span: Span) -> impl Iterator<Item = (u64, &Record, Option<Range<u64>>)> + '_ {
         let oldest = self.entries.oldest();
         (self.records.oldest()..self.records.total)
             .rev()
             .scan(self.entries.total, move |end, seq| {
                 let r = self.records.get(seq)?;
-                let start = end.saturating_sub(u64::from(r.entries));
-                let entries = start.max(oldest)..(*end).max(oldest);
+                let start = end.saturating_sub(u64::from(r.entry_count()));
+                let entries = (start >= oldest).then_some(start..*end);
                 *end = start;
-                Some((seq, r.start_ns, entries))
+                Some((seq, r, entries))
             })
-            .skip(skip)
-            .take_while(move |(_, start_ns, _)| *start_ns >= t0)
-            .map(|(seq, _, entries)| (seq, entries))
+            .skip_while(move |(_, r, _)| r.start_ns >= span.to_ns)
+            .take_while(move |(_, r, _)| r.start_ns >= span.from_ns)
     }
 
-    /// Frames of record `seq` with a CPU time: all but the one in progress.
-    fn cpu_frames(&self, seq: u64, r: &Record) -> u32 {
-        let open = self.in_frame && seq + 1 == self.records.total;
-        u32::from(r.frames) - u32::from(open)
-    }
-
-    fn t0(&self, now: u64, window: Duration, retention: Duration) -> u64 {
-        now.saturating_sub(ns(window.min(retention)))
+    fn health(&self, now: u64) -> Health {
+        let to_ns = now.saturating_add(1);
+        let from = |r: Option<&Record>| r.map_or(to_ns, |r| r.start_ns);
+        let oldest_held = self
+            .window(Span { from_ns: 0, to_ns })
+            .take_while(|(_, _, entries)| entries.is_some())
+            .last()
+            .map(|(_, r, _)| r);
+        Health {
+            frames_covered: Span {
+                from_ns: from(self.records.get(self.records.oldest())),
+                to_ns,
+            },
+            scopes_covered: Span {
+                from_ns: from(oldest_held),
+                to_ns,
+            },
+            ..self.health
+        }
     }
 }
 
@@ -652,7 +763,8 @@ impl FrameRecorder for RingRecorder {
         self.lock().settings
     }
 
-    fn set_settings(&self, settings: Settings) {
+    fn set_settings(&self, settings: Settings) -> Result<(), SettingsError> {
+        settings.validate()?;
         let mut inner = self.lock();
         let rebuild = settings.retention != inner.settings.retention
             || settings.granularity != inner.settings.granularity;
@@ -660,6 +772,7 @@ impl FrameRecorder for RingRecorder {
         if rebuild && inner.state.is_some() {
             inner.state = Some(State::new(&inner.settings, &inner.sizing));
         }
+        Ok(())
     }
 
     fn now_ns(&self) -> u64 {
@@ -682,7 +795,7 @@ impl FrameRecorder for RingRecorder {
         let Some(measured_hz) = inner.state.as_ref().map(|st| st.measured_hz) else {
             return;
         };
-        let (budget, _) = inner.budget_ns(measured_hz);
+        let (budget, _) = inner.budget(measured_hz);
         let settings = inner.settings;
         if let Some(st) = &mut inner.state {
             st.begin(now, begin, &settings, budget);
@@ -709,22 +822,26 @@ impl FrameRecorder for RingRecorder {
     }
 
     fn set_display_hz(&self, hz: Option<f32>) {
-        self.lock().display_hz = hz.filter(|hz| *hz >= 1.0);
+        self.lock().display_hz = hz.filter(|hz| super::BUDGET_HZ.contains(hz));
     }
 
-    fn scope_begin(&self, name: &'static str, kind: ScopeKind) -> Option<ScopeToken> {
+    fn scope_begin(&self, name: ScopeName, kind: ScopeKind) -> Option<ScopeToken> {
         if !self.is_enabled() {
             return None;
         }
-        let token = {
+        let payload = {
             let mut inner = self.lock();
             let st = inner.state.as_mut()?;
-            if !st.in_frame {
-                st.lost.outside_frame += 1;
+            if st.open.is_none() {
+                bump(&mut st.health.outside_frame);
+                return None;
+            }
+            if st.frame_thread != Some(thread_mark()) {
+                bump(&mut st.health.other_thread);
                 return None;
             }
             if st.depth >= SCOPE_DEPTH_MAX {
-                st.lost.depth += 1;
+                bump(&mut st.health.lost_depth);
                 return None;
             }
             // Everything inside a scope that does not count does not count either.
@@ -737,28 +854,23 @@ impl FrameRecorder for RingRecorder {
                 0 => TOP,
                 d => st.stack[d - 1],
             };
-            st.stack[st.depth] = id;
-            st.not_counted_inside[st.depth] = 0;
-            st.depth += 1;
             let mut flags = 0;
+            if st.stack[..st.depth].contains(&id) {
+                flags |= RECURSIVE;
+            }
             if kind == ScopeKind::NotCounted {
                 if st.not_counted_open == 0 {
                     flags |= OUTERMOST_NOT_COUNTED;
                 }
                 st.not_counted_open += 1;
             }
-            ScopeToken {
-                start_ns: 0,
-                id,
-                parent,
-                depth: u16::try_from(st.depth - 1).unwrap_or(u16::MAX),
-                flags,
-            }
+            let depth = st.depth;
+            st.stack[depth] = id;
+            st.not_counted_inside[depth] = 0;
+            st.depth += 1;
+            u64::from(id) | u64::from(parent) << 16 | (depth as u64) << 32 | u64::from(flags) << 48
         };
-        Some(ScopeToken {
-            start_ns: self.now(),
-            ..token
-        })
+        Some(ScopeToken::new(self.now(), payload))
     }
 
     fn scope_end(&self, token: ScopeToken) {
@@ -767,23 +879,29 @@ impl FrameRecorder for RingRecorder {
         let Some(st) = &mut inner.state else {
             return;
         };
-        if !st.in_frame || token.start_ns < st.frame_start_ns {
+        let p = token.payload();
+        // The fields scope_begin packed.
+        let (id, parent) = ((p & 0xffff) as u16, ((p >> 16) & 0xffff) as u16);
+        let (depth, flags) = (((p >> 32) & 0xffff) as usize, (p >> 48) as u16);
+        let current = st.open.is_some_and(|o| token.start_ns() >= o.start_ns);
+        if !current || depth >= st.depth || st.stack[depth] != id {
+            bump(&mut st.health.stale_scopes);
             return;
         }
-        let dur = now.saturating_sub(token.start_ns);
-        let depth = usize::from(token.depth);
-        if depth >= st.depth {
-            // Its guard outlived an outer scope's: the stack no longer holds it.
-            return;
+        // Scopes still open inside this one end unrecorded.
+        let inner_open = st.depth - depth - 1;
+        for _ in 0..inner_open {
+            bump(&mut st.health.stale_scopes);
         }
         st.depth = depth;
+        let dur = now.saturating_sub(token.start_ns());
         let inside = st.not_counted_inside[depth];
-        let not_counted = st.names.get(usize::from(token.id)).map(|n| n.kind)
+        let not_counted = st.names.get(usize::from(id)).map(|n| n.kind)
             == Some(NameKind::Scope(ScopeKind::NotCounted));
         // A counted scope keeps its counted time; a not-counted one shows all of its time on its own row.
         let (value, hidden) = if not_counted {
             st.not_counted_open = st.not_counted_open.saturating_sub(1);
-            if token.flags & OUTERMOST_NOT_COUNTED != 0 {
+            if flags & OUTERMOST_NOT_COUNTED != 0 {
                 st.not_counted_ns += dur;
             }
             (dur, dur)
@@ -793,7 +911,9 @@ impl FrameRecorder for RingRecorder {
         if let Some(outer) = depth.checked_sub(1) {
             st.not_counted_inside[outer] += hidden;
         }
-        st.add_entry(token.id, token.parent, value);
+        if flags & RECURSIVE == 0 {
+            st.add_entry(id, parent, value);
+        }
     }
 
     fn count(&self, name: &'static str, n: u64) {
@@ -801,7 +921,7 @@ impl FrameRecorder for RingRecorder {
             return;
         }
         if let Some(st) = &mut self.lock().state
-            && let Some(id) = st.intern(name, NameKind::Counter)
+            && let Some(id) = st.intern(name.into(), NameKind::Counter)
         {
             st.add_entry(id, COUNTER, n);
         }
@@ -813,7 +933,7 @@ impl FrameRecorder for RingRecorder {
         }
         let now = self.now();
         if let Some(st) = &mut self.lock().state
-            && let Some(id) = st.intern(name, NameKind::Gauge)
+            && let Some(id) = st.intern(name.into(), NameKind::Gauge)
         {
             let g = &mut st.names[usize::from(id)];
             g.gauge = value;
@@ -821,65 +941,67 @@ impl FrameRecorder for RingRecorder {
         }
     }
 
-    fn stats(&self, window: Duration) -> Stats {
+    fn stats(&self, span: Span) -> Stats {
         let now = self.now();
         let inner = self.lock();
         match &inner.state {
-            Some(st) => st.stats(now, window, &inner),
+            Some(st) => st.stats(now, span, &inner),
             None => Stats {
-                window,
+                span,
                 ..Stats::default()
             },
         }
     }
 
-    fn breakdown(&self, window: Duration, out: &mut Breakdown) {
-        let now = self.now();
+    fn breakdown(&self, span: Span, out: &mut Breakdown) {
         let mut inner = self.lock();
-        let retention = inner.settings.retention;
         match &mut inner.state {
-            Some(st) => {
-                let t0 = st.t0(now, window, retention);
-                st.breakdown(t0, out);
+            Some(st) => st.breakdown(span, out),
+            None => {
+                out.scopes.clear();
+                out.covered = Span::default();
+                out.rest = super::Summary::default();
+                out.rest_total = Duration::ZERO;
             }
-            None => *out = Breakdown::default(),
         }
     }
 
-    fn causes(&self, window: Duration, out: &mut Vec<CauseCount>) {
+    fn causes(&self, span: Span, out: &mut Vec<CauseCount>) {
         out.clear();
-        let now = self.now();
-        let inner = self.lock();
-        if let Some(st) = &inner.state {
-            st.causes(st.t0(now, window, inner.settings.retention), out);
+        if let Some(st) = &self.lock().state {
+            st.causes(span, out);
         }
     }
 
-    fn counters(&self, window: Duration, out: &mut Vec<CounterStats>) {
+    fn counters(&self, span: Span, out: &mut Vec<CounterStats>) {
         out.clear();
-        let now = self.now();
-        let inner = self.lock();
-        if let Some(st) = &inner.state {
-            st.counters(st.t0(now, window, inner.settings.retention), out);
+        if let Some(st) = &self.lock().state {
+            st.counters(span, out);
         }
     }
 
     fn gauges(&self, out: &mut Vec<GaugeValue>) {
         out.clear();
-        let inner = self.lock();
-        let Some(st) = &inner.state else {
-            return;
-        };
-        out.extend(
-            st.names
-                .iter()
-                .filter(|n| n.kind == NameKind::Gauge)
-                .map(|n| GaugeValue {
-                    name: n.name,
-                    value: n.gauge,
-                    at_ns: n.gauge_at_ns,
-                }),
-        );
+        if let Some(st) = &self.lock().state {
+            out.extend(
+                st.names
+                    .iter()
+                    .filter(|n| n.kind == NameKind::Gauge)
+                    .map(|n| GaugeValue {
+                        name: n.shared.clone(),
+                        value: n.gauge,
+                        at_ns: n.gauge_at_ns,
+                    }),
+            );
+        }
+    }
+
+    fn health(&self) -> Health {
+        let now = self.now();
+        match &self.lock().state {
+            Some(st) => st.health(now),
+            None => Health::default(),
+        }
     }
 }
 
@@ -889,8 +1011,12 @@ pub(super) fn record_bytes() -> (usize, usize) {
 }
 
 #[cfg(test)]
-pub(super) fn lost(rec: &RingRecorder) -> (u32, u32, u32, u32) {
-    let inner = rec.lock();
-    let l = inner.state.as_ref().map(|s| s.lost).unwrap_or_default();
-    (l.names, l.depth, l.entries, l.outside_frame)
+mod tests {
+    #[test]
+    fn files_are_cut_to_their_last_two_parts() {
+        assert_eq!(super::short_file("/home/x/app/src/anim.rs"), "src/anim.rs");
+        assert_eq!(super::short_file("src/anim.rs"), "src/anim.rs");
+        assert_eq!(super::short_file("anim.rs"), "anim.rs");
+        assert_eq!(super::short_file(r"C:\x\src\anim.rs"), r"src\anim.rs");
+    }
 }

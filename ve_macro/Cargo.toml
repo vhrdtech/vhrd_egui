@@ -12,3 +12,6 @@ proc-macro = true
 [dependencies]
 quote = "1"
 proc-macro2 = "1"
+
+[lints]
+workspace = true

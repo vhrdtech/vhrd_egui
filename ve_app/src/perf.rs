@@ -1,18 +1,25 @@
 //! The shell's frame recording (WID-11): frame begin and end, repaint causes, the display's refresh, the
-//! readout's held numbers.
+//! readout's held numbers and the one repaint that lets it say "idle".
 
 use std::time::Duration;
 
 use ve_basics::perf::{
-    Cause, FrameBegin, FrameEnd, Readout, ReadoutSettings, Recorder, RingRecorder, Settings,
+    Cause, FrameBegin, FrameEnd, IDLE_AFTER, Readout, ReadoutSettings, Recorder, RingRecorder,
+    Settings,
 };
 
 /// Repaint causes taken from one frame; further ones are left out.
 pub const CAUSES_PER_FRAME_MAX: usize = 16;
 
+/// The scope name of a widget's `logic`, one row per widget (its instance is the widget's slot).
+pub const LOGIC_SCOPE: &str = "widget logic";
+
 /// How often the display's refresh rate is read again, in nanoseconds (the window may move to another monitor).
 #[cfg(not(target_arch = "wasm32"))]
 const REFRESH_RECHECK_NS: u64 = 2_000_000_000;
+
+/// How long after [`IDLE_AFTER`] the shell wakes once to show the readout as idle.
+const IDLE_MARGIN: Duration = Duration::from_millis(100);
 
 /// A frame with no repaint request behind it and input in it.
 const INPUT: Cause<'static> = Cause::named("input");
@@ -24,17 +31,37 @@ pub(crate) struct Perf {
     pub(crate) readout: Readout,
     /// The host's CPU time of the previous frame, to hand on after the next begin.
     host_cpu: Option<Duration>,
+    /// What asked for this frame, taken at its first pass.
+    causes: Vec<egui::RepaintCause>,
+    /// This frame is recorded: it began in the first pass and ends with the last.
+    recording: bool,
+    /// This frame had input.
+    input: bool,
+    /// When the last recorded frame ended, on the recorder's clock.
+    last_end_ns: Option<u64>,
     #[cfg(not(target_arch = "wasm32"))]
     refresh_read_ns: Option<u64>,
 }
 
 impl Perf {
     pub(crate) fn new(recorder: Option<Recorder>, readout: ReadoutSettings) -> Self {
+        let readout = Readout::new(readout).unwrap_or_else(|e| {
+            log::warn!("perf readout settings refused ({e}); the defaults are used");
+            Readout::default()
+        });
+        let recorder = recorder.unwrap_or_else(|| {
+            Recorder::new(
+                RingRecorder::new(Settings::default()).expect("the default settings are valid"),
+            )
+        });
         Self {
-            recorder: recorder
-                .unwrap_or_else(|| Recorder::new(RingRecorder::new(Settings::default()))),
-            readout: Readout::new(readout),
+            recorder,
+            readout,
             host_cpu: None,
+            causes: Vec::new(),
+            recording: false,
+            input: false,
+            last_end_ns: None,
             #[cfg(not(target_arch = "wasm32"))]
             refresh_read_ns: None,
         }
@@ -67,8 +94,27 @@ impl Perf {
         }
     }
 
+    /// At the start of the shell's ui. egui may run several passes for one painted frame: only the first begins it.
     pub(crate) fn begin(&mut self, ctx: &egui::Context) {
-        if !self.recorder.is_enabled() {
+        if !self.recorder.is_enabled() || ctx.current_pass_index() > 0 {
+            return;
+        }
+        // Before the frame begins, so a frame after a pause first shows how long it was idle.
+        self.readout.update(&*self.recorder);
+        self.causes = ctx.repaint_causes();
+        self.input = ctx.input(|i| !i.events.is_empty() || i.pointer.is_moving());
+        // The shell's own wake-up to show "idle" is not the app's frame: nothing but its request, after a quiet
+        // second. egui lists every request of the last pass, delayed ones too, so the time decides.
+        let now = self.recorder.now_ns();
+        let quiet = self
+            .last_end_ns
+            .is_none_or(|t| Duration::from_nanos(now.saturating_sub(t)) >= IDLE_AFTER);
+        let own_wakeup = quiet
+            && !self.input
+            && !self.causes.is_empty()
+            && self.causes.iter().all(|c| c.file == file!());
+        self.recording = !own_wakeup;
+        if !self.recording {
             return;
         }
         self.recorder.frame_begin(FrameBegin {
@@ -79,14 +125,21 @@ impl Perf {
         }
     }
 
+    /// At the end of the shell's ui; a pass egui will discard is not the end of the frame.
     pub(crate) fn end(&mut self, ctx: &egui::Context) {
-        if !self.recorder.is_enabled() {
+        if !self.recording || ctx.will_discard() {
             return;
         }
-        let asked = ctx.repaint_causes();
+        self.recording = false;
         let mut causes = [SYSTEM; CAUSES_PER_FRAME_MAX];
         let mut n = 0;
-        for (slot, c) in causes.iter_mut().zip(&asked) {
+        if self.input {
+            causes[0] = INPUT;
+            n = 1;
+        }
+        // The shell's own idle request is never why a frame was painted: its wake-up is not recorded.
+        let asked = self.causes.iter().filter(|c| c.file != file!());
+        for (slot, c) in causes[n..].iter_mut().zip(asked) {
             *slot = Cause {
                 file: c.file,
                 line: c.line,
@@ -94,14 +147,51 @@ impl Perf {
             };
             n += 1;
         }
-        if n == 0 {
-            let input = ctx.input(|i| !i.events.is_empty() || i.pointer.is_moving());
-            causes[0] = if input { INPUT } else { SYSTEM };
-            n = 1;
-        }
         self.recorder.frame_end(&FrameEnd {
-            causes: &causes[..n],
+            causes: &causes[..n.max(1)],
         });
-        self.readout.update(&*self.recorder);
+        self.last_end_ns = Some(self.recorder.now_ns());
+        // One wake-up once the app goes quiet, so the readout can say so.
+        ctx.request_repaint_after(IDLE_AFTER + IDLE_MARGIN);
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use ve_alloc_count::{CountingAlloc, totals};
+
+    use super::*;
+
+    #[global_allocator]
+    static ALLOC: CountingAlloc = CountingAlloc;
+
+    fn allocs() -> u64 {
+        totals().map_or(0, |(n, _)| n)
+    }
+
+    /// WID-11, review finding 18: what the shell's own recording allocates per frame once the recorder's name and
+    /// cause tables hold their entries: one vector, egui's `repaint_causes` copy (the shell's own idle request
+    /// is in it every frame).
+    #[test]
+    fn recording_a_frame_allocates_only_egui_s_cause_list() {
+        let ctx = egui::Context::default();
+        let mut perf = Perf::new(None, ReadoutSettings::default());
+        let mut measured = Vec::new();
+        for i in 0..12 {
+            let mut n = 0;
+            let mut out = ctx.run_ui(egui::RawInput::default(), |ui| {
+                let before = allocs();
+                perf.begin(ui.ctx());
+                perf.end(ui.ctx());
+                n = allocs() - before;
+                if i % 3 == 0 {
+                    ui.ctx().request_repaint();
+                }
+            });
+            out.textures_delta.clear();
+            measured.push(n);
+        }
+        let steady = &measured[4..];
+        assert!(steady.iter().all(|&n| n == 1), "{measured:?}");
     }
 }

@@ -4,6 +4,7 @@ edition = "2024"
 license = "MIT OR Apache-2.0"
 repository = "https://github.com/vhrdtech/vhrd_egui"
 version = "0.34.2"
+rust-version = "1.88"
 
 [workspace]
 resolver = "3"
@@ -13,6 +14,7 @@ members = [
     "ve_dash",
     "ve_frame",
     "ve_settle",
+    "ve_alloc_count",
     "ve_basics",
     "ve_basics_benchmarks",
     "ve_theme",
@@ -23,6 +25,10 @@ members = [
     "ve_spacemouse",
     "ve_view3d",
 ]
+
+# Crates that opt in with `[lints] workspace = true`; ve_alloc_count holds the only unsafe code, with its own table.
+[workspace.lints.rust]
+unsafe_code = "forbid"
 
 [workspace.dependencies]
 egui = "0.36"

@@ -24,4 +24,8 @@ ve_widget = { path = "../ve_widget", version = "0.34" }
 [dev-dependencies]
 eframe = { workspace = true, features = ["persistence", "wgpu"] }
 egui_kittest = { workspace = true, features = ["eframe", "snapshot", "wgpu"] }
+ve_alloc_count = { path = "../ve_alloc_count" }
 ve_basics = { path = "../ve_basics", features = ["test-support"] }
+
+[lints]
+workspace = true

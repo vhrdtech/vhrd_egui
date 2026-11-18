@@ -6,6 +6,10 @@ edition.workspace = true
 license.workspace = true
 authors.workspace = true
 repository.workspace = true
+rust-version.workspace = true
+
+[lints]
+workspace = true
 
 [dependencies]
 egui.workspace = true
@@ -16,10 +20,11 @@ image = { version = "0.25", default-features = false, features = ["png"] }
 inventory.workspace = true
 # the keymap file, with spans for file:line problems (CHR-1)
 toml = { workspace = true, features = ["std", "parse"] }
+ve_alloc_count = { path = "../ve_alloc_count", version = "0.34", optional = true }
 
 [features]
-# perf::CountingAlloc, an allocator an app installs to count allocations per frame; holds the crate's only unsafe
-alloc-count = []
+# perf records allocations per frame (alloc.count, alloc.bytes) when the app installs ve_alloc_count::CountingAlloc
+alloc-count = ["dep:ve_alloc_count"]
 # perf::ManualClock, a clock tests move by hand
 test-support = []
 

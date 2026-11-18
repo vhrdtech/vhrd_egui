@@ -36,3 +36,6 @@ ve_theme = { path = "../ve_theme", version = "0.34" }
 [[example]]
 name = "sandbox"
 path = "examples/sandbox/main.rs"
+
+[lints]
+workspace = true

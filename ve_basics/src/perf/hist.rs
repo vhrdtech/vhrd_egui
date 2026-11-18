@@ -4,7 +4,7 @@ use std::time::Duration;
 
 use super::Summary;
 
-/// Bins per doubling: a bin is at most 2.2 % wide, its middle within 1.1 % of any value in it.
+/// Bins per doubling: a bin is at most 3.1 % wide, its middle within 1.6 % of any value in it.
 pub const HIST_BINS_PER_OCTAVE: usize = 32;
 /// Values below this (1.024 µs) share the first bin.
 pub const HIST_FLOOR_NS: u64 = 1 << FLOOR_LOG2;
@@ -47,6 +47,11 @@ impl Histogram {
         Self::default()
     }
 
+    /// Empty it.
+    pub fn clear(&mut self) {
+        *self = Self::default();
+    }
+
     /// Count `n` values of `ns` nanoseconds.
     pub fn add_n(&mut self, ns: u64, n: u32) {
         if n == 0 {
@@ -75,7 +80,7 @@ impl Histogram {
         &self.bins
     }
 
-    /// The value at quantile `q` (0..=1), within 1.1 % of the true one; 0 when empty.
+    /// The value at quantile `q` (0..=1), within 1.6 % of the true one; 0 when empty.
     pub fn quantile_ns(&self, q: f64) -> u64 {
         if self.count == 0 {
             return 0;

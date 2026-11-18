@@ -28,3 +28,6 @@ serde_json = "1"
 [dev-dependencies]
 eframe = { workspace = true, features = ["wgpu"] }
 egui_kittest = { workspace = true, features = ["snapshot", "wgpu"] }
+
+[lints]
+workspace = true

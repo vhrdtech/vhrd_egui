@@ -23,3 +23,6 @@ serde_json = "1"
 # the background of the playground example, with the shader
 ve_backdrop = { path = "../ve_backdrop", version = "0.34" }
 ve_theme = { path = "../ve_theme", version = "0.34" }
+
+[lints]
+workspace = true
