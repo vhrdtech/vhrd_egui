@@ -231,6 +231,12 @@ fn a_scope_that_does_not_count_leaves_the_statistics() {
     assert_eq!(panel.kind, ScopeKind::NotCounted);
     assert_eq!(panel.total, 25 * MS, "still shown as a row of its own");
     assert!(panel.share.abs() < f32::EPSILON);
+    let chart = b.scopes.iter().find(|s| s.name == "chart").unwrap();
+    assert_eq!(
+        chart.kind,
+        ScopeKind::NotCounted,
+        "inside the panel, so not counted"
+    );
     let app = b.scopes.iter().find(|s| s.name == "app").unwrap();
     assert!((app.share - 1.0).abs() < 1e-6);
     assert_eq!(b.rest_total, Duration::ZERO);
@@ -580,4 +586,34 @@ fn a_coarse_granularity_merges_scopes_by_name() {
     assert_eq!(b.scopes[0].total, 20 * MS);
     assert_eq!(b.scopes[0].time.count, 10);
     assert!(close(b.scopes[0].time.median, 2.0));
+}
+
+#[test]
+fn a_scope_that_does_not_count_inside_a_counted_one_leaves_its_time() {
+    let (rec, clock) = recorder(at(60.0));
+    for _ in 0..4 {
+        rec.frame_begin(FrameBegin { continuous: true });
+        {
+            let _widget = rec.scope("widget");
+            clock.advance_ms(3.0);
+            {
+                let _inner = rec.scope("inner");
+                clock.advance_ms(1.0);
+                let _panel = rec.scope_not_counted("perf panel");
+                clock.advance_ms(5.0);
+            }
+        }
+        rec.frame_end(&FrameEnd::default());
+        clock.advance_ms(10.0);
+    }
+    let s = rec.stats(Duration::from_secs(5));
+    assert_eq!(s.cpu.worst, 4 * MS);
+    let mut b = Breakdown::default();
+    rec.breakdown(Duration::from_secs(5), &mut b);
+    let row = |n: &str| *b.scopes.iter().find(|s| s.name == n).unwrap();
+    assert_eq!(row("widget").total, 16 * MS);
+    assert_eq!(row("widget").self_total, 12 * MS);
+    assert_eq!(row("inner").total, 4 * MS);
+    assert_eq!(row("perf panel").total, 20 * MS);
+    assert_eq!(b.rest_total, Duration::ZERO);
 }

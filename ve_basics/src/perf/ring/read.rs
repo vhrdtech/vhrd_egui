@@ -91,7 +91,9 @@ impl State {
                     if self.names[usize::from(e.id)].kind == NameKind::Scope(ScopeKind::Counted) {
                         top += u64::from(e.value);
                     }
-                } else if let Some(p) = acc.get_mut(usize::from(e.parent)) {
+                } else if self.names[usize::from(e.id)].kind == NameKind::Scope(ScopeKind::Counted)
+                    && let Some(p) = acc.get_mut(usize::from(e.parent))
+                {
                     p.children += u64::from(e.value);
                 }
             }

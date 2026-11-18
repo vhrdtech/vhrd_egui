@@ -233,6 +233,8 @@ struct State {
     names: Vec<Name>,
     causes: Vec<CauseSlot>,
     stack: [u16; SCOPE_DEPTH_MAX],
+    /// Per open scope: time of the not-counted scopes inside it so far, taken out of its own time.
+    not_counted_inside: [u64; SCOPE_DEPTH_MAX],
     depth: usize,
     in_frame: bool,
     frame_start_ns: u64,
@@ -353,6 +355,7 @@ impl State {
             names: Vec::with_capacity(32),
             causes: Vec::with_capacity(CAUSES_MAX),
             stack: [0; SCOPE_DEPTH_MAX],
+            not_counted_inside: [0; SCOPE_DEPTH_MAX],
             depth: 0,
             in_frame: false,
             frame_start_ns: 0,
@@ -724,12 +727,18 @@ impl FrameRecorder for RingRecorder {
                 st.lost.depth += 1;
                 return None;
             }
+            // Everything inside a scope that does not count does not count either.
+            let kind = match st.not_counted_open {
+                0 => kind,
+                _ => ScopeKind::NotCounted,
+            };
             let id = st.intern(name, NameKind::Scope(kind))?;
             let parent = match st.depth {
                 0 => TOP,
                 d => st.stack[d - 1],
             };
             st.stack[st.depth] = id;
+            st.not_counted_inside[st.depth] = 0;
             st.depth += 1;
             let mut flags = 0;
             if kind == ScopeKind::NotCounted {
@@ -762,16 +771,29 @@ impl FrameRecorder for RingRecorder {
             return;
         }
         let dur = now.saturating_sub(token.start_ns);
-        st.depth = usize::from(token.depth).min(st.depth);
-        if st.names.get(usize::from(token.id)).map(|n| n.kind)
-            == Some(NameKind::Scope(ScopeKind::NotCounted))
-        {
+        let depth = usize::from(token.depth);
+        if depth >= st.depth {
+            // Its guard outlived an outer scope's: the stack no longer holds it.
+            return;
+        }
+        st.depth = depth;
+        let inside = st.not_counted_inside[depth];
+        let not_counted = st.names.get(usize::from(token.id)).map(|n| n.kind)
+            == Some(NameKind::Scope(ScopeKind::NotCounted));
+        // A counted scope keeps its counted time; a not-counted one shows all of its time on its own row.
+        let (value, hidden) = if not_counted {
             st.not_counted_open = st.not_counted_open.saturating_sub(1);
             if token.flags & OUTERMOST_NOT_COUNTED != 0 {
                 st.not_counted_ns += dur;
             }
+            (dur, dur)
+        } else {
+            (dur.saturating_sub(inside), inside)
+        };
+        if let Some(outer) = depth.checked_sub(1) {
+            st.not_counted_inside[outer] += hidden;
         }
-        st.add_entry(token.id, token.parent, dur);
+        st.add_entry(token.id, token.parent, value);
     }
 
     fn count(&self, name: &'static str, n: u64) {
