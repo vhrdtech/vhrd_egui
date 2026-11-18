@@ -3,6 +3,7 @@
 mod read;
 
 use std::collections::HashMap;
+use std::hash::{BuildHasherDefault, Hasher};
 use std::ops::Range;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex, MutexGuard};
@@ -206,6 +207,35 @@ impl<T: Copy> Ring<T> {
     }
 }
 
+/// A name's key in the index: its text's address and length, its instance and kind.
+type NameAddr = (usize, usize, Option<u64>, NameKind);
+
+/// The name index's hasher: a multiply and rotate per word. Its keys are addresses and ids from the program
+/// itself, never outside input, so the flooding protection of the default hasher buys nothing and costs a
+/// quarter of a scope.
+#[derive(Default)]
+struct AddrHasher(u64);
+
+impl Hasher for AddrHasher {
+    fn finish(&self) -> u64 {
+        self.0
+    }
+
+    fn write(&mut self, bytes: &[u8]) {
+        for &b in bytes {
+            self.write_u64(u64::from(b));
+        }
+    }
+
+    fn write_u64(&mut self, n: u64) {
+        self.0 = (self.0.rotate_left(5) ^ n).wrapping_mul(0x51_7c_c1_b7_27_22_0a_95);
+    }
+
+    fn write_usize(&mut self, n: usize) {
+        self.write_u64(n as u64);
+    }
+}
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 enum NameKind {
     Scope(ScopeKind),
@@ -289,7 +319,7 @@ struct State {
     names: Vec<Name>,
     /// Name ids by the static name's address, instance and kind; a name with the same text at another address
     /// is found by text once and then cached by its address too.
-    index: HashMap<(usize, usize, Option<u64>, NameKind), u16>,
+    index: HashMap<NameAddr, u16, BuildHasherDefault<AddrHasher>>,
     causes: Vec<CauseSlot>,
     stack: [u16; SCOPE_DEPTH_MAX],
     /// Per open scope: time of the not-counted scopes inside it so far, taken out of its own time.
@@ -433,7 +463,7 @@ impl State {
             records: Ring::new(sizing.records(settings)),
             entries: Ring::new(sizing.entries()),
             names: Vec::with_capacity(32),
-            index: HashMap::with_capacity(64),
+            index: HashMap::with_capacity_and_hasher(64, BuildHasherDefault::default()),
             causes: Vec::with_capacity(CAUSES_MAX),
             stack: [0; SCOPE_DEPTH_MAX],
             not_counted_inside: [0; SCOPE_DEPTH_MAX],
