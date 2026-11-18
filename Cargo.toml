@@ -36,6 +36,7 @@ typetag = "0.2"
 inventory = "0.3"
 tokio = { version = "1", features = ["sync"] }
 web-time = "1"
+toml = { version = "1", default-features = false }
 
 # Debug builds with many widgets were slow: our code a little optimised and still debuggable, the dependencies
 # (egui, wgpu, ...) near release speed. Tests use it too.

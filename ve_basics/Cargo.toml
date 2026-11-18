@@ -15,7 +15,7 @@ image = { version = "0.25", default-features = false, features = ["png"] }
 # actions register themselves where they are declared (CHR-1)
 inventory.workspace = true
 # the keymap file, with spans for file:line problems (CHR-1)
-toml = { version = "1", default-features = false, features = ["std", "parse"] }
+toml = { workspace = true, features = ["std", "parse"] }
 
 [dev-dependencies]
 egui_kittest = { workspace = true, features = ["snapshot", "wgpu"] }

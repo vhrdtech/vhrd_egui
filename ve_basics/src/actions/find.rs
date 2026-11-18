@@ -40,25 +40,20 @@ const ID_MATCH_PENALTY: i32 = 10;
 impl Actions {
     /// The palette's lookup: actions whose title or id contain every word of `query` as a subsequence, best
     /// first, at most `limit`. Disabled actions are found too (the palette shows why they cannot run). An empty
-    /// query lists actions by menu, then order.
+    /// query lists them as the menus do, then those in no menu by title.
     pub fn find(&self, query: &str, limit: usize) -> Vec<Found> {
-        let query: String = query
-            .chars()
-            .take(QUERY_CHARS_MAX)
-            .collect::<String>()
-            .to_lowercase();
+        let query: String = query.chars().take(QUERY_CHARS_MAX).collect();
         let terms: Vec<Vec<char>> = query
             .split_whitespace()
-            .map(|t| t.chars().collect())
+            .map(|t| t.chars().map(fold).collect())
             .collect();
         if terms.is_empty() {
-            let mut all: Vec<_> = self.entries.iter().map(|e| &e.action).collect();
-            all.sort_by_key(|a| (a.group, a.order, a.title));
-            return all
+            return self
+                .menu_order_ids()
                 .into_iter()
                 .take(limit)
-                .map(|a| Found {
-                    id: a.id,
+                .map(|id| Found {
+                    id,
                     score: 0,
                     title_hits: Vec::new(),
                 })
@@ -91,17 +86,17 @@ impl Actions {
     }
 
     /// The menus: every action with a group, under its group path (`View/Panels` is the submenu Panels of View).
-    /// Top-level menus come in [`Actions::menu_order`], then by name.
+    /// Top-level menus come in [`Actions::menu_order`], then by name; destructive actions come last in theirs.
     pub fn menu_tree(&self) -> Vec<MenuNode> {
         let mut root = Building::default();
         for e in &self.entries {
             let a = &e.action;
-            if a.group.is_empty() {
+            if e.menu.is_empty() {
                 continue;
             }
             let mut node = &mut root;
-            for part in a.group.split('/').map(str::trim).filter(|p| !p.is_empty()) {
-                let at = match node.children.iter().position(|c| c.name == part) {
+            for part in &e.menu {
+                let at = match node.children.iter().position(|c| &c.name == part) {
                     Some(at) => at,
                     None => {
                         node.children.push(Building {
@@ -113,48 +108,78 @@ impl Actions {
                 };
                 node = &mut node.children[at];
             }
-            node.actions.push((a.order, a.title, a.id));
+            node.actions.push((a.destructive, a.order, a.title, a.id));
         }
         let mut menus: Vec<(MenuNode, i32)> =
             root.children.into_iter().map(Building::finish).collect();
         menus.sort_by(|(a, _), (b, _)| {
-            let rank = |name: &str| {
-                self.menu_order
-                    .iter()
-                    .position(|m| m == name)
-                    .unwrap_or(usize::MAX)
-            };
-            rank(&a.name).cmp(&rank(&b.name)).then(a.name.cmp(&b.name))
+            self.menu_rank(&a.name)
+                .cmp(&self.menu_rank(&b.name))
+                .then(a.name.cmp(&b.name))
         });
         menus.into_iter().map(|(m, _)| m).collect()
+    }
+
+    /// Every id as the menus list them, then the actions in no menu by title.
+    fn menu_order_ids(&self) -> Vec<&'static str> {
+        fn walk(items: &[MenuItem], out: &mut Vec<&'static str>) {
+            for item in items {
+                match item {
+                    MenuItem::Action(id) => out.push(id),
+                    MenuItem::Menu(menu) => walk(&menu.items, out),
+                }
+            }
+        }
+        let mut ids = Vec::with_capacity(self.entries.len());
+        for menu in self.menu_tree() {
+            walk(&menu.items, &mut ids);
+        }
+        let mut rest: Vec<_> = self
+            .entries
+            .iter()
+            .filter(|e| e.menu.is_empty())
+            .map(|e| &e.action)
+            .collect();
+        rest.sort_by_key(|a| (a.title, a.id));
+        ids.extend(rest.into_iter().map(|a| a.id));
+        ids
+    }
+
+    fn menu_rank(&self, name: &str) -> usize {
+        self.menu_order
+            .iter()
+            .position(|m| m == name)
+            .unwrap_or(usize::MAX)
     }
 }
 
 #[derive(Default)]
 struct Building {
     name: String,
-    actions: Vec<(i32, &'static str, &'static str)>,
+    actions: Vec<(bool, i32, &'static str, &'static str)>,
     children: Vec<Building>,
 }
 
 impl Building {
     /// The finished menu and its lowest order, where it sits in its parent.
     fn finish(self) -> (MenuNode, i32) {
-        let mut items: Vec<(i32, String, MenuItem)> = self
+        let mut items: Vec<(bool, i32, String, MenuItem)> = self
             .actions
             .into_iter()
-            .map(|(order, title, id)| (order, title.to_owned(), MenuItem::Action(id)))
+            .map(|(destructive, order, title, id)| {
+                (destructive, order, title.to_owned(), MenuItem::Action(id))
+            })
             .collect();
         for child in self.children {
             let (menu, order) = child.finish();
-            items.push((order, menu.name.clone(), MenuItem::Menu(menu)));
+            items.push((false, order, menu.name.clone(), MenuItem::Menu(menu)));
         }
-        items.sort_by(|a, b| a.0.cmp(&b.0).then_with(|| a.1.cmp(&b.1)));
-        let first = items.first().map_or(0, |i| i.0);
+        items.sort_by(|a, b| (a.0, a.1, &a.2).cmp(&(b.0, b.1, &b.2)));
+        let first = items.iter().map(|i| i.1).min().unwrap_or(0);
         (
             MenuNode {
                 name: self.name,
-                items: items.into_iter().map(|(_, _, item)| item).collect(),
+                items: items.into_iter().map(|(_, _, _, item)| item).collect(),
             },
             first,
         )
@@ -163,10 +188,7 @@ impl Building {
 
 /// Every term matched in `text`, each anywhere: the summed score and the matched char indices, sorted.
 fn match_terms(text: &str, terms: &[Vec<char>]) -> Option<(i32, Vec<usize>)> {
-    let chars: Vec<char> = text
-        .chars()
-        .map(|c| c.to_lowercase().next().unwrap_or(c))
-        .collect();
+    let chars: Vec<char> = text.chars().map(fold).collect();
     let mut score = 0;
     let mut hits = Vec::new();
     for term in terms {
@@ -223,4 +245,13 @@ fn score_hits(chars: &[char], hits: &[usize]) -> i32 {
         score += 10;
     }
     score
+}
+
+/// One char folded for matching, the same on the query and the text, so indices stay char indices: its first
+/// lower-case char (`İ` to `i`), final sigma as sigma.
+fn fold(c: char) -> char {
+    match c.to_lowercase().next().unwrap_or(c) {
+        'ς' => 'σ',
+        l => l,
+    }
 }

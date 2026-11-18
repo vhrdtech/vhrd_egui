@@ -7,37 +7,59 @@
 //! use ve_basics::actions::{Action, inventory};
 //!
 //! inventory::submit! {
-//!     Action::new("file.save", "Save").group("File").order(20).keys(&["Ctrl+S"])
+//!     Action::new("file.save", "Save").group("File").order(20).keys(&["Ctrl+S"]).mnemonic('S')
 //!         .help("Write the document to its file")
 //! }
 //! ```
 //!
-//! The app builds [`Actions`] from the registry once at start, applies the user's keymap file
-//! ([`Actions::apply_keymap`]), and then each frame: says which actions can run now and why the others cannot
-//! ([`Actions::set_enabled`]), dispatches key presses ([`Actions::handle_input`]) and runs what was fired
-//! ([`Actions::take_fired`], or a handler set with [`Actions::on`]). Menus read [`Actions::menu_tree`], the
-//! palette [`Actions::find`].
+//! The app builds [`Actions`] from the registry once at start and applies the user's keymap file
+//! ([`Actions::apply_keymap`]). Then each frame it says which actions can run now and why the others cannot
+//! ([`Actions::set_enabled`]), which toggles are on ([`Actions::set_checked`]) and which keyboard scopes are
+//! active ([`Actions::set_scopes`]), dispatches key presses ([`Actions::handle_input`]) and carries out what
+//! fired ([`Actions::take_fired`], or a handler set with [`Actions::on`]). Menus read [`Actions::menu_tree`],
+//! the palette [`Actions::find`].
+//!
+//! Who gets a key press:
+//! - A focused text edit keeps typing chords ([`Chord::is_typing`]), its editing chords
+//!   ([`Chord::is_text_editing`]: Ctrl with A, Z, Y, C, X, V, arrows, Backspace, Delete, Home, End), Copy, Cut
+//!   and Paste, and on macOS every Option chord, which types characters there.
+//! - A focused widget (a button, a slider), an open popup or menu keeps Enter, Space, Escape, Tab and the
+//!   arrows without Ctrl or Alt ([`Chord::is_navigation`]). egui itself drops a widget's focus on Escape
+//!   before the frame starts, so Escape then reaches the actions; an open popup still keeps it.
+//! - Everything else goes to the action bound in the innermost active scope, else to the global one.
+//!
+//! A chord is one key with modifiers: sequences (`Ctrl+K Ctrl+S`) are not supported. `Actions` holds handlers
+//! (`Box<dyn FnMut>`) and is not `Send`: it lives on the UI thread with the app.
 
+mod bind;
 mod chord;
+mod doc;
 mod find;
+mod input;
 mod keymap;
+mod registry;
 #[cfg(test)]
 mod tests;
 
 /// Re-exported so an app declares actions without its own `inventory` dependency.
 pub use inventory;
 
-pub use chord::{Chord, ChordError, Platform};
-pub use find::{Found, MenuItem, MenuNode};
-pub use keymap::{KEYMAP_BYTES_MAX, KEYMAP_ENTRIES_MAX, Origin, Problem, ProblemKind};
+pub use chord::{CHORD_CHARS_MAX, Chord, ChordError, Platform};
+pub use doc::KeymapBroken;
+pub use find::{Found, MenuItem, MenuNode, QUERY_CHARS_MAX};
+pub use input::Focus;
+pub use keymap::{
+    KEYMAP_BYTES_MAX, KEYMAP_CHORDS_PER_ACTION_MAX, KEYMAP_ENTRIES_MAX, KEYMAP_PROBLEMS_MAX,
+    Origin, Problem, ProblemKind,
+};
+pub use registry::{Actions, DEFAULT_MENU_ORDER, FIRED_MAX};
 
-use egui::{Context, Event};
 use std::borrow::Cow;
-use std::collections::{HashMap, VecDeque};
 use std::fmt;
+use std::panic::Location;
 
 /// An action as declared: id, words, place in the menus, default keys. Built with `const` methods so it can go
-/// into `inventory::submit!`.
+/// into `inventory::submit!`; [`Action::new`] records where it is declared, for problems.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct Action {
     id: &'static str,
@@ -47,14 +69,20 @@ pub struct Action {
     keys: &'static [&'static str],
     order: i32,
     help: &'static str,
+    scope: &'static str,
+    mnemonic: Option<char>,
     repeats: bool,
+    toggle: bool,
+    destructive: bool,
+    location: &'static Location<'static>,
 }
 
 inventory::collect!(Action);
 
 impl Action {
     /// An action with its stable id (`file.save`: lower case, digits, `.`, `_`, `-`) and the title menus and the
-    /// palette show (`Save`). No group, no keys, order 0.
+    /// palette show (`Save`). No group, no keys, order 0, global scope.
+    #[track_caller]
     pub const fn new(id: &'static str, title: &'static str) -> Self {
         Self {
             id,
@@ -64,7 +92,12 @@ impl Action {
             keys: &[],
             order: 0,
             help: "",
+            scope: "",
+            mnemonic: None,
             repeats: false,
+            toggle: false,
+            destructive: false,
+            location: Location::caller(),
         }
     }
 
@@ -99,9 +132,35 @@ impl Action {
         self
     }
 
-    /// Fire again on key repeat while the chord is held (undo, zoom steps). Off by default: a held key fires once.
-    pub const fn repeats(mut self, repeats: bool) -> Self {
-        self.repeats = repeats;
+    /// The keyboard scope its keys work in: a region or panel (`tracks`), active while [`Actions::set_scopes`]
+    /// names it. Its chords may repeat those of other scopes; inside the scope they win over global ones.
+    pub const fn scope(mut self, scope: &'static str) -> Self {
+        self.scope = scope;
+        self
+    }
+
+    /// The letter underlined in its menu entry, typed to pick it while the menu is open (Alt mnemonics). It
+    /// must be a letter of the title and unique in its menu.
+    pub const fn mnemonic(mut self, letter: char) -> Self {
+        self.mnemonic = Some(letter);
+        self
+    }
+
+    /// Fire again on key repeat while the chord is held (undo, zoom steps). Without it a held key fires once.
+    pub const fn repeats(mut self) -> Self {
+        self.repeats = true;
+        self
+    }
+
+    /// A toggle: it has an on or off state ([`Actions::set_checked`]) that menus show as a check mark.
+    pub const fn toggle(mut self) -> Self {
+        self.toggle = true;
+        self
+    }
+
+    /// Destroys something: menus put it last, in the danger colour, ending in "…", and it never takes Enter.
+    pub const fn destructive(mut self) -> Self {
+        self.destructive = true;
         self
     }
 
@@ -115,7 +174,7 @@ impl Action {
         self.title
     }
 
-    /// The menu path, empty when in no menu.
+    /// The menu path as declared, empty when in no menu.
     pub const fn menu_group(&self) -> &'static str {
         self.group
     }
@@ -139,12 +198,42 @@ impl Action {
     pub const fn help_text(&self) -> &'static str {
         self.help
     }
+
+    /// The keyboard scope, empty for global.
+    pub const fn key_scope(&self) -> &'static str {
+        self.scope
+    }
+
+    /// The menu mnemonic letter, if any.
+    pub const fn mnemonic_letter(&self) -> Option<char> {
+        self.mnemonic
+    }
+
+    /// Whether a held key fires it again.
+    pub const fn is_repeating(&self) -> bool {
+        self.repeats
+    }
+
+    /// Whether it is a toggle.
+    pub const fn is_toggle(&self) -> bool {
+        self.toggle
+    }
+
+    /// Whether it destroys something.
+    pub const fn is_destructive(&self) -> bool {
+        self.destructive
+    }
+
+    /// Where it is declared.
+    pub const fn location(&self) -> &'static Location<'static> {
+        self.location
+    }
 }
 
 /// Where a fired action came from.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Source {
-    /// A key chord.
+    /// A key chord, or Copy, Cut or Paste from the platform.
     Key,
     /// The menu row or a menu button.
     Menu,
@@ -158,13 +247,26 @@ pub enum Source {
     Code,
 }
 
-/// An action that ran without a handler: the app carries it out.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+/// An action that fired: the handler gets it, or the app takes it with [`Actions::take_fired`].
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Fired {
     /// The action's id.
     pub id: &'static str,
     /// What fired it.
     pub source: Source,
+    /// The clipboard text when the platform's Paste fired it.
+    pub pasted: Option<String>,
+}
+
+impl Fired {
+    /// An action fired without pasted text.
+    pub fn new(id: &'static str, source: Source) -> Self {
+        Self {
+            id,
+            source,
+            pasted: None,
+        }
+    }
 }
 
 /// Why an action did not run.
@@ -194,305 +296,17 @@ impl fmt::Display for Refused {
 
 impl std::error::Error for Refused {}
 
-/// One action as it stands now: its declaration, its bound chords and whether it can run.
+/// One action as it stands now: its declaration, its chords and whether it can run.
 #[derive(Clone, Copy, Debug)]
 pub struct ActionState<'a> {
     /// The declaration.
     pub action: &'a Action,
     /// The chords bound now: the defaults or the keymap's, minus refused ones. The first is the one to show.
     pub keys: &'a [Chord],
+    /// The declared chords that parsed, for a settings window's "reset" and "default" column.
+    pub default_keys: &'a [Chord],
     /// `Err(reason)` when it cannot run now.
     pub enabled: Result<(), &'a str>,
-}
-
-/// Most fired actions kept for [`Actions::take_fired`]; older ones are dropped and counted.
-pub const FIRED_MAX: usize = 64;
-
-type Handler = Box<dyn FnMut()>;
-
-struct Entry {
-    action: Action,
-    defaults: Vec<Chord>,
-    keys: Vec<Chord>,
-    enabled: Result<(), Cow<'static, str>>,
-    handler: Option<Handler>,
-}
-
-/// The app's actions: declarations, bound keys, enabled state, handlers, and what fired.
-pub struct Actions {
-    /// Sorted by id.
-    entries: Vec<Entry>,
-    by_id: HashMap<&'static str, usize>,
-    by_chord: HashMap<Chord, usize>,
-    /// Problems of the declarations themselves: bad ids, repeated ids, bad default chords.
-    declared_problems: Vec<Problem>,
-    /// Chord overrides in the order they apply: the keymap file's, then runtime rebinds.
-    overrides: Vec<keymap::Override>,
-    /// Problems of the keymap file's text: syntax, unknown ids, bad values and chords.
-    keymap_problems: Vec<Problem>,
-    /// Problems of binding: chords claimed twice.
-    bind_problems: Vec<Problem>,
-    fired: VecDeque<Fired>,
-    fired_dropped: usize,
-    menu_order: Vec<String>,
-}
-
-impl fmt::Debug for Actions {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.debug_struct("Actions")
-            .field("ids", &self.ids())
-            .field("problems", &self.problems().count())
-            .field("fired", &self.fired)
-            .finish_non_exhaustive()
-    }
-}
-
-/// Top-level menus in this order unless [`Actions::menu_order`] says otherwise; others follow by name.
-pub const DEFAULT_MENU_ORDER: &[&str] = &["File", "Edit", "View", "Go", "Tools", "Window", "Help"];
-
-impl Actions {
-    /// Every action registered with `inventory::submit!` in the crates linked into the app.
-    pub fn from_registry() -> Self {
-        Self::from_list(inventory::iter::<Action>.into_iter().copied())
-    }
-
-    /// The given actions only (tests, or an app composing its own set). Problems in them (a bad or repeated id,
-    /// a default chord that does not parse or is taken) are kept in [`Actions::problems`], never a panic.
-    pub fn from_list(actions: impl IntoIterator<Item = Action>) -> Self {
-        let mut list: Vec<Action> = actions.into_iter().collect();
-        list.sort_by_key(|a| a.id);
-        let mut declared_problems = Vec::new();
-        let mut entries: Vec<Entry> = Vec::with_capacity(list.len());
-        for action in list {
-            if !valid_id(action.id) {
-                declared_problems.push(Problem::declared(ProblemKind::BadId {
-                    id: action.id.to_owned(),
-                }));
-                continue;
-            }
-            if entries.last().is_some_and(|e| e.action.id == action.id) {
-                declared_problems.push(Problem::declared(ProblemKind::RepeatedId {
-                    id: action.id.to_owned(),
-                }));
-                continue;
-            }
-            let mut defaults = Vec::with_capacity(action.keys.len());
-            for text in action.keys {
-                match Chord::parse(text) {
-                    Ok(chord) => defaults.push(chord),
-                    Err(error) => {
-                        declared_problems.push(Problem::declared(ProblemKind::BadChord {
-                            id: action.id.to_owned(),
-                            text: (*text).to_owned(),
-                            error,
-                        }))
-                    }
-                }
-            }
-            entries.push(Entry {
-                action,
-                defaults,
-                keys: Vec::new(),
-                enabled: Ok(()),
-                handler: None,
-            });
-        }
-        let by_id = entries
-            .iter()
-            .enumerate()
-            .map(|(i, e)| (e.action.id, i))
-            .collect();
-        let mut actions = Self {
-            entries,
-            by_id,
-            by_chord: HashMap::new(),
-            declared_problems,
-            overrides: Vec::new(),
-            keymap_problems: Vec::new(),
-            bind_problems: Vec::new(),
-            fired: VecDeque::new(),
-            fired_dropped: 0,
-            menu_order: DEFAULT_MENU_ORDER.iter().map(|&s| s.to_owned()).collect(),
-        };
-        actions.bind();
-        actions
-    }
-
-    /// Top-level menus in this order; menus not named follow by name.
-    pub fn menu_order(mut self, names: &[&str]) -> Self {
-        self.menu_order = names.iter().map(|&s| s.to_owned()).collect();
-        self
-    }
-
-    /// Every id, sorted. A test compares it with the expected list so an action added or lost shows.
-    pub fn ids(&self) -> Vec<&'static str> {
-        self.entries.iter().map(|e| e.action.id).collect()
-    }
-
-    /// Every action as it stands now, sorted by id.
-    pub fn iter(&self) -> impl Iterator<Item = ActionState<'_>> {
-        self.entries.iter().map(Entry::state)
-    }
-
-    /// One action as it stands now.
-    pub fn get(&self, id: &str) -> Option<ActionState<'_>> {
-        self.index(id).map(|i| self.entries[i].state())
-    }
-
-    /// The action a chord is bound to.
-    pub fn by_chord(&self, chord: Chord) -> Option<&'static str> {
-        self.by_chord
-            .get(&chord)
-            .map(|&i| self.entries[i].action.id)
-    }
-
-    /// Everything wrong with the declarations, the keymap file and runtime rebinds, in that order. Empty in a
-    /// healthy app; a test can assert so.
-    pub fn problems(&self) -> impl Iterator<Item = &Problem> {
-        self.declared_problems
-            .iter()
-            .chain(&self.keymap_problems)
-            .chain(&self.bind_problems)
-    }
-
-    /// Whether the action can run now: `Ok(())`, or `Err(reason)` saying why not and what enables it ("Nothing to
-    /// redo: the last step was undone already"). Menus show the reason under a disabled entry; a key press on
-    /// it returns [`Refused::Disabled`]. Set it each frame, or when the state changes.
-    ///
-    /// An unknown id is a mistake in the app's code: debug builds assert, release builds ignore it.
-    pub fn set_enabled(&mut self, id: &str, enabled: Result<(), Cow<'static, str>>) {
-        let found = self.index(id);
-        debug_assert!(found.is_some(), "set_enabled: no action \"{id}\"");
-        if let Some(i) = found {
-            self.entries[i].enabled = enabled;
-        }
-    }
-
-    /// Run `handler` whenever the action fires, instead of queueing it for [`Actions::take_fired`]. The handler
-    /// captures what it needs (an `egui::Context` clone, a channel).
-    ///
-    /// An unknown id is a mistake in the app's code: debug builds assert, release builds ignore it.
-    pub fn on(&mut self, id: &str, handler: impl FnMut() + 'static) {
-        let found = self.index(id);
-        debug_assert!(found.is_some(), "on: no action \"{id}\"");
-        if let Some(i) = found {
-            self.entries[i].handler = Some(Box::new(handler));
-        }
-    }
-
-    /// Fire an action: run its handler or queue it. Refused when unknown or disabled.
-    pub fn trigger(&mut self, id: &str, source: Source) -> Result<(), Refused> {
-        let i = self
-            .index(id)
-            .ok_or_else(|| Refused::Unknown(id.to_owned()))?;
-        self.fire(i, source)
-    }
-
-    /// The actions fired since the last call that have no handler, oldest first.
-    pub fn take_fired(&mut self) -> Vec<Fired> {
-        self.fired.drain(..).collect()
-    }
-
-    /// How many fired actions were dropped because nobody took them while more than [`FIRED_MAX`] queued.
-    pub fn fired_dropped(&self) -> usize {
-        self.fired_dropped
-    }
-
-    /// Dispatch this frame's key presses: each press of a bound chord is taken out of the input (so widgets do
-    /// not see it too) and fires its action. Call it at the start of the frame, before any widget reads keys.
-    /// While a text field has focus, typing chords ([`Chord::is_typing`]) are left to it. Returns the presses
-    /// refused because their action is disabled, for the app to say why.
-    pub fn handle_input(&mut self, ctx: &Context) -> Vec<Refused> {
-        let platform = Platform::of(ctx);
-        let text_focus = ctx.egui_wants_keyboard_input();
-        ctx.input_mut(|i| self.handle_events(&mut i.events, platform, text_focus))
-    }
-
-    /// [`Actions::handle_input`] on a list of events: the presses of bound chords are removed and fired.
-    pub fn handle_events(
-        &mut self,
-        events: &mut Vec<Event>,
-        platform: Platform,
-        text_focus: bool,
-    ) -> Vec<Refused> {
-        let mut refused = Vec::new();
-        events.retain(|event| {
-            let Event::Key {
-                key,
-                pressed,
-                repeat,
-                modifiers,
-                ..
-            } = *event
-            else {
-                return true;
-            };
-            let Some(chord) = Chord::of_press(key, modifiers, platform) else {
-                return true;
-            };
-            if text_focus && chord.is_typing() {
-                return true;
-            }
-            let Some(&i) = self.by_chord.get(&chord) else {
-                return true;
-            };
-            if pressed
-                && (!repeat || self.entries[i].action.repeats)
-                && let Err(r) = self.fire(i, Source::Key)
-            {
-                refused.push(r);
-            }
-            false
-        });
-        refused
-    }
-
-    fn index(&self, id: &str) -> Option<usize> {
-        self.by_id.get(id).copied()
-    }
-
-    fn fire(&mut self, i: usize, source: Source) -> Result<(), Refused> {
-        let entry = &mut self.entries[i];
-        if let Err(reason) = &entry.enabled {
-            return Err(Refused::Disabled {
-                id: entry.action.id,
-                reason: reason.clone(),
-                source,
-            });
-        }
-        if let Some(handler) = &mut entry.handler {
-            handler();
-            return Ok(());
-        }
-        if self.fired.len() == FIRED_MAX {
-            self.fired.pop_front();
-            self.fired_dropped += 1;
-        }
-        self.fired.push_back(Fired {
-            id: entry.action.id,
-            source,
-        });
-        Ok(())
-    }
-}
-
-impl Entry {
-    fn state(&self) -> ActionState<'_> {
-        ActionState {
-            action: &self.action,
-            keys: &self.keys,
-            enabled: self.enabled.as_ref().map(|_| ()).map_err(|r| r.as_ref()),
-        }
-    }
-}
-
-/// Longest id accepted.
-const ID_CHARS_MAX: usize = 96;
-
-fn valid_id(id: &str) -> bool {
-    !id.is_empty()
-        && id.len() <= ID_CHARS_MAX
-        && id.bytes().all(|b| {
-            b.is_ascii_lowercase() || b.is_ascii_digit() || matches!(b, b'.' | b'_' | b'-')
-        })
+    /// On or off for a toggle, `None` for other actions.
+    pub checked: Option<bool>,
 }
