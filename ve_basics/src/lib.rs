@@ -9,10 +9,12 @@
 //! - [`FoldRest`] / [`fold_rest`]: a list cut for room ends in a fold with the rest, never a bare "N more" (BAS-5).
 //! - [`ScrollStrip`]: a row wider than its room scrolls in place, with arrows that say so (BAS-8).
 //! - [`StartupGuard`]: a start that died before its first frame moves the persisted state aside (PLT-4).
+//! - [`actions`]: one registry of the app's actions for menus, palette and keys, with a user keymap (CHR-1).
 //! - [`load_icon`]: decode a PNG into a texture, for an app's own icon (BAS-9; `ve_theme::topbar::Brand` draws it).
 //!
 //! The UI guide rule behind these (tooltips everywhere, highlight related items, nothing hidden) is in the repo's `AGENTS.md`.
 
+pub mod actions;
 mod app_menu;
 mod build_info;
 mod checklist;

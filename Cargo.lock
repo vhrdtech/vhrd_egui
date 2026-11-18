@@ -3721,6 +3721,8 @@ dependencies = [
  "egui",
  "egui_kittest",
  "image",
+ "inventory",
+ "toml",
  "web-time",
 ]
 

@@ -12,6 +12,10 @@ egui.workspace = true
 web-time.workspace = true
 # pure-Rust PNG decode for load_icon (BAS-9), the same on native and the web
 image = { version = "0.25", default-features = false, features = ["png"] }
+# actions register themselves where they are declared (CHR-1)
+inventory.workspace = true
+# the keymap file, with spans for file:line problems (CHR-1)
+toml = { version = "1", default-features = false, features = ["std", "parse"] }
 
 [dev-dependencies]
 egui_kittest = { workspace = true, features = ["snapshot", "wgpu"] }
