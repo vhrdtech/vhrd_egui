@@ -5,6 +5,8 @@ versions follow [Semantic Versioning](https://semver.org/). Feature IDs refer to
 
 ## [Unreleased]
 
+## [0.34.3] - 2026-11-19
+
 ### Added
 
 - `ve_basics`: `perf`, a frame recorder: frame times, named scopes, counters, repaint causes, statistics over any span (BAS-10).
