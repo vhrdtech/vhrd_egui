@@ -3,7 +3,7 @@
 use std::ops::Range;
 use std::time::Duration;
 
-use super::{Acc, COUNTER, IDLE_AFTER, Inner, NameKind, Record, RingRecorder, State, TOP};
+use super::{Acc, COUNTER, Inner, NameKind, Record, RingRecorder, State, TOP};
 use crate::perf::{
     Bin, Breakdown, CauseCount, CounterStats, FrameSeries, Histogram, ScopeId, ScopeKind,
     ScopeStats, Series, Span, Stats, Summary,
@@ -59,10 +59,11 @@ impl State {
                 u64::from(r.gap_max_ns),
                 u32::from(r.smooth),
             ),
-            Series::Scope(ScopeId(id)) => {
-                if !held {
+            Series::Scope(sid) => {
+                if !held || sid.generation() != self.generation {
                     return None;
                 }
+                let id = sid.index();
                 let mut found = false;
                 let sum: u64 = entries()
                     .filter(|e| u32::from(e.id) == id && e.parent != COUNTER)
@@ -94,10 +95,9 @@ impl State {
     pub(super) fn stats(&self, now: u64, span: Span, inner: &Inner) -> Stats {
         let (mut cpu, mut gap) = (Histogram::new(), Histogram::new());
         let (mut frames, mut dropped, mut pauses) = (0u32, 0u32, 0u32);
-        let (mut oldest, mut newest) = (None, None);
+        let mut newest = None;
         for (_, r, _) in self.window(span) {
             newest.get_or_insert(*r);
-            oldest = Some(r.start_ns);
             frames += u32::from(r.frames);
             dropped += u32::from(r.dropped);
             pauses += u32::from(r.paused());
@@ -114,9 +114,13 @@ impl State {
                 u32::from(r.smooth),
             );
         }
+        // From the span's start, or from the oldest frame held when history begins later; a span with no frame
+        // in it still covers the time it held none.
+        let to_ns = span.to_ns.min(now.saturating_add(1));
+        let held_from = self.records.get(self.records.oldest()).map(|r| r.start_ns);
         let covered = Span {
-            from_ns: oldest.map_or(span.to_ns, |o| span.from_ns.max(o.min(span.to_ns))),
-            to_ns: span.to_ns.min(now.saturating_add(1)),
+            from_ns: held_from.map_or(to_ns, |o| span.from_ns.max(o).min(to_ns)),
+            to_ns,
         };
         // The newest frame exactly when the span reaches it, else its record's mean.
         let reaches_now = self.last_end_ns.is_some_and(|e| e < span.to_ns);
@@ -139,7 +143,7 @@ impl State {
         let (budget, refresh_hz) = inner.budget(self.measured_hz);
         let idle = match (self.open, self.last_end_ns) {
             (None, Some(end)) => Some(Duration::from_nanos(now.saturating_sub(end)))
-                .filter(|idle| *idle > IDLE_AFTER),
+                .filter(|idle| *idle > inner.settings.idle_after),
             _ => None,
         };
         Stats {
@@ -232,7 +236,7 @@ impl State {
                 _ => 0.0,
             };
             out.scopes.push(ScopeStats {
-                id: ScopeId(u32::try_from(id).unwrap_or(u32::MAX)),
+                id: ScopeId::new(self.generation, u32::try_from(id).unwrap_or(u32::MAX)),
                 name: name.shared.clone(),
                 instance: name.key.instance,
                 kind,

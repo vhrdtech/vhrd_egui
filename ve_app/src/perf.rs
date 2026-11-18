@@ -3,22 +3,22 @@
 
 use std::time::Duration;
 
-use ve_basics::perf::{
-    Cause, FrameBegin, FrameEnd, IDLE_AFTER, Readout, ReadoutSettings, Recorder, RingRecorder,
-    Settings,
-};
+use ve_basics::perf::{Cause, FrameBegin, FrameEnd, Readout, Recorder, RingRecorder, Settings};
 
 /// Repaint causes taken from one frame; further ones are left out.
 pub const CAUSES_PER_FRAME_MAX: usize = 16;
 
-/// The scope name of a widget's `logic`, one row per widget (its instance is the widget's slot).
-pub const LOGIC_SCOPE: &str = "widget logic";
+/// The scope the `logic` of all widgets runs in: one row for all of them, so it names no widget. One scope per
+/// widget would double the shell's recording cost per frame and halve how many widgets fit [`NAMES_MAX`].
+///
+/// [`NAMES_MAX`]: ve_basics::perf::NAMES_MAX
+pub const LOGIC_SCOPE: &str = "logic";
 
 /// How often the display's refresh rate is read again, in nanoseconds (the window may move to another monitor).
 #[cfg(not(target_arch = "wasm32"))]
 const REFRESH_RECHECK_NS: u64 = 2_000_000_000;
 
-/// How long after [`IDLE_AFTER`] the shell wakes once to show the readout as idle.
+/// How long after the recorder's idle line ([`Settings::idle_after`]) the shell wakes once to show the readout as idle.
 const IDLE_MARGIN: Duration = Duration::from_millis(100);
 
 /// A frame with no repaint request behind it and input in it.
@@ -44,11 +44,7 @@ pub(crate) struct Perf {
 }
 
 impl Perf {
-    pub(crate) fn new(recorder: Option<Recorder>, readout: ReadoutSettings) -> Self {
-        let readout = Readout::new(readout).unwrap_or_else(|e| {
-            log::warn!("perf readout settings refused ({e}); the defaults are used");
-            Readout::default()
-        });
+    pub(crate) fn new(recorder: Option<Recorder>, readout: Readout) -> Self {
         let recorder = recorder.unwrap_or_else(|| {
             Recorder::new(
                 RingRecorder::new(Settings::default()).expect("the default settings are valid"),
@@ -94,6 +90,11 @@ impl Perf {
         }
     }
 
+    /// This frame is recorded: scopes go into it.
+    pub(crate) fn recording(&self) -> bool {
+        self.recording
+    }
+
     /// At the start of the shell's ui. egui may run several passes for one painted frame: only the first begins it.
     pub(crate) fn begin(&mut self, ctx: &egui::Context) {
         if !self.recorder.is_enabled() || ctx.current_pass_index() > 0 {
@@ -106,9 +107,10 @@ impl Perf {
         // The shell's own wake-up to show "idle" is not the app's frame: nothing but its request, after a quiet
         // second. egui lists every request of the last pass, delayed ones too, so the time decides.
         let now = self.recorder.now_ns();
+        let idle_after = self.recorder.settings().idle_after;
         let quiet = self
             .last_end_ns
-            .is_none_or(|t| Duration::from_nanos(now.saturating_sub(t)) >= IDLE_AFTER);
+            .is_none_or(|t| Duration::from_nanos(now.saturating_sub(t)) >= idle_after);
         let own_wakeup = quiet
             && !self.input
             && !self.causes.is_empty()
@@ -152,7 +154,7 @@ impl Perf {
         });
         self.last_end_ns = Some(self.recorder.now_ns());
         // One wake-up once the app goes quiet, so the readout can say so.
-        ctx.request_repaint_after(IDLE_AFTER + IDLE_MARGIN);
+        ctx.request_repaint_after(self.recorder.settings().idle_after + IDLE_MARGIN);
     }
 }
 
@@ -175,7 +177,7 @@ mod tests {
     #[test]
     fn recording_a_frame_allocates_only_egui_s_cause_list() {
         let ctx = egui::Context::default();
-        let mut perf = Perf::new(None, ReadoutSettings::default());
+        let mut perf = Perf::new(None, Readout::default());
         let mut measured = Vec::new();
         for i in 0..12 {
             let mut n = 0;

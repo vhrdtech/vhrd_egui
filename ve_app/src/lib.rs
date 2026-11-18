@@ -33,8 +33,9 @@
 //! - [`Repainter`]: a cheap handle background tasks use to wake the UI.
 //! - Frame recording (WID-11): every frame goes into a `ve_basics::perf` recorder ([`ShellOptions::recorder`],
 //!   on by default), one frame across egui's passes. Each widget's `ui` runs in a scope named by its
-//!   [`Widget::base_title`] and its `logic` in one named [`LOGIC_SCOPE`], both with the widget's slot as the
-//!   instance, so each widget has rows of its own. Also recorded: egui's repaint causes, eframe's CPU time of the
+//!   [`Widget::base_title`] with the widget's slot as the instance, so each widget has a row of its own; the
+//!   `logic` of all widgets together runs in one scope, [`LOGIC_SCOPE`], a single row that names no widget.
+//!   Also recorded: egui's repaint causes, eframe's CPU time of the
 //!   whole frame and the monitor's refresh rate. Code with a `Ui` marks its own scopes through the recorder
 //!   `ve_basics::perf::recorder(ui.ctx())` finds (fetch it once). [`Shell::readout`] holds the numbers to show;
 //!   once frames stop, the shell wakes once to show the readout as idle, and that frame is not recorded.
@@ -58,7 +59,7 @@ pub use repainter::Repainter;
 pub use widget_menu::registered_widgets;
 
 use egui::{CentralPanel, MenuBar, Panel, Ui};
-use ve_basics::perf::{ReadoutSettings, Recorder, Shown};
+use ve_basics::perf::{Readout, Recorder, Shown};
 use ve_basics::{AppMenu, AppMenuAction, BuildInfo};
 use ve_frame::{Applied, FrameAction, FrameState, Parcel, Remote, SlotId, ViewportSlot};
 use ve_widget::Widget;
@@ -102,8 +103,9 @@ pub struct ShellOptions {
     /// Where frames are recorded; `None` for a `ve_basics::perf::RingRecorder` with the default settings,
     /// recording (setting S18; turn it off through the recorder).
     pub recorder: Option<Recorder>,
-    /// How the shown performance numbers refresh (settings S15, S16).
-    pub readout: ReadoutSettings,
+    /// How the shown performance numbers refresh (settings S15, S16): a `Readout::new(settings)`, which refuses
+    /// settings out of range with a typed error.
+    pub readout: Readout,
 }
 
 impl ShellOptions {
@@ -122,7 +124,7 @@ impl ShellOptions {
             remote: None,
             desktop_theme: ve_theme::omarchy_colors_path(),
             recorder: None,
-            readout: ReadoutSettings::default(),
+            readout: Readout::default(),
         }
     }
 
@@ -187,7 +189,7 @@ impl ShellOptions {
     }
 
     /// See [`Self::readout`].
-    pub fn readout(mut self, readout: ReadoutSettings) -> Self {
+    pub fn readout(mut self, readout: Readout) -> Self {
         self.readout = readout;
         self
     }
@@ -211,7 +213,7 @@ pub struct Shell {
 impl Shell {
     /// Set up theme and labels, restore the saved layout (if [`ShellOptions::persist`]) and init every widget.
     pub fn new(cc: &eframe::CreationContext<'_>, cx: Context, mut options: ShellOptions) -> Self {
-        let perf = perf::Perf::new(options.recorder.take(), options.readout);
+        let perf = perf::Perf::new(options.recorder.take(), options.readout.clone());
         ve_basics::perf::install(&cc.egui_ctx, perf.recorder.clone());
         let storage = if options.persist { cc.storage } else { None };
         let state = State::load(storage, &options);
@@ -222,7 +224,7 @@ impl Shell {
         );
         ve_basics::setup_labels(&cc.egui_ctx);
         let mut shell = Self {
-            behavior: Behavior::new(cx.clone(), perf.recorder.clone(), options.widget_filter),
+            behavior: Behavior::new(cx.clone(), options.widget_filter),
             cx,
             options,
             state,
@@ -294,10 +296,14 @@ impl Shell {
     /// widgets, the other OS windows, quit dialog.
     pub fn ui(&mut self, ui: &mut Ui) {
         self.perf.begin(ui.ctx());
-        let rec = self.perf.recorder.clone();
-        for slot in self.state.widgets.iter_mut() {
-            let _g = rec.scope_of(perf::LOGIC_SCOPE, slot.id.0);
-            slot.widget.logic(&self.cx);
+        // A frame that is not recorded (the shell's own idle wake-up) opens no scopes either.
+        let rec = self.perf.recording().then(|| self.perf.recorder.clone());
+        self.behavior.recorder.clone_from(&rec);
+        {
+            let _g = rec.as_ref().map(|r| r.scope(perf::LOGIC_SCOPE));
+            for slot in self.state.widgets.iter_mut() {
+                slot.widget.logic(&self.cx);
+            }
         }
 
         Panel::top("ve_app_menu_bar").show(ui, |ui| {
@@ -345,7 +351,7 @@ impl Shell {
                 tree.ui(&mut pass, ui);
             }
             let floating = widgets.show_windows(ui, ViewportSlot::MAIN, |ui, slot| {
-                tiles::framed(ui, slot, cx, &rec, &moves, false)
+                tiles::framed(ui, slot, cx, rec.as_ref(), &moves, false)
             });
             picked.extend(floating);
         });
@@ -369,7 +375,7 @@ impl Shell {
                 tree.ui(&mut pass, ui);
             }
             let floating = widgets.show_windows(ui, viewport, |ui, slot| {
-                tiles::framed(ui, slot, cx, &rec, &moves, false)
+                tiles::framed(ui, slot, cx, rec.as_ref(), &moves, false)
             });
             picked.extend(floating);
         });

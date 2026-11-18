@@ -59,7 +59,7 @@ pub struct Shown {
     pub dropped: u32,
     /// The budget frames are judged against.
     pub budget: Duration,
-    /// Time since the last frame, once past [`super::IDLE_AFTER`]; the other numbers are then the last ones seen.
+    /// Time since the last frame, once past [`super::Settings::idle_after`]; the other numbers are then the last ones seen.
     pub idle: Option<Duration>,
 }
 

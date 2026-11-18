@@ -52,9 +52,9 @@ pub use ring::{
     RingRecorder, SCOPE_DEPTH_MAX, Sizing,
 };
 
-/// After this long without a frame the numbers say "idle" instead of showing stale values; an interval this
-/// long between continuous frames is a pause (a hidden window), not dropped frames.
-pub const IDLE_AFTER: Duration = Duration::from_secs(1);
+/// The range [`Settings::idle_after`] is kept in.
+pub const IDLE_AFTER_RANGE: std::ops::RangeInclusive<Duration> =
+    Duration::from_millis(100)..=Duration::from_secs(60);
 
 /// The display refresh rates a measured one snaps to when within 3 %.
 pub const KNOWN_REFRESH_HZ: [f32; 9] = [30.0, 50.0, 60.0, 75.0, 90.0, 100.0, 120.0, 144.0, 165.0];
@@ -171,9 +171,31 @@ impl From<&'static str> for ScopeName {
     }
 }
 
-/// A recorder's id for a scope name; [`ScopeStats::id`] gives it, [`Series::Scope`] takes it.
+/// A recorder's id for a scope name in one history; [`ScopeStats::id`] gives it, [`Series::Scope`] takes it.
+/// After [`FrameRecorder::clear`], a new retention or granularity, or recording off and on, it names nothing:
+/// a chart holding one shows no series and takes the new id from the next breakdown.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord)]
-pub struct ScopeId(pub u32);
+pub struct ScopeId {
+    generation: u32,
+    index: u32,
+}
+
+impl ScopeId {
+    /// The id of name `index` in history `generation`; for recorders.
+    pub fn new(generation: u32, index: u32) -> Self {
+        Self { generation, index }
+    }
+
+    /// Which history it is from.
+    pub fn generation(self) -> u32 {
+        self.generation
+    }
+
+    /// The name's index in that history.
+    pub fn index(self) -> u32 {
+        self.index
+    }
+}
 
 /// What a recorder hands out at a scope's begin and wants back at its end; its contents are the recorder's own.
 #[derive(Clone, Copy, Debug)]
@@ -229,6 +251,10 @@ pub struct Settings {
     pub granularity: Granularity,
     /// Where the budget comes from (S19).
     pub budget: BudgetSource,
+    /// Nothing running this long (a frame's begin minus the previous frame's end) is idle, within
+    /// [`IDLE_AFTER_RANGE`]: the numbers say "idle" instead of showing stale values, and a continuous frame after
+    /// such a gap ends a pause (a hidden window), not dropped frames. A long frame is never a pause.
+    pub idle_after: Duration,
 }
 
 impl Default for Settings {
@@ -237,6 +263,7 @@ impl Default for Settings {
             retention: Duration::from_secs(300),
             granularity: Granularity::EveryFrame,
             budget: BudgetSource::Display,
+            idle_after: Duration::from_secs(1),
         }
     }
 }
@@ -257,6 +284,9 @@ impl Settings {
         {
             return Err(SettingsError::BudgetHz(hz));
         }
+        if !IDLE_AFTER_RANGE.contains(&self.idle_after) {
+            return Err(SettingsError::IdleAfter(self.idle_after));
+        }
         Ok(())
     }
 }
@@ -270,6 +300,8 @@ pub enum SettingsError {
     Granularity(Duration),
     /// A budget's refresh rate outside [`BUDGET_HZ`] (NaN included).
     BudgetHz(f32),
+    /// An idle line outside [`IDLE_AFTER_RANGE`].
+    IdleAfter(Duration),
     /// A readout rate outside [`READOUT_RATE_HZ`] (NaN included).
     ReadoutRateHz(f32),
     /// A worst-value hold of zero or past a minute.
@@ -284,6 +316,7 @@ impl std::fmt::Display for SettingsError {
             }
             Self::Granularity(d) => write!(f, "granularity {d:?} is outside {GRANULARITY_SPAN:?}"),
             Self::BudgetHz(hz) => write!(f, "budget refresh {hz} Hz is outside {BUDGET_HZ:?}"),
+            Self::IdleAfter(d) => write!(f, "idle line {d:?} is outside {IDLE_AFTER_RANGE:?}"),
             Self::ReadoutRateHz(hz) => {
                 write!(f, "readout rate {hz} Hz is outside {READOUT_RATE_HZ:?}")
             }
@@ -338,13 +371,14 @@ pub struct Stats {
     pub cpu: Summary,
     /// Frames missed: an interval of k budgets counts k - 1, only between continuous frames.
     pub dropped: u32,
-    /// Intervals between continuous frames past [`IDLE_AFTER`] (a hidden window): neither an interval nor drops.
+    /// Continuous frames after nothing ran for [`Settings::idle_after`] (a hidden window): their interval is
+    /// neither an interval nor drops.
     pub pauses: u32,
     /// The budget frames are judged against now.
     pub budget: Duration,
     /// The refresh rate the budget comes from.
     pub refresh_hz: f32,
-    /// How long since the last frame ended, now, when that is past [`IDLE_AFTER`].
+    /// How long since the last frame ended, now, when that is past [`Settings::idle_after`].
     pub idle: Option<Duration>,
 }
 

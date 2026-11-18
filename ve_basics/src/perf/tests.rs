@@ -230,6 +230,117 @@ fn budgets_follow_the_refresh_rate() {
 
 /// BAS-10, review finding 11: settings out of range are refused with what was wrong; a host's odd display rate
 /// is ignored.
+/// BAS-10, review round 2, N2: a frame that runs 1.5 s is a stall, not a pause: a pause is nothing running past
+/// the idle line (begin minus the previous end), never a long frame.
+#[test]
+fn a_long_frame_is_a_stall_not_a_pause() {
+    let (rec, clock) = recorder(at(60.0));
+    for _ in 0..10 {
+        frame(&rec, &clock, 2.0, 1000.0 / 60.0);
+    }
+    // 1.5 s of work, the next frame begins as soon as it ends.
+    frame(&rec, &clock, 1500.0, 1500.0);
+    frame(&rec, &clock, 2.0, 1000.0 / 60.0);
+    let s = rec.stats(rec.last(Duration::from_secs(5)));
+    assert_eq!(s.pauses, 0);
+    assert_eq!(s.dropped, 89, "1.5 s is 90 budgets of 16.7 ms");
+    assert!(close(s.interval.worst, 1500.0), "{:?}", s.interval);
+}
+
+/// BAS-10, review round 2, N2: the idle line is a setting: with 5 s a 2 s gap is dropped frames, not a pause.
+#[test]
+fn the_idle_line_is_a_setting() {
+    let (rec, clock) = recorder(Settings {
+        idle_after: 5 * SEC,
+        ..at(60.0)
+    });
+    frame(&rec, &clock, 2.0, 2000.0);
+    frame(&rec, &clock, 2.0, 1000.0 / 60.0);
+    let s = rec.stats(rec.last(Duration::from_secs(5)));
+    assert_eq!(s.pauses, 0);
+    assert_eq!(s.dropped, 119);
+    assert!(s.idle.is_none());
+    clock.advance(3 * SEC);
+    assert!(
+        rec.stats(rec.last(SEC)).idle.is_none(),
+        "3 s is not idle yet"
+    );
+    clock.advance(3 * SEC);
+    assert!(rec.stats(rec.last(SEC)).idle.is_some());
+}
+
+/// BAS-10, review round 2, N1: frames per second count the whole span, not from its first frame on: one frame
+/// every 2 s read 2 ms after a frame began is 1 frame in the last second, not 500 per second.
+#[test]
+fn fps_counts_the_whole_span_when_frames_are_sparse() {
+    let (rec, clock) = recorder(at(60.0));
+    for _ in 0..5 {
+        frame_with(&rec, &clock, 1.0, 2000.0, false);
+    }
+    rec.frame_begin(FrameBegin { continuous: false });
+    clock.advance_ms(1.0);
+    rec.frame_end(&FrameEnd::default());
+    clock.advance_ms(1.0);
+    let s = rec.stats(rec.last(SEC));
+    assert_eq!(s.frames, 1);
+    assert_eq!(s.covered, s.span);
+    assert!((s.fps - 1.0).abs() < 1e-6, "{}", s.fps);
+
+    let (rec, clock) = recorder(at(60.0));
+    for _ in 0..10 {
+        frame_with(&rec, &clock, 1.0, 500.0, false);
+    }
+    let s = rec.stats(rec.last(SEC));
+    assert_eq!(s.frames, 2);
+    assert!((s.fps - 2.0).abs() < 1e-6, "{}", s.fps);
+
+    // History that begins inside the span covers only the part since then.
+    let (rec, clock) = recorder(at(60.0));
+    clock.advance_ms(500.0);
+    for _ in 0..10 {
+        frame(&rec, &clock, 1.0, 50.0);
+    }
+    let s = rec.stats(rec.last(SEC));
+    assert_eq!(s.covered.from_ns, ns_of(500 * MS));
+    assert!((s.fps - 20.0).abs() < 1e-3, "{}", s.fps);
+}
+
+/// BAS-10, review round 2, N4: an id from before `clear` (or a new retention) names nothing, though the new
+/// history puts another scope at the same index.
+#[test]
+fn a_scope_id_from_an_older_history_names_nothing() {
+    let (rec, clock) = recorder(at(60.0));
+    let run = |name: &'static str| {
+        for _ in 0..5 {
+            rec.frame_begin(FrameBegin { continuous: true });
+            {
+                let _g = rec.scope(name);
+                clock.advance_ms(2.0);
+            }
+            rec.frame_end(&FrameEnd::default());
+            clock.advance_ms(14.0);
+        }
+    };
+    run("old");
+    let old = row(&breakdown(&rec, SEC), "old").id;
+    rec.clear();
+    run("new");
+    let new = row(&breakdown(&rec, SEC), "new").id;
+    assert_eq!(old.index(), new.index());
+    assert_ne!(old, new);
+    let mut bins = [Bin::default(); 1];
+    rec.bins(Series::Scope(old), rec.last(SEC), &mut bins);
+    assert_eq!(bins[0].count, 0, "the old id shows no series");
+    rec.bins(Series::Scope(new), rec.last(SEC), &mut bins);
+    assert_eq!(bins[0].count, 5);
+    let mut set = rec.settings();
+    set.retention = 2 * set.retention;
+    rec.set_settings(set).unwrap();
+    run("new");
+    rec.bins(Series::Scope(new), rec.last(SEC), &mut bins);
+    assert_eq!(bins[0].count, 0, "a new retention starts a new history");
+}
+
 #[test]
 fn settings_out_of_range_are_refused() {
     let hz = |hz| Settings {
@@ -277,6 +388,14 @@ fn settings_out_of_range_are_refused() {
         ..ReadoutSettings::default()
     };
     assert!(Readout::new(no_hold).is_err());
+    let no_idle = Settings {
+        idle_after: Duration::ZERO,
+        ..Settings::default()
+    };
+    assert_eq!(
+        no_idle.validate(),
+        Err(SettingsError::IdleAfter(Duration::ZERO))
+    );
     let (rec, _clock) = recorder(Settings::default());
     rec.set_display_hz(Some(f32::NAN));
     assert!((rec.stats(rec.last(MS)).refresh_hz - BUDGET_FALLBACK_HZ).abs() < f32::EPSILON);

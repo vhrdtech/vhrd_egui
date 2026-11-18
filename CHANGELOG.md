@@ -9,7 +9,7 @@ versions follow [Semantic Versioning](https://semver.org/). Feature IDs refer to
 
 - `ve_basics`: `perf`, a frame recorder: frame times, named scopes, counters, repaint causes, statistics over any span (BAS-10).
 - `ve_alloc_count`: a counting global allocator; `ve_basics` feature `alloc-count` records allocations per frame (BAS-10).
-- `ve_app`: the shell records every frame, rows per widget and repaint causes; `Shell::readout` holds the numbers (WID-11).
+- `ve_app`: the shell records every frame, a row per widget's ui, one for all widgets' logic, and repaint causes; `Shell::readout` holds the numbers (WID-11).
 - Every crate inherits the workspace lints (`unsafe_code` forbidden) and `rust-version` 1.88.
 
 ## [0.34.2] - 2026-11-19

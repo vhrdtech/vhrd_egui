@@ -11,8 +11,8 @@ use std::time::Duration;
 
 use super::{
     Breakdown, BudgetSource, Cause, CauseCount, Clock, CounterStats, FrameBegin, FrameEnd,
-    FrameRecorder, GaugeValue, Granularity, Health, IDLE_AFTER, ScopeKind, ScopeName, ScopeToken,
-    Settings, SettingsError, Span, Stats, SystemClock, snap_refresh_hz,
+    FrameRecorder, GaugeValue, Granularity, Health, ScopeKind, ScopeName, ScopeToken, Settings,
+    SettingsError, Span, Stats, SystemClock, snap_refresh_hz,
 };
 
 /// Distinct names (scopes and their instances, counters, gauges) a recorder keeps; further ones are not
@@ -314,6 +314,8 @@ fn bump(n: &mut u32) {
 /// The history and the frame in progress; exists only while recording.
 #[derive(Debug)]
 struct State {
+    /// Which history this is; part of every [`super::ScopeId`] it hands out.
+    generation: u32,
     records: Ring<Record>,
     entries: Ring<Entry>,
     names: Vec<Name>,
@@ -351,6 +353,16 @@ struct Inner {
     sizing: Sizing,
     display_hz: Option<f32>,
     state: Option<State>,
+    /// Bumped for every new history, so a [`super::ScopeId`] of an older one names nothing.
+    generation: u32,
+}
+
+impl Inner {
+    /// Start an empty history.
+    fn fresh(&mut self) {
+        self.generation = self.generation.wrapping_add(1);
+        self.state = Some(State::new(&self.settings, &self.sizing, self.generation));
+    }
 }
 
 /// The default [`FrameRecorder`]: rings sized from the retention ([`Sizing`]), allocated when recording turns
@@ -390,7 +402,8 @@ impl RingRecorder {
                 settings,
                 sizing,
                 display_hz: None,
-                state: Some(State::new(&settings, &sizing)),
+                state: Some(State::new(&settings, &sizing, 0)),
+                generation: 0,
             }),
         })
     }
@@ -458,8 +471,9 @@ impl Inner {
 }
 
 impl State {
-    fn new(settings: &Settings, sizing: &Sizing) -> Self {
+    fn new(settings: &Settings, sizing: &Sizing, generation: u32) -> Self {
         Self {
+            generation,
             records: Ring::new(sizing.records(settings)),
             entries: Ring::new(sizing.entries()),
             names: Vec::with_capacity(32),
@@ -596,7 +610,9 @@ impl State {
         let gap = self.last_start_ns.map(|s| now.saturating_sub(s));
         let continuous = begin.continuous && gap.is_some();
         let gap = gap.unwrap_or(0);
-        let pause = continuous && gap > ns(IDLE_AFTER);
+        // Nothing ran past the idle line: the window was hidden or the app idle. A long frame is not a pause.
+        let quiet = self.last_end_ns.map(|e| now.saturating_sub(e));
+        let pause = continuous && quiet.is_some_and(|q| q > ns(settings.idle_after));
         let smooth = continuous && !pause;
         let mut dropped = 0;
         if smooth {
@@ -783,7 +799,7 @@ impl FrameRecorder for RingRecorder {
         let mut inner = self.lock();
         self.enabled.store(on, Ordering::Relaxed);
         if on && inner.state.is_none() {
-            inner.state = Some(State::new(&inner.settings, &inner.sizing));
+            inner.fresh();
         } else if !on {
             inner.state = None;
         }
@@ -800,7 +816,7 @@ impl FrameRecorder for RingRecorder {
             || settings.granularity != inner.settings.granularity;
         inner.settings = settings;
         if rebuild && inner.state.is_some() {
-            inner.state = Some(State::new(&inner.settings, &inner.sizing));
+            inner.fresh();
         }
         Ok(())
     }
@@ -812,7 +828,7 @@ impl FrameRecorder for RingRecorder {
     fn clear(&self) {
         let mut inner = self.lock();
         if inner.state.is_some() {
-            inner.state = Some(State::new(&inner.settings, &inner.sizing));
+            inner.fresh();
         }
     }
 

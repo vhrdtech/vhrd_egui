@@ -494,7 +494,7 @@ fn breakdown(rec: &Recorder) -> Breakdown {
     b
 }
 
-/// WID-11: every frame is recorded, each widget's logic and ui in rows of its own; a scope that does not count
+/// WID-11: every frame is recorded, each widget's ui in a row of its own, the logic of all widgets in one; a scope that does not count
 /// (the performance panel) is left out of the frame's CPU time, the widget's row and every statistic.
 #[test]
 fn frames_are_recorded_with_rows_per_widget_and_the_panel_left_out() {
@@ -518,9 +518,15 @@ fn frames_are_recorded_with_rows_per_widget_and_the_panel_left_out() {
     let rows = |name: &str| b.scopes.iter().filter(|s| &*s.name == name).count();
     assert_eq!(
         rows(ve_app::LOGIC_SCOPE),
-        3,
-        "the logic of Note, Level and Spender"
+        1,
+        "the logic of Note, Level and Spender, in one row (review round 2, N3)"
     );
+    let logic = b
+        .scopes
+        .iter()
+        .find(|s| &*s.name == ve_app::LOGIC_SCOPE)
+        .unwrap();
+    assert_eq!(logic.instance, None);
     assert_eq!(rows("Spender"), 1);
     let spender = b.scopes.iter().find(|s| &*s.name == "Spender").unwrap();
     assert!(spender.instance.is_some());
@@ -607,7 +613,8 @@ fn the_readout_holds_its_numbers_between_ticks() {
 }
 
 /// WID-11, review finding 5: after a second without frames the shell's next frame shows the readout as idle, and
-/// its own wake-up is not recorded as a frame.
+/// its own wake-up is not recorded as a frame; review round 2, N5: nor do its widgets' scopes count as outside a
+/// frame.
 #[test]
 fn the_readout_says_idle_after_a_pause() {
     let clock = ManualClock::new();
@@ -620,6 +627,7 @@ fn the_readout_says_idle_after_a_pause() {
     let frames = rec.stats(rec.last(Duration::from_secs(60))).frames;
     clock.advance(Duration::from_secs(2));
     h.step();
+    assert_eq!(rec.health().outside_frame, 0, "{:?}", rec.health());
     assert!(
         h.state()
             .readout()
