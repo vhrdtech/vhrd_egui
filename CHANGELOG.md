@@ -5,6 +5,8 @@ versions follow [Semantic Versioning](https://semver.org/). Feature IDs refer to
 
 ## [Unreleased]
 
+## [0.34.2] - 2026-11-19
+
 ### Added
 
 - `ve_basics`: `actions`, one registry of an app's actions for menus, palette and keys, with a user-editable TOML keymap (CHR-1).
