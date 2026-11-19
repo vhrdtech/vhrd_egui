@@ -5,6 +5,8 @@ versions follow [Semantic Versioning](https://semver.org/). Feature IDs refer to
 
 ## [Unreleased]
 
+## [0.35.1] - 2026-11-19
+
 ### Added
 
 - `ve_theme`: chrome tokens for the app chrome (CHR-4): `Tokens::chrome: Chrome` (bar, row and panel sizes per `Density`), `colors.scrim`, `colors.debug` (the debug-build badge), `Tokens::high_contrast_dark`/`high_contrast_light` (AAA text, 4.5:1 lines).
