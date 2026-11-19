@@ -4,6 +4,10 @@
 //! `gallery_light.png`; AccessKit queries check that the helpers are labelled and carry their tooltips.
 //! After an intended visual change: `UPDATE_SNAPSHOTS=1 cargo test -p ve_theme --test ui` and commit the PNGs.
 
+#[cfg(feature = "icons")]
+#[path = "ui/topbar.rs"]
+mod topbar;
+
 use egui::{Theme, vec2};
 use egui_kittest::Harness;
 use egui_kittest::kittest::{NodeT, Queryable};

@@ -53,7 +53,8 @@ Cargo workspace, edition 2024, one shared version (`[workspace.package]`).
   panel title bar, toolbar, muted label, badge), icons (`icons/`: the Phosphor font, SVG icons from
   `ve_theme/icons/` with colour slots, rasterised by resvg into cached masks; `ve_theme_benchmarks/` times the
   raster), the property-panel widgets (`props.rs`: pane, sub-pane, group, property row, scalar and vec fields,
-  segmented, toggle chip, list view), the gallery example.
+  segmented, toggle chip, list view), the top bar (`topbar/`: `TopBar`, the collapse ladder in `ladder.rs`, the
+  pixel-grid painter in `pixels.rs`), the gallery example.
 - `ve_dash/` — btop-style dashboard blocks (theme from `ve_theme` tokens, sparkline, meter with a fixed or
   auto block count, tiles) and day charts (`Day`, burndown, Gantt; every tunable in a `*Style` struct).
 - `ve_phosphor/` — the HDR digital-phosphor scope: `Phosphor` (GPU state: compute sweeps into atomic hit counts,

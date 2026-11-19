@@ -191,6 +191,26 @@ impl From<&'static SvgIcon> for Icon {
 }
 
 impl Icon {
+    /// The icon an action names (`Action::icon`): one of our SVG icons by its name (feature `icons`), or a
+    /// Phosphor icon by its kebab-case name (`gear-six`, `magnifying-glass`); `None` for a name in neither set.
+    pub fn named(name: &str) -> Option<Self> {
+        #[cfg(feature = "icons")]
+        if let Some(svg) = own::ALL.iter().find(|i| i.name == name) {
+            return Some(Self::Svg(svg));
+        }
+        let same = |constant: &str| {
+            constant.len() == name.len()
+                && constant
+                    .bytes()
+                    .zip(name.bytes())
+                    .all(|(c, n)| c.to_ascii_lowercase() == if n == b'-' { b'_' } else { n })
+        };
+        ph::ICONS
+            .iter()
+            .find(|(constant, _)| same(constant))
+            .map(|(_, glyph)| Self::Glyph(glyph))
+    }
+
     /// The icon's name: the SVG icon's, or the Phosphor name in kebab case (`gear-six`); `icon` for a glyph
     /// that is not in the Phosphor set.
     pub fn name(self) -> String {

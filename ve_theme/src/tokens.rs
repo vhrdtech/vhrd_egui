@@ -229,8 +229,8 @@ pub enum Density {
 }
 
 /// Chrome sizes that are not in [`Space`] (table "Sizes", app-chrome.md): bar and row heights, rail and
-/// panel widths, one set per [`Density`]. `text_size` is a type-scale point size and `toast_max` a count,
-/// so neither sits on the 4 px grid the other fields do.
+/// panel widths, one set per [`Density`]. `text_size` and `wordmark_size` are type-scale point sizes,
+/// `toast_max` a count and `dirty_dot` a mark, so none of them sits on the 4 px grid the other fields do.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct Chrome {
     /// Top bar height.
@@ -276,6 +276,26 @@ pub struct Chrome {
     /// How status lights are drawn app-wide (S29); a panel may override it (`PanelSettings::lights`).
     /// [`Chrome::for_density`] gives the default; switching density keeps an app's choice (`set_density`).
     pub lights: LightStyle,
+    /// One of the app's own window controls (minimise, maximise, close): its width; it is the bar's height.
+    pub window_control: f32,
+    /// The top bar's command field at full width.
+    pub field_width: f32,
+    /// The command field's first step down the collapse ladder.
+    pub field_width_mid: f32,
+    /// The narrowest command field; under it the field becomes a search button.
+    pub field_width_min: f32,
+    /// The narrowest stretch of the top bar no part covers, where the window is grabbed to move it.
+    pub drag_min: f32,
+    /// The document's breadcrumb after the app's name (top bar style B).
+    pub breadcrumb: f32,
+    /// The narrowest a menu is drawn.
+    pub menu_width_min: f32,
+    /// A small icon: chevrons on menu buttons and submenu entries.
+    pub icon_small: f32,
+    /// The wordmark's text size, points.
+    pub wordmark_size: f32,
+    /// The unsaved-changes dot's diameter.
+    pub dirty_dot: f32,
 }
 
 impl Chrome {
@@ -304,6 +324,16 @@ impl Chrome {
                 flash_secs: 0.8,
                 flash: 0.35,
                 lights: LightStyle::Perforated,
+                window_control: 44.0,
+                field_width: 440.0,
+                field_width_mid: 320.0,
+                field_width_min: 200.0,
+                drag_min: 32.0,
+                breadcrumb: 192.0,
+                menu_width_min: 208.0,
+                icon_small: 12.0,
+                wordmark_size: 15.0,
+                dirty_dot: 6.0,
             },
             Density::Compact => Self {
                 top_bar: 32.0,
@@ -327,6 +357,16 @@ impl Chrome {
                 flash_secs: 0.8,
                 flash: 0.35,
                 lights: LightStyle::Perforated,
+                window_control: 44.0,
+                field_width: 440.0,
+                field_width_mid: 320.0,
+                field_width_min: 200.0,
+                drag_min: 24.0,
+                breadcrumb: 160.0,
+                menu_width_min: 192.0,
+                icon_small: 12.0,
+                wordmark_size: 14.0,
+                dirty_dot: 6.0,
             },
         }
     }
@@ -857,8 +897,8 @@ mod tests {
         }
     }
 
-    /// E1: every chrome size steps by 4 px, at both densities. `text_size` (a type-scale point size) and
-    /// `toast_max` (a count) are not sizes on that grid.
+    /// E1: every chrome size steps by 4 px, at both densities. `text_size` and `wordmark_size` (type-scale
+    /// point sizes), `toast_max` (a count) and `dirty_dot` (a mark) are not sizes on that grid.
     #[test]
     fn chrome_sizes_are_on_the_4px_grid() {
         for density in [Density::Comfortable, Density::Compact] {
@@ -879,6 +919,14 @@ mod tests {
                 ("inspector_width", c.inspector_width),
                 ("toast_width", c.toast_width),
                 ("toast_gap", c.toast_gap),
+                ("window_control", c.window_control),
+                ("field_width", c.field_width),
+                ("field_width_mid", c.field_width_mid),
+                ("field_width_min", c.field_width_min),
+                ("drag_min", c.drag_min),
+                ("breadcrumb", c.breadcrumb),
+                ("menu_width_min", c.menu_width_min),
+                ("icon_small", c.icon_small),
             ] {
                 assert_eq!(px % 4.0, 0.0, "{density:?} {name}: {px}");
             }

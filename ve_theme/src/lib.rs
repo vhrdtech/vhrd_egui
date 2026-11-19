@@ -25,8 +25,9 @@
 //!   segmented choice, toggle chip, list view (THM-17).
 //! - [`panel`]: the side panel and its rail: groups of rows, filter, resize, dock, float, hide, and the link
 //!   that reveals a row in a view beside it (CHR-6).
-//! - [`topbar`]: `Brand`, the strip every app's top bar starts with — icon, wordmark, the version badge
-//!   that opens `ve_basics::AppMenu` (THM-19).
+//! - [`topbar`]: `TopBar`, the bar every app's window starts with — logo and name, menus from the action
+//!   registry, the app's slots, the optional command field, the build badge opening `ve_basics::AppMenu`,
+//!   global actions, window controls, the collapse ladder (CHR-8).
 //! - [`PerforatedLight`]: a status light as a square of holes lit from behind, crisp on the pixel grid at any
 //!   scale; hole, gap and glow are [`Perforation`] tokens (CHR-2).
 //! - `icons` (features `phosphor` and `icons`): the Phosphor regular font (`icons::ph`) and SVG icons with
@@ -63,7 +64,7 @@ mod perforation;
 pub mod props;
 mod status;
 mod tokens;
-#[cfg(feature = "fonts")]
+#[cfg(feature = "icons")]
 pub mod topbar;
 pub mod typography;
 mod ui_ext;

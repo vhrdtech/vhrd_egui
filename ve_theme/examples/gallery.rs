@@ -32,6 +32,7 @@ enum Page {
     Props,
     Icons,
     Panel,
+    TopBar,
 }
 
 #[derive(Default)]
@@ -41,6 +42,7 @@ struct App {
     props: PropsGallery,
     icons: IconsGallery,
     panel: PanelGallery,
+    top_bar: ve_theme::topbar::TopBarGallery,
 }
 
 impl eframe::App for App {
@@ -58,6 +60,8 @@ impl eframe::App for App {
                 .on_hover_text(
                     "Side panel and rail: filter, fold, resize, dock, float, hide, reveal (CHR-6)",
                 );
+            ui.selectable_value(&mut self.page, Page::TopBar, "Top bar")
+                .on_hover_text("The top bar with its settings and the collapse ladder (CHR-8)");
         });
         if self.page == Page::Panel {
             let theme = ui.ctx().theme();
@@ -70,6 +74,7 @@ impl eframe::App for App {
             Page::Props => self.props.side_by_side(ui),
             Page::Icons => self.icons.side_by_side(ui),
             Page::Panel => {}
+            Page::TopBar => self.top_bar.ui(ui),
         });
     }
 }

@@ -5,6 +5,17 @@ versions follow [Semantic Versioning](https://semver.org/). Feature IDs refer to
 
 ## [Unreleased]
 
+### Added
+
+- `ve_theme`: `topbar::TopBar`, the app's top bar: slots, menus from actions, field, badge, window controls, collapse ladder (CHR-8).
+- `ve_theme`: `Chrome` sizes for the top bar's window controls, field and drag area; `DebugBadge` exported (CHR-8).
+- `ve_theme`: the action `app.palette` (Ctrl K) that the top bar's field runs (CHR-8).
+- `ve_theme`: `icons::Icon::named`, an icon by its kebab-case name (CHR-8).
+
+### Removed
+
+- **Breaking:** `ve_theme`: `topbar::show`, `Brand::icon`, `Brand::connected`; draw `Brand` with a `Logo` through `TopBar` (THM-19, CHR-8).
+
 ## [0.37.1] - 2026-11-20
 
 ### Added

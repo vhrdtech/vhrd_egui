@@ -10,7 +10,7 @@
 //! - [`ScrollStrip`]: a row wider than its room scrolls in place, with arrows that say so (BAS-8).
 //! - [`StartupGuard`]: a start that died before its first frame moves the persisted state aside (PLT-4).
 //! - [`actions`]: one registry of the app's actions for menus, palette and keys, with a user keymap (CHR-1).
-//! - [`load_icon`]: decode a PNG into a texture, for an app's own icon (BAS-9; `ve_theme::topbar::Brand` draws it).
+//! - [`load_icon`]: decode a PNG into a texture, for an app's own icon (BAS-9; the top bar draws it as `ve_theme::topbar::Logo::Image`).
 //! - [`perf`]: the frame recorder behind the performance panel: frame times, named scopes, counters, repaint
 //!   causes, statistics over a window (BAS-10).
 //!
