@@ -33,6 +33,10 @@ check-wasm:
 brand:
     cp ../vhrd_brand/web/palette.json ve_theme/brand/palette.json
 
+# Check ve_theme's copy of the palette against the sibling vhrd_brand checkout's export
+brand-check:
+    VHRD_BRAND_EXPORT="$(realpath ../vhrd_brand/web/palette.json)" cargo test -p ve_theme --lib palette_copy_matches_the_brand_export -- --nocapture
+
 # Local install: the app template command (the crates themselves are depended on, not installed)
 install:
     cargo build --profile deploy --locked -p ve_template

@@ -351,7 +351,7 @@ on every background (unit-tested), status colors always come with a text label.
   of solid, soft, line, hover), `Palette::cat` the five categorical hues; `good` / `warn` / `crit` are the solids of ok,
   warning, error, so `crit` is no longer the brand red and `warn` no longer the power orange. ve_dash `Theme` carries
   `status`, `cat` and `highlight()` (info hover + line, the cross-reference highlight). Tests: stated contrast, error
-  apart from brand red, warning apart from power orange, the copy equal to the sibling export.
+  apart from brand red, warning apart from power orange, the copy equal to the brand export (THM-12).
 - ✅ **THM-14 emoji-fallback**: `install_fonts` adds `NOTO_EMOJI` (`fonts/NotoEmoji-subset.ttf`, 35 KB, Noto Emoji Regular
   monochrome, OFL, licence in `fonts/LICENSE-NotoEmoji.txt`) right after Plex and ahead of egui's built-in emoji fonts,
   so 🧪 and 📋 and every one of our internal tracker's status, project, board and log emoji draw their own glyph
@@ -379,11 +379,10 @@ on every background (unit-tested), status colors always come with a text label.
 - 💡 **THM-6 Hot reload of tokens**: in debug builds, read the tokens from a RON file and re-apply on change, as
   re_ui's `hot_reload_design_tokens` does, so tuning doesn't need a rebuild. Needs serde on the token types.
 
-- 🐛 **THM-12 Palette copy test fails beside this vhrd_brand checkout**: `tokens::tests::palette_copy_matches_the_sibling_export`
-  compares `ve_theme/brand/palette.json` with `../vhrd_brand/web/palette.json` byte for byte. On one of our dev PCs
-  (11 Oct 2026) the two differ (the sibling export has no `status` block, the copy here has one), so the test
-  says "stale: run `just brand`" and `just test` is red; not looked into which side is right, since
-  `just brand` would change colours every app and snapshot uses.
+- ✅ **THM-12 Palette copy test reads no host state**: `tokens::tests::palette_copy_matches_the_brand_export`
+  compares `ve_theme/brand/palette.json` with the file `VHRD_BRAND_EXPORT` names and prints "skipped: vhrd_brand
+  export missing" without it; `just brand-check` sets it to the sibling checkout's `web/palette.json`. It used to
+  read `../vhrd_brand` on the host and went red whenever that checkout moved.
 
 ## Widget frame (`FRM`)
 

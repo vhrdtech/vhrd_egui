@@ -589,21 +589,30 @@ mod tests {
         }
     }
 
-    /// The copy of the export is the export: when vhrd_brand is checked out beside this repo, the two files
-    /// are the same (`just brand` refreshes the copy).
+    /// The copy of the export is the export: with `VHRD_BRAND_EXPORT` set to vhrd_brand's `web/palette.json`
+    /// (`just brand-check` sets it to the sibling checkout's), the two files are the same; `just brand` refreshes
+    /// the copy. Without the setting the test says it skipped.
     #[test]
-    // A native-only, cfg(test) check of a sibling checkout on disk; never reaches a shipped wasm binary.
-    #[allow(clippy::disallowed_methods)]
-    fn palette_copy_matches_the_sibling_export() {
-        let dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR"));
-        let Ok(theirs) = std::fs::read_to_string(dir.join("../../vhrd_brand/web/palette.json"))
-        else {
+    #[expect(
+        clippy::disallowed_methods,
+        reason = "a native-only cfg(test) read of the export the setting names; never in a wasm binary"
+    )]
+    fn palette_copy_matches_the_brand_export() {
+        let Some(export) = std::env::var_os("VHRD_BRAND_EXPORT") else {
+            eprintln!(
+                "skipped: vhrd_brand export missing (set VHRD_BRAND_EXPORT, or run `just brand-check`)"
+            );
             return;
         };
-        let ours = std::fs::read_to_string(dir.join("brand/palette.json")).unwrap_or_default();
+        let theirs = std::fs::read_to_string(&export)
+            .unwrap_or_else(|e| panic!("VHRD_BRAND_EXPORT={}: {e}", export.to_string_lossy()));
+        let dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR"));
+        let ours = std::fs::read_to_string(dir.join("brand/palette.json"))
+            .expect("ve_theme/brand/palette.json");
         assert!(
             ours == theirs,
-            "ve_theme/brand/palette.json is stale: run `just brand`"
+            "ve_theme/brand/palette.json is stale against {}: run `just brand`",
+            export.to_string_lossy()
         );
     }
 
