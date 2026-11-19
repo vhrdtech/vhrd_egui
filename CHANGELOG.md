@@ -8,6 +8,7 @@ versions follow [Semantic Versioning](https://semver.org/). Feature IDs refer to
 ### Added
 
 - `ve_theme`: `PerforatedLight`, a status light of crisp pixel-aligned holes; `Tokens::perforation` sets hole, gap and glow (CHR-2).
+- `ve_app`: the *Anodised tint* setting, off by default, washes `ShellOptions::app_color` over the bars; `Tokens::anodised` (CHR-3).
 
 ## [0.34.3] - 2026-11-19
 

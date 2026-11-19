@@ -411,6 +411,53 @@ fn colours_follow_the_desktop_theme_and_the_setting() {
     std::fs::remove_dir_all(file.parent().unwrap()).ok();
 }
 
+/// The anodised tint (CHR-3): off by default, disabled with its reason while the app has no colour; on, the
+/// menu and status bars carry a 4 % wash of the app's colour.
+#[test]
+fn anodised_tint_is_a_setting_off_by_default() {
+    let bar_pixel = |h: &mut Harness<'_, Shell>| {
+        let image = h.render().expect("rendered");
+        // The menu bar's right half, clear of text, and the status bar's middle.
+        [*image.get_pixel(560, 3), *image.get_pixel(400, 497)]
+    };
+    let mut plain = harness(options());
+    let base = bar_pixel(&mut plain);
+    open_menu(&mut plain, "File");
+    plain.get_by_label("Settings…").click();
+    plain.run();
+    assert!(
+        plain
+            .get_by_label("Anodised tint")
+            .accesskit_node()
+            .is_disabled()
+    );
+
+    let red = egui::Color32::from_rgb(0xe0, 0x30, 0x30);
+    let mut h = harness(options().app_color(red));
+    assert_eq!(
+        bar_pixel(&mut h),
+        base,
+        "off by default: the bars as without a colour"
+    );
+    open_menu(&mut h, "File");
+    h.get_by_label("Settings…").click();
+    h.run();
+    h.get_by_label("Anodised tint").click();
+    h.run();
+    let fill = h.ctx.style_of(egui::Theme::Dark).visuals.panel_fill;
+    let want = ve_theme::Tokens::dark().anodised(fill, Some(red));
+    assert_ne!(want, fill);
+    for px in bar_pixel(&mut h) {
+        let got = [px[0], px[1], px[2]];
+        let close = got
+            .iter()
+            .zip([want.r(), want.g(), want.b()])
+            .all(|(g, w)| g.abs_diff(w) <= 1);
+        assert!(close, "bar {got:?}, want the tinted {want:?}");
+    }
+    h.snapshot("shell_anodised");
+}
+
 #[test]
 fn snapshot_with_a_desktop_theme() {
     let file = tokyo_night("snapshot");
