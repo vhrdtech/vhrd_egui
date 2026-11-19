@@ -124,6 +124,7 @@ fn panel_title_bar_returns_right_side_and_title() {
 }
 
 /// The number font has tabular digits: every digit is as wide as every other.
+#[cfg(feature = "fonts")]
 #[test]
 fn number_font_digits_are_tabular() {
     let widths = std::rc::Rc::new(std::cell::RefCell::new(Vec::new()));
@@ -320,3 +321,7 @@ fn perforation_snapshots() {
         }
     }
 }
+
+#[cfg(feature = "icons")]
+#[path = "icons/mod.rs"]
+mod icons;

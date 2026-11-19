@@ -9,6 +9,9 @@
 //! (THM-14). The code points kept are listed in `ve_theme/fonts/emoji-glyphs.txt`; `just emoji-font`
 //! regenerates the file.
 //!
+//! With the feature `phosphor`, the Phosphor regular icon font (MIT) is installed too: its own family
+//! (`icons::ICON_FAMILY`) and a fallback after every text face, so a glyph also works inside a label (CHR-7).
+//!
 //! The faces are © IBM Corp., SIL Open Font License 1.1 (`ve_theme/fonts/LICENSE.txt`); the OFL permits
 //! embedding, the fonts themselves remain under the OFL.
 
@@ -125,6 +128,27 @@ pub fn install_fonts(ctx: &egui::Context) {
             priority: FontPriority::Lowest,
         }],
     ));
+    // The Phosphor icons: a family of their own for `IconImage`, and a fallback after every text face so a
+    // glyph works inside a label. Its code points are in the private use area, so it never shadows a letter.
+    #[cfg(feature = "phosphor")]
+    {
+        let fallback = [FontFamily::Proportional, FontFamily::Monospace]
+            .into_iter()
+            .map(|family| InsertFontFamily {
+                family,
+                priority: FontPriority::Lowest,
+            });
+        ctx.add_font(FontInsert::new(
+            "Phosphor",
+            FontData::from_static(crate::icons::PHOSPHOR),
+            std::iter::once(InsertFontFamily {
+                family: FontFamily::Name(crate::icons::ICON_FAMILY.into()),
+                priority: FontPriority::Highest,
+            })
+            .chain(fallback)
+            .collect(),
+        ));
+    }
     // The number family: Plex Mono Bold first, then the regular monospace stack for glyphs Bold lacks.
     let number = || FontFamily::Name(NUMBER_FAMILY.into());
     ctx.add_font(FontInsert::new(

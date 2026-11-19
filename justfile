@@ -20,6 +20,13 @@ lint:
     cargo clippy --workspace --all-targets -- -D warnings
     cargo fmt --all --check
     just check-wasm
+    just check-features
+
+# ve_theme builds with every feature set it declares (fonts, phosphor, icons each need the one before; serde apart)
+check-features:
+    cargo check -p ve_theme --no-default-features --all-targets
+    cargo check -p ve_theme --no-default-features --features fonts --all-targets
+    cargo check -p ve_theme --no-default-features --features phosphor,serde --all-targets
 
 # The crates a wasm32 dashboard build pulls in (PLT-7, PLT-9, BACK-3): no std::time/fs/thread/process that
 # panics on the web; each crate's clippy.toml backs this with a disallowed-methods list. ve_backdrop twice:

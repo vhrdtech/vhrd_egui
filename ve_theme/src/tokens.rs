@@ -250,6 +250,8 @@ pub struct Chrome {
     pub text_field: f32,
     /// Chrome text size, points.
     pub text_size: f32,
+    /// An icon's side in bars, rows and menus (CHR-7).
+    pub icon: f32,
     /// A tree row's indent per level.
     pub tree_indent: f32,
     /// A side panel's default width.
@@ -280,6 +282,7 @@ impl Chrome {
                 panel_header: 36.0,
                 text_field: 28.0,
                 text_size: 13.0,
+                icon: 16.0,
                 tree_indent: 16.0,
                 side_panel_default: 264.0,
                 side_panel_min: 200.0,
@@ -298,6 +301,7 @@ impl Chrome {
                 panel_header: 28.0,
                 text_field: 24.0,
                 text_size: 12.0,
+                icon: 16.0,
                 tree_indent: 12.0,
                 side_panel_default: 264.0,
                 side_panel_min: 200.0,
@@ -851,6 +855,7 @@ mod tests {
                 ("panel_header", c.panel_header),
                 ("text_field", c.text_field),
                 ("tree_indent", c.tree_indent),
+                ("icon", c.icon),
                 ("side_panel_default", c.side_panel_default),
                 ("side_panel_min", c.side_panel_min),
                 ("inspector_width", c.inspector_width),

@@ -1,0 +1,20 @@
+[package]
+name = "ve_theme_benchmarks"
+description = "Benchmarks of ve_theme: the first raster of an SVG icon per size"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+publish = false
+
+[lints]
+workspace = true
+
+[dev-dependencies]
+ve_theme = { path = "../ve_theme" }
+
+[[bench]]
+name = "icons"
+harness = false

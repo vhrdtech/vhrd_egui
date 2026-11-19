@@ -27,6 +27,8 @@
 //!   that opens `ve_basics::AppMenu` (THM-19).
 //! - [`PerforatedLight`]: a status light as a square of holes lit from behind, crisp on the pixel grid at any
 //!   scale; hole, gap and glow are [`Perforation`] tokens (CHR-2).
+//! - `icons` (features `phosphor` and `icons`): the Phosphor regular font (`icons::ph`) and SVG icons with
+//!   colour slots bound to tokens, rasterised per size into cached masks tinted at paint (`IconImage`, CHR-7).
 //! - [`gallery`]: every egui widget and helper in one view, the tuning tool (THM-5);
 //!   `cargo run -p ve_theme --example gallery`.
 //!
@@ -50,6 +52,8 @@ mod desktop;
 mod fonts;
 pub mod gallery;
 pub mod hue;
+#[cfg(feature = "phosphor")]
+pub mod icons;
 #[cfg(not(target_arch = "wasm32"))]
 mod look;
 mod perforation;
@@ -72,7 +76,8 @@ pub use look::{Look, omarchy_colors_path};
 pub use perforation::{HOLES_DEFAULT, HOLES_MAX, PerforatedLight};
 pub use status::{STATUS_GLYPHS, StatusGlyph, status_glyph, status_icon, status_icon_with};
 pub use tokens::{
-    Elevation, Palette, Perforation, Radius, Ramp, Space, Status, Strokes, Tokens, vhrd,
+    Chrome, Density, Elevation, Palette, Perforation, Radius, Ramp, Space, Status, Strokes, Tokens,
+    vhrd,
 };
 pub use ui_ext::{Tone, UiExt};
 

@@ -5,6 +5,11 @@ versions follow [Semantic Versioning](https://semver.org/). Feature IDs refer to
 
 ## [Unreleased]
 
+### Added
+
+- `ve_theme`: Phosphor icon font and SVG icons with colour slots bound to tokens, drawn by `IconImage` (CHR-7).
+- `ve_theme`: `Chrome::icon`, the chrome's 16 pt icon size; `Chrome` and `Density` exported (CHR-7).
+
 ## [0.35.1] - 2026-11-19
 
 ### Added

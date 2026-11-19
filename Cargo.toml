@@ -17,6 +17,7 @@ members = [
     "ve_alloc_count",
     "ve_basics",
     "ve_basics_benchmarks",
+    "ve_theme_benchmarks",
     "ve_theme",
     "ve_backdrop",
     "ve_phosphor",
@@ -44,6 +45,9 @@ inventory = "0.3"
 tokio = { version = "1", features = ["sync"] }
 web-time = "1"
 toml = { version = "1", default-features = false }
+# ve_theme icons (CHR-7): SVG to coverage masks, no text, no system fonts, no raster images.
+resvg = { version = "0.45", default-features = false }
+egui-phosphor = { version = "0.14", default-features = false, features = ["regular"] }
 
 # Debug builds with many widgets were slow: our code a little optimised and still debuggable, the dependencies
 # (egui, wgpu, ...) near release speed. Tests use it too.

@@ -6,11 +6,16 @@ edition.workspace = true
 license.workspace = true
 authors.workspace = true
 repository.workspace = true
+readme = "README.md"
 
 [features]
-default = ["fonts"]
+default = ["fonts", "icons"]
 # Embed IBM Plex Sans / Plex Mono (the vhrd_brand faces, OFL) and install them in `setup`.
 fonts = []
+# The Phosphor regular icon font (CHR-7): installed with the brand fonts, its glyphs as `icons::ph`.
+phosphor = ["fonts", "dep:egui-phosphor"]
+# SVG icons with colour slots (CHR-7): `icons::SvgIcon`, rasterised by resvg into cached masks tinted at paint.
+icons = ["phosphor", "dep:resvg"]
 # `ColorSource` as a setting: "desktop", "brand" or "#rrggbb".
 serde = ["dep:serde"]
 
@@ -18,12 +23,19 @@ serde = ["dep:serde"]
 egui.workspace = true
 serde = { workspace = true, optional = true }
 log.workspace = true
+resvg = { workspace = true, optional = true }
+egui-phosphor = { workspace = true, optional = true }
 # the gallery shows its helpers (fold_rest)
 ve_basics = { path = "../ve_basics", version = "0.35" }
 
 # build.rs reads the vhrd_brand export (brand/palette.json) into colour constants.
 [build-dependencies]
 serde_json = "1"
+
+[[example]]
+name = "gallery"
+# The Icons page needs the SVG icons.
+required-features = ["icons"]
 
 [dev-dependencies]
 eframe = { workspace = true, features = ["wgpu"] }

@@ -1,10 +1,11 @@
 //! The ve_theme gallery: every egui widget and every `UiExt` helper, dark and light side by side, and a second
-//! page with the property-panel widgets. The tool for tuning tokens (THM-5, THM-17).
+//! page with the property-panel widgets, a third with the icons (CHR-7). The tool for tuning tokens (THM-5, THM-17).
 //!
 //! Run: `cargo run -p ve_theme --example gallery`
 
 use eframe::egui;
 use ve_theme::gallery::{Gallery, PropsGallery};
+use ve_theme::icons::gallery::IconsGallery;
 
 fn main() -> eframe::Result {
     let options = eframe::NativeOptions {
@@ -29,6 +30,7 @@ enum Page {
     #[default]
     Widgets,
     Props,
+    Icons,
 }
 
 #[derive(Default)]
@@ -36,6 +38,7 @@ struct App {
     page: Page,
     gallery: Gallery,
     props: PropsGallery,
+    icons: IconsGallery,
 }
 
 impl eframe::App for App {
@@ -47,10 +50,13 @@ impl eframe::App for App {
                 .on_hover_text(
                     "Pane, sub-pane, group, property rows, number and axis fields, list (THM-17)",
                 );
+            ui.selectable_value(&mut self.page, Page::Icons, "Icons")
+                .on_hover_text("Phosphor and SVG icons with colour slots (CHR-7)");
         });
         egui::ScrollArea::vertical().show(ui, |ui| match self.page {
             Page::Widgets => self.gallery.side_by_side(ui),
             Page::Props => self.props.side_by_side(ui),
+            Page::Icons => self.icons.side_by_side(ui),
         });
     }
 }
