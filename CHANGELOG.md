@@ -5,6 +5,10 @@ versions follow [Semantic Versioning](https://semver.org/). Feature IDs refer to
 
 ## [Unreleased]
 
+### Removed
+
+- **Breaking:** `ve_app`: the *Anodised tint* setting and `ShellOptions::app_color`; `ve_theme`: `Tokens::anodised`, `Bars` (CHR-3).
+
 ## [0.34.4] - 2026-11-19
 
 ### Added

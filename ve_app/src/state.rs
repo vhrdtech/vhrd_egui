@@ -40,9 +40,6 @@ pub(crate) struct State {
     /// Where the colours come from: the desktop theme, the brand, or a fixed accent (THM-18).
     #[serde(default)]
     pub(crate) colors: ve_theme::ColorSource,
-    /// The anodised tint on the bars (CHR-3); off by default.
-    #[serde(default)]
-    pub(crate) anodise: bool,
 }
 
 /// Which of the shell's windows are open.
@@ -64,7 +61,6 @@ impl State {
             side_panel_open: options.side_panel.is_some(),
             windows: OpenWindows::default(),
             colors: ve_theme::ColorSource::default(),
-            anodise: false,
         }
     }
 

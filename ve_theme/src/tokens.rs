@@ -202,13 +202,6 @@ pub struct Perforation {
     pub glow: f32,
 }
 
-/// The chrome's bars ([`Tokens::anodised`]).
-#[derive(Clone, Copy, Debug, PartialEq)]
-pub struct Bars {
-    /// The anodised tint: how much of the app's colour washes over the bars when the tint is on, 0 to 1.
-    pub anodise: f32,
-}
-
 /// The design system in one value. Start from [`Tokens::dark`] / [`Tokens::light`] and override fields.
 #[derive(Clone, Debug, PartialEq)]
 pub struct Tokens {
@@ -219,7 +212,6 @@ pub struct Tokens {
     pub shadow: Elevation,
     pub type_scale: TypeScale,
     pub perforation: Perforation,
-    pub bars: Bars,
 }
 
 const fn rgb(hex: u32) -> Color32 {
@@ -240,8 +232,6 @@ const STROKES: Strokes = Strokes {
     medium: 1.5,
     thick: 2.0,
 };
-
-const BARS: Bars = Bars { anodise: 0.04 };
 
 const fn shadow(offset_y: i8, blur: u8, alpha: u8) -> Shadow {
     Shadow {
@@ -295,7 +285,6 @@ impl Tokens {
                 gap: 1.0,
                 glow: 0.14,
             },
-            bars: BARS,
         }
     }
 
@@ -341,7 +330,6 @@ impl Tokens {
                 gap: 1.0,
                 glow: 0.10,
             },
-            bars: BARS,
         }
     }
 
@@ -351,12 +339,6 @@ impl Tokens {
             Theme::Dark => Self::dark(),
             Theme::Light => Self::light(),
         }
-    }
-
-    /// A bar's `fill` with the anodised tint: `tint` is the app's colour while the setting is on, `None`
-    /// while it is off (the default), which gives `fill` back unchanged; on, a [`Bars::anodise`] wash of it.
-    pub fn anodised(&self, fill: Color32, tint: Option<Color32>) -> Color32 {
-        tint.map_or(fill, |t| fill.lerp_to_gamma(t, self.bars.anodise))
     }
 
     /// Text color for something filled with `fill`: whichever of `text`, `bg` and `surface_raised` reads best.

@@ -20,12 +20,11 @@ pub(crate) fn show(
     look: &ve_theme::Look,
 ) {
     let colors = &mut state.colors;
-    let anodise = &mut state.anodise;
     Window::new("Settings")
         .open(&mut state.windows.settings)
         .collapsible(true)
         .scroll([false, true])
-        .show(ctx, |ui| settings(ui, options, cx, look, colors, anodise));
+        .show(ctx, |ui| settings(ui, options, cx, look, colors));
     let open = &mut state.windows;
     Window::new("Debug")
         .open(&mut open.debug)
@@ -42,7 +41,6 @@ fn settings(
     cx: &Context,
     look: &ve_theme::Look,
     colors: &mut ve_theme::ColorSource,
-    anodise: &mut bool,
 ) {
     ui.section_header("Appearance", "How the app looks");
     ui.horizontal(|ui| {
@@ -55,12 +53,6 @@ fn settings(
     if let Some(source) = look.ui(ui) {
         *colors = source;
     }
-    let has_color = options.app_color.is_some();
-    ui.add_enabled_ui(has_color, |ui| {
-        ui.checkbox(anodise, "Anodised tint")
-            .on_hover_text("A light wash of the app's colour on the menu and status bars, so apps side by side are told apart")
-            .on_disabled_hover_text("This app has no colour of its own (ShellOptions::app_color)");
-    });
     if let Some(app_settings) = &mut options.settings {
         ui.add_space(8.0);
         ui.section_header(&options.app_name, "Settings of this app");

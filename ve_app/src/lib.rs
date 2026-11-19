@@ -58,7 +58,7 @@ pub use perf::{CAUSES_PER_FRAME_MAX, LOGIC_SCOPE};
 pub use repainter::Repainter;
 pub use widget_menu::registered_widgets;
 
-use egui::{CentralPanel, Frame, MenuBar, Panel, Ui};
+use egui::{CentralPanel, MenuBar, Panel, Ui};
 use ve_basics::perf::{Readout, Recorder, Shown};
 use ve_basics::{AppMenu, AppMenuAction, BuildInfo};
 use ve_frame::{Applied, FrameAction, FrameState, Parcel, Remote, SlotId, ViewportSlot};
@@ -106,10 +106,6 @@ pub struct ShellOptions {
     /// How the shown performance numbers refresh (settings S15, S16): a `Readout::new(settings)`, which refuses
     /// settings out of range with a typed error.
     pub readout: Readout,
-    /// The app's own colour, for the anodised tint (CHR-3): while the user's setting is on (off by default) a
-    /// [`ve_theme::Bars::anodise`] wash of it colours the menu and status bars, so two apps side by side are
-    /// told apart. `None`: the setting is shown disabled, saying why.
-    pub app_color: Option<egui::Color32>,
 }
 
 impl ShellOptions {
@@ -129,7 +125,6 @@ impl ShellOptions {
             desktop_theme: ve_theme::omarchy_colors_path(),
             recorder: None,
             readout: Readout::default(),
-            app_color: None,
         }
     }
 
@@ -196,12 +191,6 @@ impl ShellOptions {
     /// See [`Self::readout`].
     pub fn readout(mut self, readout: Readout) -> Self {
         self.readout = readout;
-        self
-    }
-
-    /// See [`Self::app_color`].
-    pub fn app_color(mut self, color: egui::Color32) -> Self {
-        self.app_color = Some(color);
         self
     }
 }
@@ -317,13 +306,10 @@ impl Shell {
             }
         }
 
-        let bar = self.bar_frame(ui);
-        Panel::top("ve_app_menu_bar").frame(bar).show(ui, |ui| {
+        Panel::top("ve_app_menu_bar").show(ui, |ui| {
             MenuBar::new().ui(ui, |ui| self.menu_bar(ui));
         });
-        Panel::bottom("ve_app_status_bar")
-            .frame(bar)
-            .show(ui, |ui| self.status_bar(ui));
+        Panel::bottom("ve_app_status_bar").show(ui, |ui| self.status_bar(ui));
 
         if let Some(side_panel) = &mut self.options.side_panel {
             let cx = &self.cx;
@@ -557,13 +543,6 @@ impl Shell {
         ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
             egui::widgets::global_theme_preference_switch(ui);
         });
-    }
-
-    /// The menu and status bars' frame: egui's, with the anodised tint while the setting is on (CHR-3).
-    fn bar_frame(&self, ui: &Ui) -> Frame {
-        let frame = Frame::side_top_panel(ui.style());
-        let tint = self.options.app_color.filter(|_| self.state.anodise);
-        frame.fill(ve_theme::Tokens::of_ui(ui).anodised(frame.fill, tint))
     }
 
     fn status_bar(&mut self, ui: &mut Ui) {

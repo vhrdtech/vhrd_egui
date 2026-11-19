@@ -26,8 +26,7 @@
 //! - [`topbar`]: `Brand`, the strip every app's top bar starts with — icon, wordmark, the version badge
 //!   that opens `ve_basics::AppMenu` (THM-19).
 //! - [`PerforatedLight`]: a status light as a square of holes lit from behind, crisp on the pixel grid at any
-//!   scale; hole, gap and glow are [`Perforation`] tokens (CHR-2). [`Tokens::anodised`] washes the app's colour
-//!   over a bar when the anodised-tint setting is on (CHR-3).
+//!   scale; hole, gap and glow are [`Perforation`] tokens (CHR-2).
 //! - [`gallery`]: every egui widget and helper in one view, the tuning tool (THM-5);
 //!   `cargo run -p ve_theme --example gallery`.
 //!
@@ -73,7 +72,7 @@ pub use look::{Look, omarchy_colors_path};
 pub use perforation::{HOLES_DEFAULT, HOLES_MAX, PerforatedLight};
 pub use status::{STATUS_GLYPHS, StatusGlyph, status_glyph, status_icon, status_icon_with};
 pub use tokens::{
-    Bars, Elevation, Palette, Perforation, Radius, Ramp, Space, Status, Strokes, Tokens, vhrd,
+    Elevation, Palette, Perforation, Radius, Ramp, Space, Status, Strokes, Tokens, vhrd,
 };
 pub use ui_ext::{Tone, UiExt};
 
