@@ -67,20 +67,6 @@ pub use panel::{CalibrateSteps, SaveTarget, SettingsPanel};
 pub use pie::{ButtonEvent, Fired, PieMenu, PieState, PieStyle, Ring, Slot, SlotRef, buttons};
 pub use settings_ui::{axes_bars, mapping_ui};
 
-/// Phosphor icons (egui-phosphor's regular set) for the slots: `icons::FLOPPY_DISK`.
+/// Phosphor icons for the slots: `icons::FLOPPY_DISK`. The font comes with `ve_theme::setup`.
 #[cfg(feature = "icons")]
-pub use egui_phosphor::regular as icons;
-
-/// Add the phosphor icon font to egui's proportional fonts, after the ones already there, so slot icons from
-/// [`icons`] draw. Keeps the app's own fonts (ve_theme's) in front; call it after `ve_theme::setup`.
-#[cfg(feature = "icons")]
-pub fn install_icons(ctx: &egui::Context) {
-    ctx.add_font(egui::epaint::text::FontInsert::new(
-        "phosphor",
-        egui::FontData::from_static(egui_phosphor::Variant::Regular.font_bytes()),
-        vec![egui::epaint::text::InsertFontFamily {
-            family: egui::FontFamily::Proportional,
-            priority: egui::epaint::text::FontPriority::Lowest,
-        }],
-    ));
-}
+pub use ve_theme::icons::ph as icons;

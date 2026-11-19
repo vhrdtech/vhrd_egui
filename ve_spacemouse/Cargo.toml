@@ -9,17 +9,22 @@ repository.workspace = true
 
 [features]
 default = ["icons"]
-# Phosphor icons for the pie menu's slots: `install_icons` and the `icons` module (egui-phosphor's regular set).
-icons = ["dep:egui-phosphor"]
+# Phosphor icons for the pie menu's slots: the `icons` module, ve_theme's Phosphor regular set, whose font
+# `ve_theme::setup` installs.
+icons = ["ve_theme/phosphor"]
 
 [dependencies]
 egui.workspace = true
 serde.workspace = true
 log.workspace = true
 ve_theme = { path = "../ve_theme", version = "0.35", default-features = false }
-egui-phosphor = { version = "0.14", default-features = false, features = ["regular"], optional = true }
 # spacemouse.toml: the shared settings files (SPM-5)
 toml = { version = "1", default-features = false, features = ["std", "serde", "parse", "display"] }
+
+[[example]]
+name = "demo"
+# The demo's pie menu shows Phosphor icons.
+required-features = ["icons"]
 
 [dev-dependencies]
 tempfile = "3"

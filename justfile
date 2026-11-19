@@ -27,6 +27,7 @@ check-features:
     cargo check -p ve_theme --no-default-features --all-targets
     cargo check -p ve_theme --no-default-features --features fonts --all-targets
     cargo check -p ve_theme --no-default-features --features phosphor,serde --all-targets
+    cargo check -p ve_spacemouse --no-default-features --all-targets
 
 # The crates a wasm32 dashboard build pulls in (PLT-7, PLT-9, BACK-3): no std::time/fs/thread/process that
 # panics on the web; each crate's clippy.toml backs this with a disallowed-methods list. ve_backdrop twice:

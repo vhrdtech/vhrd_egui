@@ -3,6 +3,7 @@
 //!
 //! After an intended visual change: `UPDATE_SNAPSHOTS=1 cargo test -p ve_spacemouse --test pie` and commit the
 //! PNGs under `tests/snapshots/`.
+#![cfg(feature = "icons")]
 
 #[path = "../examples/demo/menu.rs"]
 #[allow(dead_code)]
@@ -41,7 +42,6 @@ fn harness() -> Harness<'static, App> {
             |ui, app: &mut App| {
                 if !app.fonts {
                     ve_theme::setup(ui.ctx());
-                    ve_spacemouse::install_icons(ui.ctx());
                     app.fonts = true;
                 }
                 egui::CentralPanel::default().show(ui, |ui| {

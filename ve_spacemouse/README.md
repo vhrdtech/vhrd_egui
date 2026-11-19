@@ -163,7 +163,7 @@ for fired in menu.show(ui.ctx(), &mut pie_state, &ve_spacemouse::buttons(&events
 }
 ```
 
-Call `show` after the app's panels. `ve_spacemouse::install_icons(ctx)` (feature `icons`, on by default) adds egui-phosphor's regular icons behind the app's fonts; `ve_spacemouse::icons::*` are their glyphs.
+Call `show` after the app's panels. `ve_spacemouse::icons::*` (feature `icons`, on by default) are the Phosphor regular glyphs of `ve_theme::icons::ph`; `ve_theme::setup` installs their font.
 
 ## Testing
 
