@@ -5,6 +5,8 @@ versions follow [Semantic Versioning](https://semver.org/). Feature IDs refer to
 
 ## [Unreleased]
 
+## [0.35.0] - 2026-11-19
+
 ### Added
 
 - `ve_theme`: the vhrd_brand `kicad-layer` colours, `vhrd::kicad_layer` (THM-11).
