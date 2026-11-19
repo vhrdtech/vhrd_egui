@@ -97,6 +97,18 @@ macro_rules! categorical {
     };
 }
 
+/// The debug-build badge's own colors, apart from the status ramps (CHR-4, OQ6): a release build stays
+/// quiet `text_muted`; a debug build gets this instead, so it is never mistaken for a release one.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct DebugBadge {
+    /// Text or icon on `fill`.
+    pub text: Color32,
+    /// The badge's own background.
+    pub fill: Color32,
+    /// The badge's outline.
+    pub line: Color32,
+}
+
 /// Named color tokens. Field docs say where egui (or a helper) uses each.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct Palette {
@@ -146,6 +158,10 @@ pub struct Palette {
     pub slug: Color32,
     /// Identifier text: a task name or id. Distinct from `slug` and from every series color.
     pub task: Color32,
+    /// Under the command palette and the narrow-window drawer (CHR-4): black at 50 % (dark) or 25 % (light).
+    pub scrim: Color32,
+    /// The debug-build badge (CHR-4).
+    pub debug: DebugBadge,
 }
 
 /// Spacing scale, points: 2, 4, 8, 12, 16, 24.
@@ -202,6 +218,98 @@ pub struct Perforation {
     pub glow: f32,
 }
 
+/// The chrome's density (E1): comfortable is the pick, compact the alternative; every size between them
+/// steps by 4 px.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum Density {
+    #[default]
+    Comfortable,
+    Compact,
+}
+
+/// Chrome sizes that are not in [`Space`] (table "Sizes", app-chrome.md): bar and row heights, rail and
+/// panel widths, one set per [`Density`]. `text_size` is a type-scale point size and `toast_max` a count,
+/// so neither sits on the 4 px grid the other fields do.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct Chrome {
+    /// Top bar height.
+    pub top_bar: f32,
+    /// Bottom bar height.
+    pub bottom_bar: f32,
+    /// A square bar button's side.
+    pub bar_button: f32,
+    /// The logo mark's side (its clear space is 4 pt on every side, at every density).
+    pub logo_mark: f32,
+    /// A side panel collapsed to its rail: that rail's width.
+    pub rail_width: f32,
+    /// A list row or a menu row's height.
+    pub row: f32,
+    /// A side panel's header height.
+    pub panel_header: f32,
+    /// A text field's height.
+    pub text_field: f32,
+    /// Chrome text size, points.
+    pub text_size: f32,
+    /// A tree row's indent per level.
+    pub tree_indent: f32,
+    /// A side panel's default width.
+    pub side_panel_default: f32,
+    /// A side panel's minimum width (it cannot cross half the window's width either, checked at layout).
+    pub side_panel_min: f32,
+    /// An inspector panel's default width.
+    pub inspector_width: f32,
+    /// A toast's width.
+    pub toast_width: f32,
+    /// Gap between stacked toasts.
+    pub toast_gap: f32,
+    /// How many toasts show before the rest fold.
+    pub toast_max: u8,
+}
+
+impl Chrome {
+    /// The chrome sizes for `density`.
+    pub const fn for_density(density: Density) -> Self {
+        match density {
+            Density::Comfortable => Self {
+                top_bar: 40.0,
+                bottom_bar: 28.0,
+                bar_button: 28.0,
+                logo_mark: 24.0,
+                rail_width: 48.0,
+                row: 28.0,
+                panel_header: 36.0,
+                text_field: 28.0,
+                text_size: 13.0,
+                tree_indent: 16.0,
+                side_panel_default: 264.0,
+                side_panel_min: 200.0,
+                inspector_width: 296.0,
+                toast_width: 360.0,
+                toast_gap: 8.0,
+                toast_max: 3,
+            },
+            Density::Compact => Self {
+                top_bar: 32.0,
+                bottom_bar: 24.0,
+                bar_button: 24.0,
+                logo_mark: 20.0,
+                rail_width: 40.0,
+                row: 24.0,
+                panel_header: 28.0,
+                text_field: 24.0,
+                text_size: 12.0,
+                tree_indent: 12.0,
+                side_panel_default: 264.0,
+                side_panel_min: 200.0,
+                inspector_width: 296.0,
+                toast_width: 360.0,
+                toast_gap: 8.0,
+                toast_max: 3,
+            },
+        }
+    }
+}
+
 /// The design system in one value. Start from [`Tokens::dark`] / [`Tokens::light`] and override fields.
 #[derive(Clone, Debug, PartialEq)]
 pub struct Tokens {
@@ -211,6 +319,7 @@ pub struct Tokens {
     pub stroke: Strokes,
     pub shadow: Elevation,
     pub type_scale: TypeScale,
+    pub chrome: Chrome,
     pub perforation: Perforation,
 }
 
@@ -268,8 +377,14 @@ impl Tokens {
                 selection: rgb(0x0d4a54), // signal.can, deep
                 hover: rgb(0x2c2c2e),
                 focus: vhrd::signal_dark::CAN,
-                slug: rgb(0xa6e3c4), // pale mint
-                task: rgb(0xe8c44e), // gold
+                slug: rgb(0xa6e3c4),                   // pale mint
+                task: rgb(0xe8c44e),                   // gold
+                scrim: Color32::from_black_alpha(128), // 50 %
+                debug: DebugBadge {
+                    text: rgb(0xffa24d),
+                    fill: rgb(0x3a2108),
+                    line: rgb(0xa85a12),
+                },
             },
             space: SPACE,
             radius: RADIUS,
@@ -280,6 +395,7 @@ impl Tokens {
                 floating: shadow(10, 40, 200),
             },
             type_scale: TypeScale::new(),
+            chrome: Chrome::for_density(Density::Comfortable),
             perforation: Perforation {
                 hole: 1.0,
                 gap: 1.0,
@@ -313,8 +429,14 @@ impl Tokens {
                 selection: rgb(0xc4e5ea), // signal.can, pale
                 hover: vhrd::grey::S200,
                 focus: vhrd::signal::CAN,
-                slug: rgb(0x1f8a54), // deep mint
-                task: rgb(0xa48200), // deep gold
+                slug: rgb(0x1f8a54),                  // deep mint
+                task: rgb(0xa48200),                  // deep gold
+                scrim: Color32::from_black_alpha(64), // 25 %
+                debug: DebugBadge {
+                    text: rgb(0x9c4300),
+                    fill: rgb(0xfde4cc),
+                    line: rgb(0xe07a1f),
+                },
             },
             space: SPACE,
             radius: RADIUS,
@@ -325,6 +447,7 @@ impl Tokens {
                 floating: shadow(10, 40, 64),
             },
             type_scale: TypeScale::new(),
+            chrome: Chrome::for_density(Density::Comfortable),
             perforation: Perforation {
                 hole: 1.0,
                 gap: 1.0,
@@ -339,6 +462,34 @@ impl Tokens {
             Theme::Dark => Self::dark(),
             Theme::Light => Self::light(),
         }
+    }
+
+    /// High contrast, dark (E2): a black ground, AAA text (7:1), lines at 4.5:1; everything else as
+    /// [`Tokens::dark`] (same layout, same focus hue, "at full strength" already).
+    pub fn high_contrast_dark() -> Self {
+        let mut t = Self::dark();
+        t.colors.bg = Color32::BLACK;
+        t.colors.surface = Color32::BLACK;
+        t.colors.surface_raised = Color32::BLACK;
+        t.colors.text = Color32::WHITE;
+        t.colors.text_muted = rgb(0xa0a0a0);
+        t.colors.line = rgb(0x808080);
+        t.colors.line_strong = rgb(0x999999);
+        t
+    }
+
+    /// High contrast, light (E2): a white ground, AAA text (7:1), lines at 4.5:1; everything else as
+    /// [`Tokens::light`].
+    pub fn high_contrast_light() -> Self {
+        let mut t = Self::light();
+        t.colors.bg = Color32::WHITE;
+        t.colors.surface = Color32::WHITE;
+        t.colors.surface_raised = Color32::WHITE;
+        t.colors.text = Color32::BLACK;
+        t.colors.text_muted = rgb(0x505050);
+        t.colors.line = rgb(0x646464);
+        t.colors.line_strong = rgb(0x464646);
+        t
     }
 
     /// Text color for something filled with `fill`: whichever of `text`, `bg` and `surface_raised` reads best.
@@ -680,6 +831,67 @@ mod tests {
             ] {
                 let r = contrast(fg, bg);
                 assert!(r >= AA_TEXT, "{theme:?}: {what} is {r:.2}");
+            }
+        }
+    }
+
+    /// E1: every chrome size steps by 4 px, at both densities. `text_size` (a type-scale point size) and
+    /// `toast_max` (a count) are not sizes on that grid.
+    #[test]
+    fn chrome_sizes_are_on_the_4px_grid() {
+        for density in [Density::Comfortable, Density::Compact] {
+            let c = Chrome::for_density(density);
+            for (name, px) in [
+                ("top_bar", c.top_bar),
+                ("bottom_bar", c.bottom_bar),
+                ("bar_button", c.bar_button),
+                ("logo_mark", c.logo_mark),
+                ("rail_width", c.rail_width),
+                ("row", c.row),
+                ("panel_header", c.panel_header),
+                ("text_field", c.text_field),
+                ("tree_indent", c.tree_indent),
+                ("side_panel_default", c.side_panel_default),
+                ("side_panel_min", c.side_panel_min),
+                ("inspector_width", c.inspector_width),
+                ("toast_width", c.toast_width),
+                ("toast_gap", c.toast_gap),
+            ] {
+                assert_eq!(px % 4.0, 0.0, "{density:?} {name}: {px}");
+            }
+        }
+    }
+
+    /// E2: the high-contrast sets reach AAA text (7:1) and strong lines (4.5:1) on their own grounds.
+    #[test]
+    fn high_contrast_sets_reach_aaa_text_and_strong_lines() {
+        for (name, t) in [
+            ("dark", Tokens::high_contrast_dark()),
+            ("light", Tokens::high_contrast_light()),
+        ] {
+            let c = t.colors;
+            for bg in [c.bg, c.surface, c.surface_raised] {
+                for (fg_name, fg) in [("text", c.text), ("text_muted", c.text_muted)] {
+                    let k = contrast(fg, bg);
+                    assert!(k >= 7.0, "{name}: {fg_name} on {bg:?} is {k:.2}");
+                }
+                for (ln_name, ln) in [("line", c.line), ("line_strong", c.line_strong)] {
+                    let k = contrast(ln, bg);
+                    assert!(k >= 4.5, "{name}: {ln_name} on {bg:?} is {k:.2}");
+                }
+            }
+        }
+    }
+
+    /// CHR-4, OQ6: the debug badge's text reads on its own fill and on `surface` (a badge drawn there), in
+    /// both themes.
+    #[test]
+    fn debug_badge_text_is_legible_on_fill_and_surface() {
+        for (name, t) in [("dark", Tokens::dark()), ("light", Tokens::light())] {
+            let c = t.colors;
+            for (bg_name, bg) in [("fill", c.debug.fill), ("surface", c.surface)] {
+                let k = contrast(c.debug.text, bg);
+                assert!(k >= AA_TEXT, "{name}: debug text on {bg_name} is {k:.2}");
             }
         }
     }

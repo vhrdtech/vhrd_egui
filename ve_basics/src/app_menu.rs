@@ -1,9 +1,10 @@
 //! The app menu every vhrd egui app shares (BAS-4): it opens from the version badge, says what is running and
 //! offers to reset what the app has saved.
 
-use egui::{Color32, Id, Modal, Popup, PopupCloseBehavior, Response, RichText, Sense, Ui};
+use egui::{Id, Modal, Popup, PopupCloseBehavior, Response, RichText, Sense, Ui};
 
 use crate::BuildInfo;
+use crate::build_info::debug_marker_color;
 
 /// What the user picked in the [`AppMenu`]; the app carries it out.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -86,7 +87,7 @@ impl<'a> AppMenu<'a> {
     pub fn badge(&self, ui: &mut Ui) -> AppMenuResponse {
         let text = RichText::new(self.info.short()).monospace().small();
         let text = if self.info.debug {
-            text.color(Color32::from_rgb(0xe0, 0x8a, 0x2e))
+            text.color(debug_marker_color(ui))
         } else {
             text.weak()
         };

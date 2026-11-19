@@ -198,7 +198,7 @@ impl Gallery {
             "Color tokens; hover a swatch for its name and hex",
         );
         let c = t.colors;
-        let swatches: [(&str, Color32); 21] = [
+        let swatches: [(&str, Color32); 25] = [
             ("bg", c.bg),
             ("surface", c.surface),
             ("surface_raised", c.surface_raised),
@@ -220,6 +220,10 @@ impl Gallery {
             ("focus", c.focus),
             ("slug", c.slug),
             ("task", c.task),
+            ("scrim", c.scrim),
+            ("debug.text", c.debug.text),
+            ("debug.fill", c.debug.fill),
+            ("debug.line", c.debug.line),
         ];
         ui.horizontal_wrapped(|ui| {
             ui.spacing_mut().item_spacing.x = t.space.xs;

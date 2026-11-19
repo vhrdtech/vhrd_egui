@@ -78,13 +78,23 @@ impl BuildInfo {
 }
 
 /// Small monospace line `version · sha · debug|release` with the details as tooltip. The debug marker is
-/// orange so a debug build is never mistaken for a release one.
+/// orange ([`debug_marker_color`]) so a debug build is never mistaken for a release one.
 pub fn build_info_label(ui: &mut Ui, info: &BuildInfo) -> Response {
     let text = RichText::new(info.short()).monospace().small();
     let text = if info.debug {
-        text.color(Color32::from_rgb(0xe0, 0x8a, 0x2e))
+        text.color(debug_marker_color(ui))
     } else {
         text.weak()
     };
     ui.label(text).on_hover_text(info.details())
+}
+
+/// The debug-build marker's color: `ve_theme::Tokens::colors.debug.text` (CHR-4), inlined here since
+/// ve_basics sits below ve_theme in the crate layering and cannot depend on it.
+pub(crate) fn debug_marker_color(ui: &Ui) -> Color32 {
+    if ui.visuals().dark_mode {
+        Color32::from_rgb(0xff, 0xa2, 0x4d)
+    } else {
+        Color32::from_rgb(0x9c, 0x43, 0x00)
+    }
 }
