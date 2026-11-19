@@ -151,5 +151,21 @@
     "ground-symbol": "#3caa18",
     "power-wire": "#af320a",
     "power-symbol": "#e8710a"
+  },
+  "kicad-layer": {
+    "crit-front": "#ff4015",
+    "crit-back": "#b94c06",
+    "imp-front": "#f2a900",
+    "imp-back": "#b07b00",
+    "body-front": "#1f5aff",
+    "body-back": "#1f5aff",
+    "xray-front": "#35c7e0",
+    "xray-back": "#35c7e0",
+    "pin1-front": "#c6ff00",
+    "pin1-back": "#c6ff00",
+    "ruler-front": "#f4f4f4",
+    "ruler-back": "#f4f4f4",
+    "mask-front": "#d4b25c",
+    "mask-back": "#d4b25c"
   }
 }

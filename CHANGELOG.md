@@ -5,6 +5,10 @@ versions follow [Semantic Versioning](https://semver.org/). Feature IDs refer to
 
 ## [Unreleased]
 
+### Added
+
+- `ve_theme`: the vhrd_brand `kicad-layer` colours, `vhrd::kicad_layer` (THM-11).
+
 ### Removed
 
 - **Breaking:** `ve_app`: the *Anodised tint* setting and `ShellOptions::app_color`; `ve_theme`: `Tokens::anodised`, `Bars` (CHR-3).
