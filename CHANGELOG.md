@@ -5,6 +5,13 @@ versions follow [Semantic Versioning](https://semver.org/). Feature IDs refer to
 
 ## [Unreleased]
 
+### Added
+
+- `ve_theme`: `panel::SidePanel`, a side panel collapsing to its rail: filter, folds, resize, dock, float, hide (CHR-6).
+- `ve_theme`: `panel::RevealLink` reveals a tree row in its linked view, and a view's row in the tree (CHR-6).
+- `ve_theme`: `LightStyle` (S29), app-wide as `Tokens::chrome.lights`, overridden per panel (CHR-6).
+- `ve_theme`: `DebugBadge` is exported (CHR-4).
+
 ## [0.36.1] - 2026-11-20
 
 ### Fixed

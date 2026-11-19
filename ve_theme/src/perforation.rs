@@ -155,6 +155,50 @@ impl Widget for PerforatedLight {
     }
 }
 
+/// How status lights are drawn (S29, an app setting): the perforated light, the pick, or a plain dot.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+pub enum LightStyle {
+    /// A [`PerforatedLight`] of 3 by 3 holes.
+    #[default]
+    Perforated,
+    /// A plain filled dot, `Space::m` across.
+    Dot,
+}
+
+impl LightStyle {
+    /// The light's side in points at `pixels_per_point`.
+    pub fn side(self, tokens: &Tokens, pixels_per_point: f32) -> f32 {
+        match self {
+            Self::Perforated => {
+                PerforatedLight::new(Color32::WHITE).side_px(&tokens.perforation, pixels_per_point)
+                    / pixels_per_point
+            }
+            Self::Dot => (tokens.space.m * pixels_per_point).round().max(1.0) / pixels_per_point,
+        }
+    }
+
+    /// Paint a light in `tone` centred on `center`, snapped to the pixel grid.
+    pub fn paint(self, painter: &egui::Painter, tokens: &Tokens, tone: Tone, center: Pos2) {
+        let ppp = painter.pixels_per_point();
+        let side = self.side(tokens, ppp);
+        let min = ((center.to_vec2() - Vec2::splat(side * 0.5)) * ppp).round() / ppp;
+        match self {
+            Self::Perforated => {
+                PerforatedLight::tone(tone, tokens).paint(painter, tokens, min.to_pos2())
+            }
+            Self::Dot => {
+                let color = if tone == Tone::Off {
+                    tokens.colors.line_strong
+                } else {
+                    tone.color(tokens)
+                };
+                painter.circle_filled(min.to_pos2() + Vec2::splat(side * 0.5), side * 0.5, color);
+            }
+        }
+    }
+}
+
 /// Hole and gap in whole pixels, at least one each.
 fn grid(perf: &crate::Perforation, ppp: f32) -> (f32, f32) {
     (

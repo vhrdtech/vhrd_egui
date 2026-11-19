@@ -8,6 +8,9 @@ use egui::{Color32, Frame, Margin, RichText, Theme, Ui};
 
 use crate::{Tokens, Tone, UiExt};
 
+/// The side panel page (CHR-6).
+pub use crate::panel::PanelGallery;
+
 /// Widget state for the gallery (deterministic, so snapshots are stable).
 #[derive(Clone, Debug)]
 pub struct Gallery {

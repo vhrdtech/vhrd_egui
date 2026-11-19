@@ -11,6 +11,14 @@ use ve_theme::Tone;
 use ve_theme::gallery::PropsGallery;
 use ve_theme::props::*;
 
+/// The side panel and its rail (CHR-6), in this binary to keep the crate's test binaries few.
+#[path = "props/panel.rs"]
+mod panel;
+
+/// The side panel's edges, limits and settings, round 2 of its review (CHR-6).
+#[path = "props/panel_edges.rs"]
+mod panel_edges;
+
 fn props_snapshot(theme: Theme, name: &str) {
     let mut gallery = PropsGallery::default();
     let mut h = Harness::builder()

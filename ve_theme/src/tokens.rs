@@ -28,6 +28,7 @@ use egui::{
 };
 use std::sync::Arc;
 
+use crate::LightStyle;
 use crate::contrast::{AA_TEXT, contrast, ensure_contrast};
 use crate::typography::TypeScale;
 
@@ -266,6 +267,15 @@ pub struct Chrome {
     pub toast_gap: f32,
     /// How many toasts show before the rest fold.
     pub toast_max: u8,
+    /// A side panel's widest, as a share of the room beside it (0.5: half the window).
+    pub side_panel_max_share: f32,
+    /// How long a revealed row flashes, seconds.
+    pub flash_secs: f32,
+    /// How far a revealed row's ground moves toward `focus` at the flash's start, 0 to 1.
+    pub flash: f32,
+    /// How status lights are drawn app-wide (S29); a panel may override it (`PanelSettings::lights`).
+    /// [`Chrome::for_density`] gives the default; switching density keeps an app's choice (`set_density`).
+    pub lights: LightStyle,
 }
 
 impl Chrome {
@@ -290,6 +300,10 @@ impl Chrome {
                 toast_width: 360.0,
                 toast_gap: 8.0,
                 toast_max: 3,
+                side_panel_max_share: 0.5,
+                flash_secs: 0.8,
+                flash: 0.35,
+                lights: LightStyle::Perforated,
             },
             Density::Compact => Self {
                 top_bar: 32.0,
@@ -309,6 +323,10 @@ impl Chrome {
                 toast_width: 360.0,
                 toast_gap: 8.0,
                 toast_max: 3,
+                side_panel_max_share: 0.5,
+                flash_secs: 0.8,
+                flash: 0.35,
+                lights: LightStyle::Perforated,
             },
         }
     }

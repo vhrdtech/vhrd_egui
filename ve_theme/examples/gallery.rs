@@ -4,7 +4,7 @@
 //! Run: `cargo run -p ve_theme --example gallery`
 
 use eframe::egui;
-use ve_theme::gallery::{Gallery, PropsGallery};
+use ve_theme::gallery::{Gallery, PanelGallery, PropsGallery};
 use ve_theme::icons::gallery::IconsGallery;
 
 fn main() -> eframe::Result {
@@ -31,6 +31,7 @@ enum Page {
     Widgets,
     Props,
     Icons,
+    Panel,
 }
 
 #[derive(Default)]
@@ -39,6 +40,7 @@ struct App {
     gallery: Gallery,
     props: PropsGallery,
     icons: IconsGallery,
+    panel: PanelGallery,
 }
 
 impl eframe::App for App {
@@ -52,11 +54,22 @@ impl eframe::App for App {
                 );
             ui.selectable_value(&mut self.page, Page::Icons, "Icons")
                 .on_hover_text("Phosphor and SVG icons with colour slots (CHR-7)");
+            ui.selectable_value(&mut self.page, Page::Panel, "Side panel")
+                .on_hover_text(
+                    "Side panel and rail: filter, fold, resize, dock, float, hide, reveal (CHR-6)",
+                );
         });
+        if self.page == Page::Panel {
+            let theme = ui.ctx().theme();
+            let height = ui.available_height() - 60.0;
+            self.panel.themed(ui, theme, height);
+            return;
+        }
         egui::ScrollArea::vertical().show(ui, |ui| match self.page {
             Page::Widgets => self.gallery.side_by_side(ui),
             Page::Props => self.props.side_by_side(ui),
             Page::Icons => self.icons.side_by_side(ui),
+            Page::Panel => {}
         });
     }
 }

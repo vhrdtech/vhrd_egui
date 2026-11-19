@@ -23,6 +23,8 @@
 //!   categorical colours (labels, chips, series, hosts, models) stay out of it and apart from each other (THM-10).
 //! - [`props`]: property-panel widgets: pane, sub-pane, group, property row, number and axis fields,
 //!   segmented choice, toggle chip, list view (THM-17).
+//! - [`panel`]: the side panel and its rail: groups of rows, filter, resize, dock, float, hide, and the link
+//!   that reveals a row in a view beside it (CHR-6).
 //! - [`topbar`]: `Brand`, the strip every app's top bar starts with — icon, wordmark, the version badge
 //!   that opens `ve_basics::AppMenu` (THM-19).
 //! - [`PerforatedLight`]: a status light as a square of holes lit from behind, crisp on the pixel grid at any
@@ -56,6 +58,7 @@ pub mod hue;
 pub mod icons;
 #[cfg(not(target_arch = "wasm32"))]
 mod look;
+pub mod panel;
 mod perforation;
 pub mod props;
 mod status;
@@ -73,11 +76,11 @@ pub use fonts::{
 };
 #[cfg(not(target_arch = "wasm32"))]
 pub use look::{Look, omarchy_colors_path};
-pub use perforation::{HOLES_DEFAULT, HOLES_MAX, PerforatedLight};
+pub use perforation::{HOLES_DEFAULT, HOLES_MAX, LightStyle, PerforatedLight};
 pub use status::{STATUS_GLYPHS, StatusGlyph, status_glyph, status_icon, status_icon_with};
 pub use tokens::{
-    Chrome, Density, Elevation, Palette, Perforation, Radius, Ramp, Space, Status, Strokes, Tokens,
-    vhrd,
+    Chrome, DebugBadge, Density, Elevation, Palette, Perforation, Radius, Ramp, Space, Status,
+    Strokes, Tokens, vhrd,
 };
 pub use ui_ext::{Tone, UiExt};
 
