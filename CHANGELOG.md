@@ -5,6 +5,8 @@ versions follow [Semantic Versioning](https://semver.org/). Feature IDs refer to
 
 ## [Unreleased]
 
+## [0.34.4] - 2026-11-19
+
 ### Added
 
 - `ve_theme`: `PerforatedLight`, a status light of crisp pixel-aligned holes; `Tokens::perforation` sets hole, gap and glow (CHR-2).
