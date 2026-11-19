@@ -191,6 +191,17 @@ pub struct Elevation {
     pub floating: Shadow,
 }
 
+/// The perforated light ([`crate::PerforatedLight`]): holes on the pixel grid, lit from behind.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct Perforation {
+    /// A hole's side, points; drawn as a whole number of pixels, at least one.
+    pub hole: f32,
+    /// The metal between two holes, points; a whole number of pixels, at least one.
+    pub gap: f32,
+    /// How much light leaks into the metal between two lit holes: the hole colour's alpha there, 0 to 1.
+    pub glow: f32,
+}
+
 /// The design system in one value. Start from [`Tokens::dark`] / [`Tokens::light`] and override fields.
 #[derive(Clone, Debug, PartialEq)]
 pub struct Tokens {
@@ -200,6 +211,7 @@ pub struct Tokens {
     pub stroke: Strokes,
     pub shadow: Elevation,
     pub type_scale: TypeScale,
+    pub perforation: Perforation,
 }
 
 const fn rgb(hex: u32) -> Color32 {
@@ -268,6 +280,11 @@ impl Tokens {
                 floating: shadow(10, 40, 200),
             },
             type_scale: TypeScale::new(),
+            perforation: Perforation {
+                hole: 1.0,
+                gap: 1.0,
+                glow: 0.14,
+            },
         }
     }
 
@@ -308,6 +325,11 @@ impl Tokens {
                 floating: shadow(10, 40, 64),
             },
             type_scale: TypeScale::new(),
+            perforation: Perforation {
+                hole: 1.0,
+                gap: 1.0,
+                glow: 0.10,
+            },
         }
     }
 

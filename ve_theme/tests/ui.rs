@@ -279,3 +279,44 @@ fn status_glyphs_stand_out_in_both_themes() {
         assert_eq!(done, Tone::Good.color(&t));
     }
 }
+
+/// The perforated light (CHR-2) at 1x, 1.25x and 2x in both themes: every tone lit, `Off` unlit, the 3 by 3
+/// status light, the 4 by 4 and 6 by 6 discs, each beside a label as in a bar. The pixels are the review: holes
+/// one pixel apart at 1x, no blur, glow only between lit holes.
+fn perforation_snapshot(theme: Theme, ppp: f32, name: &str) -> egui_kittest::SnapshotResults {
+    let mut h = Harness::builder()
+        .with_size(vec2(340.0, 90.0))
+        .with_pixels_per_point(ppp)
+        .with_theme(theme)
+        .build_ui(move |ui| {
+            let tokens = ve_theme::Tokens::of(ui.ctx(), theme);
+            ui.painter()
+                .rect_filled(ui.ctx().viewport_rect(), 0.0, tokens.colors.surface);
+            for holes in [3, 4, 6] {
+                ui.horizontal(|ui| {
+                    for tone in [Tone::Good, Tone::Warn, Tone::Crit, Tone::Accent, Tone::Off] {
+                        ui.add(ve_theme::PerforatedLight::tone(tone, &tokens).holes(holes));
+                        ui.label(format!("{tone:?}"));
+                    }
+                });
+            }
+        });
+    ve_theme::setup(&h.ctx);
+    h.run();
+    h.snapshot(name);
+    h.take_snapshot_results()
+}
+
+#[test]
+fn perforation_snapshots() {
+    let mut results = egui_kittest::SnapshotResults::new();
+    for (theme, t) in [(Theme::Dark, "dark"), (Theme::Light, "light")] {
+        for (ppp, s) in [(1.0, "1x"), (1.25, "1_25x"), (2.0, "2x")] {
+            results.extend(perforation_snapshot(
+                theme,
+                ppp,
+                &format!("perforation_{t}_{s}"),
+            ));
+        }
+    }
+}
