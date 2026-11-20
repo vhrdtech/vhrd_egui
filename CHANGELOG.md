@@ -5,6 +5,8 @@ versions follow [Semantic Versioning](https://semver.org/). Feature IDs refer to
 
 ## [Unreleased]
 
+## [0.37.0] - 2026-11-20
+
 ### Added
 
 - `ve_theme`: `panel::SidePanel`, a side panel collapsing to its rail: filter, folds, resize, dock, float, hide (CHR-6).
