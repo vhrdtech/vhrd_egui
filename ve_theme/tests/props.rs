@@ -19,6 +19,10 @@ mod panel;
 #[path = "props/panel_edges.rs"]
 mod panel_edges;
 
+/// The side panel from the keyboard, and the low findings of its review (CHR-6).
+#[path = "props/panel_keyboard.rs"]
+mod panel_keyboard;
+
 fn props_snapshot(theme: Theme, name: &str) {
     let mut gallery = PropsGallery::default();
     let mut h = Harness::builder()

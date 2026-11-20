@@ -32,7 +32,7 @@ pub(crate) fn limits(t: &Tokens, bounds: Rect) -> (f32, f32) {
 pub(crate) fn width(t: &Tokens, state: &SidePanelState, bounds: Rect) -> f32 {
     let (min, max) = limits(t, bounds);
     state
-        .width
+        .set_width()
         .unwrap_or(t.chrome.side_panel_default)
         .clamp(min, max)
         .round()
@@ -188,13 +188,24 @@ fn header<K: RowKey>(
     if let Some(bounds) = float_bounds {
         drag_head(ui, t, panel.id, &panel.title, state, rect, bounds);
     }
+    let floating = float_bounds.is_some();
+    let size = t.chrome.bar_button;
+    let gap = t.space.xs;
+    // The panel's own buttons: ⋯ and collapse docked, ⋯, dock and hide floating.
+    let fixed = if floating { 3.0 } else { 2.0 };
+    let fixed_w = fixed * size + (fixed - 1.0) * gap;
+    let buttons = rect.shrink2(vec2(t.space.s, 0.0));
+    // Everything is added left to right, in the order Tab reaches it; the app's actions end where the panel's
+    // buttons start, so their width is the one they took last frame (a change redoes the frame).
+    let width_id = panel.id.with("actions width");
+    let actions_w = ui.data(|d| d.get_temp::<f32>(width_id)).unwrap_or(0.0);
     let p = ui.painter();
     let g = line(
         p,
         &panel.title,
         text_font(t),
         t.colors.title,
-        rect.width() - t.space.l - (t.chrome.bar_button + t.space.xs) * 3.0,
+        rect.width() - t.space.l - t.space.s - fixed_w - actions_w - gap * 2.0,
     );
     galley_at(
         p,
@@ -203,25 +214,43 @@ fn header<K: RowKey>(
         rect.center().y,
         t.colors.title,
     );
-    let buttons = rect.shrink2(vec2(t.space.s, 0.0));
+    let fixed_left = buttons.right() - fixed_w;
+    if let Some(actions) = panel.actions.take() {
+        let end = fixed_left - gap;
+        let mut bar = ui.new_child(
+            UiBuilder::new()
+                .max_rect(Rect::from_min_max(
+                    pos2(end - actions_w, buttons.top()),
+                    pos2(end, buttons.bottom()),
+                ))
+                .layout(Layout::left_to_right(Align::Center)),
+        );
+        bar.spacing_mut().item_spacing.x = gap;
+        actions(&mut bar);
+        let took = bar.min_rect().width().max(0.0);
+        if (took - actions_w).abs() > 0.5 {
+            ui.data_mut(|d| d.insert_temp(width_id, took));
+            ui.ctx().request_discard("the side panel's actions changed width");
+        }
+    }
     let mut bar = ui.new_child(
         UiBuilder::new()
-            .max_rect(buttons)
-            .layout(Layout::right_to_left(Align::Center)),
+            .max_rect(Rect::from_min_max(
+                pos2(fixed_left, buttons.top()),
+                buttons.max,
+            ))
+            .layout(Layout::left_to_right(Align::Center)),
     );
-    bar.spacing_mut().item_spacing.x = t.space.xs;
-    if float_bounds.is_some() {
-        if bar_button(
-            &mut bar,
-            t,
-            "×",
-            &format!("Hide {}", panel.title),
-            "Hide (Ctrl+Shift+B); its tab on the edge brings it back",
-        )
-        .clicked()
-        {
-            state.shown = Shown::Hidden;
-        }
+    bar.spacing_mut().item_spacing.x = gap;
+    let m = bar_button(
+        &mut bar,
+        t,
+        "⋯",
+        &format!("{} menu", panel.title),
+        "Dock, float, collapse, hide, reset width",
+    );
+    egui::Popup::menu(&m).show(|ui| menu(ui, t, panel, state));
+    if floating {
         if bar_button(
             &mut bar,
             t,
@@ -233,33 +262,37 @@ fn header<K: RowKey>(
         {
             state.floating = false;
         }
+        let hide = bar_button(
+            &mut bar,
+            t,
+            "×",
+            &format!("Hide {}", panel.title),
+            "Hide (Ctrl+Shift+B); its tab on the edge brings it back",
+        );
+        if hide.clicked() {
+            state.hide();
+            if hide.has_focus() {
+                super::focus_next(ui, panel.id, super::FocusNext::EdgeTab);
+            }
+        }
     } else {
         let glyph = match state.side {
             Side::Left => "«",
             Side::Right => "»",
         };
-        if bar_button(
+        let collapse = bar_button(
             &mut bar,
             t,
             glyph,
             &format!("Collapse {}", panel.title),
             "Collapse to its rail (Ctrl+B)",
-        )
-        .clicked()
-        {
+        );
+        if collapse.clicked() {
             state.shown = Shown::Rail;
+            if collapse.has_focus() {
+                super::focus_next(ui, panel.id, super::FocusNext::RailFoot);
+            }
         }
-    }
-    let m = bar_button(
-        &mut bar,
-        t,
-        "⋯",
-        &format!("{} menu", panel.title),
-        "Dock, float, collapse, hide, reset width",
-    );
-    egui::Popup::menu(&m).show(|ui| menu(ui, t, panel, state));
-    if let Some(actions) = panel.actions.take() {
-        actions(&mut bar);
     }
 }
 
@@ -333,10 +366,10 @@ fn menu<K>(ui: &mut Ui, t: &Tokens, panel: &SidePanel<'_, K>, state: &mut SidePa
         state.floating = false;
     }
     if ui.add(Button::new("Hide").shortcut_text(hide)).clicked() {
-        state.shown = Shown::Hidden;
+        state.hide();
     }
     ui.separator();
-    let reset = ui.add_enabled(state.width.is_some(), Button::new("Reset width"));
+    let reset = ui.add_enabled(state.set_width().is_some(), Button::new("Reset width"));
     if reset.clicked() {
         state.width = None;
     }
@@ -407,6 +440,9 @@ fn filter_field<K>(
     if r.lost_focus() && ui.input(|i| i.key_pressed(Key::Escape)) {
         state.filter.clear();
     }
+    if super::take_focus(ui, panel.id, super::FocusNext::Filter) {
+        r.request_focus();
+    }
     if !ui.ctx().egui_wants_keyboard_input()
         && ui.input_mut(|i| i.consume_key(Modifiers::NONE, Key::Slash))
     {
@@ -427,6 +463,8 @@ fn filter_field<K>(
         x.widget_info(|| WidgetInfo::labeled(WidgetType::Button, true, "Clear the filter"));
         if x.clicked() {
             state.filter.clear();
+            // The button goes with the text: the focus goes back to the field.
+            r.request_focus();
         }
     }
 }
@@ -456,8 +494,9 @@ fn footer(ui: &Ui, t: &Tokens, rect: Rect, text: &str) {
     );
 }
 
-/// The resize handle on a docked panel's inner edge. Drag, Ctrl+Alt+← / → (with focus in the panel or on the
-/// handle), double click to reset; under the minimum it snaps to the rail.
+/// The resize handle on a docked panel's inner edge, or a floating panel's right edge. Drag, Ctrl+Alt+← / →
+/// with focus in the panel (← → alone on the handle), double click to reset; docked, under the minimum it
+/// snaps to the rail.
 #[expect(
     clippy::too_many_arguments,
     reason = "the panel's parts, each needed once"
@@ -472,7 +511,10 @@ pub(crate) fn resize(
     rail_w: f32,
     bounds: Rect,
 ) {
-    let side = state.side;
+    // The edge that moves: the inner one docked, the right one floating (it grows to the right like a panel
+    // docked left).
+    let floating = state.floating;
+    let side = if floating { Side::Left } else { state.side };
     let edge = match side {
         Side::Left => rect.right(),
         Side::Right => rect.left(),
@@ -485,25 +527,39 @@ pub(crate) fn resize(
     // The handle reaches past the panel's edge over the work beside it, whose widgets are registered later in
     // the same layer and would win the press there: it lives in an area of its own above them.
     let r = Area::new(rid.with("area"))
-        .order(Order::Middle)
+        .order(if floating {
+            Order::Foreground
+        } else {
+            Order::Middle
+        })
         .fixed_pos(hit.min)
         .show(ui.ctx(), |ui| {
             ui.allocate_rect(hit, Sense::click_and_drag())
         })
         .inner
         .on_hover_cursor(CursorIcon::ResizeColumn)
-        .on_hover_text("Drag to resize; double click resets; Ctrl+Alt+← → step");
-    let name = format!("Resize {title}");
-    r.widget_info(|| WidgetInfo::labeled(WidgetType::Other, true, &name));
+        .on_hover_text("Drag to resize; double click resets; ← → step");
     let (min, max) = limits(t, bounds);
     let current = width(t, state, bounds);
+    let name = format!("Resize {title}");
+    r.widget_info(|| WidgetInfo::slider(true, f64::from(current), &name));
+    // Where on the handle the drag began, from the edge: the edge keeps that distance to the pointer.
+    let grab_id = rid.with("grab");
     if r.drag_started() {
+        if floating && state.float_at.is_none() {
+            // Pinned where it is, so only its right edge moves.
+            state.float_at = Some([rect.left(), rect.top()]);
+        }
         ui.data_mut(|d| d.insert_temp(rid, current));
+        let grab = r.interact_pointer_pos().map_or(0.0, |p| p.x - edge);
+        ui.data_mut(|d| d.insert_temp(grab_id, grab));
     }
     // The width before the drag: only a real drag (not a click) resizes.
     let before = ui.data(|d| d.get_temp::<f32>(rid));
+    let grab = ui.data(|d| d.get_temp::<f32>(grab_id)).unwrap_or(0.0);
     if r.drag_stopped() {
         ui.data_mut(|d| d.remove_temp::<f32>(rid));
+        ui.data_mut(|d| d.remove_temp::<f32>(grab_id));
     }
     // The list's rows reach under the edge and win egui's click hit test there, so the double click is read
     // from the pointer, as the drag is.
@@ -518,28 +574,25 @@ pub(crate) fn resize(
         && before.is_some()
         && let Some(p) = r.interact_pointer_pos()
     {
+        let x = p.x - grab;
         let raw = match side {
-            Side::Left => p.x - rect.left() - rail_w,
-            Side::Right => rect.right() - p.x - rail_w,
+            Side::Left => x - rect.left() - rail_w,
+            Side::Right => rect.right() - x - rail_w,
         }
         .round();
-        if r.drag_stopped() && raw < min {
+        if r.drag_stopped() && raw < min && !floating {
             state.shown = Shown::Rail;
             state.width = before;
         } else {
             state.width = Some(raw.clamp(min, max));
-            readout(
-                ui,
-                t,
-                rid,
-                pos2(edge, p.y),
-                side,
-                if raw < min {
-                    "rail".to_owned()
-                } else {
-                    format!("{} px", raw.min(max))
-                },
-            );
+            let text = if raw < min && !floating {
+                "rail".to_owned()
+            } else {
+                format!("{} px", raw.clamp(min, max))
+            };
+            // On the panel's own footer row by the edge, never over the work.
+            let y = rect.bottom() - t.chrome.row * 0.5;
+            readout(ui, t, rid, pos2(edge, y), side, text);
         }
     }
     let focus_inside = r.has_focus()
@@ -547,21 +600,44 @@ pub(crate) fn resize(
             .memory(|m| m.focused())
             .and_then(|f| ui.ctx().read_response(f))
             .is_some_and(|f| rect.contains_rect(f.rect));
+    if r.has_focus() {
+        // ← → resize while the handle has the focus, instead of moving the focus.
+        ui.memory_mut(|m| {
+            m.set_focus_lock_filter(
+                r.id,
+                egui::EventFilter {
+                    horizontal_arrows: true,
+                    ..Default::default()
+                },
+            );
+        });
+    }
     if focus_inside {
-        let mods = Modifiers::COMMAND | Modifiers::ALT;
+        let mods = if r.has_focus() {
+            Modifiers::NONE
+        } else {
+            Modifiers::COMMAND | Modifiers::ALT
+        };
         let (grow, shrink) = match side {
             Side::Left => (Key::ArrowRight, Key::ArrowLeft),
             Side::Right => (Key::ArrowLeft, Key::ArrowRight),
         };
         let step = t.space.xl;
-        if ui.input_mut(|i| i.consume_key(mods, grow)) {
+        let pressed = |key| {
+            ui.input_mut(|i| {
+                i.consume_key(mods, key)
+                    || (mods == Modifiers::NONE
+                        && i.consume_key(Modifiers::COMMAND | Modifiers::ALT, key))
+            })
+        };
+        if pressed(grow) {
             state.width = Some((current + step).min(max));
         }
-        if ui.input_mut(|i| i.consume_key(mods, shrink)) {
-            if current - step < min {
+        if pressed(shrink) {
+            if current - step < min && !floating {
                 state.shown = Shown::Rail;
             } else {
-                state.width = Some(current - step);
+                state.width = Some((current - step).max(min));
             }
         }
     }
@@ -594,14 +670,14 @@ fn handle(ui: &Ui, t: &Tokens, rect: Rect, edge: f32, side: Side) {
     fill(&p, grip, t.radius.s, t.colors.focus);
 }
 
-/// The width while dragging, in a small box beside the edge.
+/// The width while dragging, in a small box inside the panel against its edge.
 fn readout(ui: &Ui, t: &Tokens, id: Id, at: egui::Pos2, side: Side, text: String) {
     let p = ui.ctx().layer_painter(LayerId::new(Order::Tooltip, id));
     let g = p.layout_no_wrap(text, mono_font(t), t.colors.text);
     let size = g.size() + vec2(t.space.m * 2.0, t.space.s * 2.0);
     let x = match side {
-        Side::Left => at.x + t.space.m,
-        Side::Right => at.x - t.space.m - size.x,
+        Side::Left => at.x - t.space.m - size.x,
+        Side::Right => at.x + t.space.m,
     };
     let rect = Rect::from_min_size(pos2(x, at.y - size.y * 0.5), size);
     fill(&p, rect, t.radius.m, t.colors.line_strong);
@@ -670,10 +746,22 @@ pub(crate) fn edge_tab(
             p.add(TextShape::new(pos, g.clone(), t.colors.text_muted).with_angle(-FRAC_PI_2));
             let name = format!("Show {title}");
             r.widget_info(|| WidgetInfo::labeled(WidgetType::Button, true, &name));
+            if super::take_focus(ui, id, super::FocusNext::EdgeTab) {
+                r.request_focus();
+            }
+            let focused = r.has_focus();
             if r.on_hover_text(format!("Show the {title} panel (Ctrl+Shift+B)"))
                 .clicked()
             {
-                state.shown = Shown::Open;
+                state.unhide();
+                if focused {
+                    let next = if state.shown == Shown::Rail {
+                        super::FocusNext::RailFoot
+                    } else {
+                        super::FocusNext::Filter
+                    };
+                    super::focus_next(ui, id, next);
+                }
             }
             rect
         })
@@ -718,7 +806,7 @@ pub(crate) fn floating<K: RowKey>(
     if state.float_at.is_some() {
         state.float_at = Some([pos.x, pos.y]);
     }
-    Area::new(panel.id.with("float"))
+    let rect = Area::new(panel.id.with("float"))
         .order(Order::Middle)
         .fixed_pos(pos)
         .constrain_to(bounds)
@@ -751,5 +839,7 @@ pub(crate) fn floating<K: RowKey>(
                 })
                 .inner
         })
-        .inner
+        .inner;
+    resize(ui, t, panel.id, &panel.title, state, rect, 0.0, bounds);
+    rect
 }

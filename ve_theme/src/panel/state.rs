@@ -101,6 +101,8 @@ pub struct SidePanelState {
     pub floating: bool,
     /// Open, collapsed to its rail, or hidden.
     pub shown: Shown,
+    /// What showing a hidden panel brings back: open or its rail ([`Self::hide`] keeps it).
+    pub before_hidden: Shown,
     /// Width in points; `None` is the token default (`Chrome::side_panel_default`).
     pub width: Option<f32>,
     /// The floating window's top left corner, points; `None` places it beside its edge.
@@ -143,6 +145,27 @@ impl SidePanelState {
         self.folds.insert(key, open);
     }
 
+    /// Hide the panel behind its edge tab, keeping whether it was open or on its rail.
+    pub fn hide(&mut self) {
+        if self.shown != Shown::Hidden {
+            self.before_hidden = self.shown;
+        }
+        self.shown = Shown::Hidden;
+    }
+
+    /// Bring a hidden panel back as it was before [`Self::hide`]: open or on its rail.
+    pub fn unhide(&mut self) {
+        self.shown = match self.before_hidden {
+            Shown::Rail => Shown::Rail,
+            Shown::Open | Shown::Hidden => Shown::Open,
+        };
+    }
+
+    /// The width the person set, when it is a number (a stored `NaN` or infinity counts as unset).
+    pub(crate) fn set_width(&self) -> Option<f32> {
+        self.width.filter(|w| w.is_finite())
+    }
+
     pub(crate) fn float_pos(&self) -> Option<Pos2> {
         self.float_at.map(|[x, y]| pos2(x, y))
     }
@@ -165,5 +188,38 @@ mod tests {
         assert_eq!(back.width, Some(312.0));
         assert!(!back.is_open(7, true));
         assert!(back.filter.is_empty());
+    }
+}
+
+#[cfg(test)]
+mod hide_tests {
+    use super::*;
+
+    /// Hidden from its rail, a panel comes back on its rail; hidden open, it comes back open.
+    #[test]
+    fn unhide_brings_back_what_was_shown() {
+        let mut s = SidePanelState {
+            shown: Shown::Rail,
+            ..SidePanelState::default()
+        };
+        s.hide();
+        s.hide();
+        assert_eq!(s.shown, Shown::Hidden);
+        s.unhide();
+        assert_eq!(s.shown, Shown::Rail);
+        s.shown = Shown::Open;
+        s.hide();
+        s.unhide();
+        assert_eq!(s.shown, Shown::Open);
+    }
+
+    /// A width that is not a number counts as unset.
+    #[test]
+    fn a_nan_width_is_unset() {
+        let s = SidePanelState {
+            width: Some(f32::NAN),
+            ..SidePanelState::default()
+        };
+        assert_eq!(s.set_width(), None);
     }
 }

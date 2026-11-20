@@ -485,11 +485,11 @@ impl Shell {
             .on_hover_text(tip)
             .changed()
         {
-            panel.shown = if open {
-                PanelShown::Open
+            if open {
+                panel.unhide();
             } else {
-                PanelShown::Hidden
-            };
+                panel.hide();
+            }
         }
     }
 

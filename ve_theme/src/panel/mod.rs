@@ -12,11 +12,13 @@
 //!   status light ([`LightStyle`](crate::LightStyle), S29) and a count (an unread count is a `primary` pill). Hover, selected (fill
 //!   and a 2 px `focus` bar), keyboard focus (the 1 px inset ring), disabled (muted, the tooltip says why).
 //!   ← and → fold and open, ↑ and ↓ move, Enter picks.
-//! - **Resize:** the inner edge; on hover a 3 px `focus` line and a grip, the width read out while dragging,
-//!   double click resets, Ctrl+Alt+← / → step by 16, under the minimum it snaps to the rail.
+//! - **Resize:** the inner edge (a floating panel's right edge); on hover a 3 px `focus` line and a grip, the
+//!   width read out on the footer while dragging, double click resets, Ctrl+Alt+← / → step by 16 (← → alone
+//!   on the focused handle), docked under the minimum it snaps to the rail.
 //! - **Place** ([`SidePanelState`], S7): docked left or right, floating (a window with a drag head that docks
 //!   again when dropped on an edge), collapsed to its rail (Ctrl+B), hidden behind a vertical tab on its edge
-//!   (Ctrl+Shift+B).
+//!   (Ctrl+Shift+B; shown again, it comes back open or on its rail as it was). With the keyboard focus inside,
+//!   the focus follows the panel: to the rail's open button, the edge tab, or the filter.
 //! - **Forms** ([`PanelForm`], S6): the list that collapses to its rail (B2, the pick), a rail of panel views
 //!   beside the list (B1), the rail only with hover cards (B3).
 //! - **Link** ([`RevealLink`]): a click on a row reveals it in the view beside the panel; a selection in the
@@ -199,7 +201,8 @@ impl<'a, K: RowKey> SidePanel<'a, K> {
         self
     }
 
-    /// The panel's own actions in its header, right of the title, laid out right to left.
+    /// The panel's own actions in its header, right of the title, laid out left to right before the panel's
+    /// own buttons.
     pub fn actions(mut self, add: impl FnOnce(&mut Ui) + 'a) -> Self {
         self.actions = Some(Box::new(add));
         self
@@ -255,6 +258,7 @@ impl<'a, K: RowKey> SidePanel<'a, K> {
         add: impl FnOnce(&mut PanelBuilder<K>),
     ) -> PanelResponse<K> {
         let t = Tokens::of_ui(ui);
+        let id = self.id;
         state.view = state.view.min(self.views.len().saturating_sub(1));
         let mut b = PanelBuilder::new(state.view);
         add(&mut b);
@@ -285,28 +289,53 @@ impl<'a, K: RowKey> SidePanel<'a, K> {
         };
         out.shown = state.shown;
         out.floating = state.floating;
+        ui.data_mut(|d| d.insert_temp(id.with("rect"), out.rect));
         out
     }
 
     fn handle_keys(&self, ui: &Ui, state: &mut SidePanelState) {
+        let inside = focus_inside(ui, self.id);
         if let Some(k) = self.hide_key
             && ui.input_mut(|i| i.consume_shortcut(&k))
         {
-            state.shown = if state.shown == Shown::Hidden {
-                Shown::Open
+            if state.shown == Shown::Hidden {
+                state.unhide();
+                if inside {
+                    self.focus_after_open(ui, state);
+                }
             } else {
-                Shown::Hidden
-            };
+                state.hide();
+                if inside {
+                    focus_next(ui, self.id, FocusNext::EdgeTab);
+                }
+            }
         }
         if let Some(k) = self.collapse_key
             && ui.input_mut(|i| i.consume_shortcut(&k))
         {
-            state.shown = if state.shown == Shown::Open {
+            if state.shown == Shown::Open {
                 state.floating = false;
-                Shown::Rail
+                state.shown = Shown::Rail;
             } else {
-                Shown::Open
-            };
+                state.shown = Shown::Open;
+            }
+            if inside {
+                self.focus_after_open(ui, state);
+            }
+        }
+    }
+
+    /// Where the keyboard focus goes after the panel changed form with focus inside it: the filter of an open
+    /// panel, the rail's open button of a collapsed one.
+    fn focus_after_open(&self, ui: &Ui, state: &SidePanelState) {
+        match state.shown {
+            Shown::Open if self.filter && self.custom.is_none() => {
+                focus_next(ui, self.id, FocusNext::Filter);
+            }
+            Shown::Rail if self.settings.form != PanelForm::RailOnly => {
+                focus_next(ui, self.id, FocusNext::RailFoot);
+            }
+            _ => {}
         }
     }
 
@@ -464,16 +493,56 @@ impl<'a, K: RowKey> SidePanel<'a, K> {
                 }
                 if form != PanelForm::RailOnly {
                     let name = format!("Open {}", self.title);
-                    if rail::foot(ui, t, expand_glyph(side), &name, "Open the panel (Ctrl+B)")
-                        .clicked()
-                    {
+                    let r = rail::foot(ui, t, expand_glyph(side), &name, "Open the panel (Ctrl+B)");
+                    if take_focus(ui, self.id, FocusNext::RailFoot) {
+                        r.request_focus();
+                    }
+                    if r.clicked() {
                         state.shown = Shown::Open;
+                        if r.has_focus() {
+                            self.focus_after_open(ui, state);
+                        }
                     }
                 }
                 full
             })
             .inner
     }
+}
+
+/// Where the keyboard focus goes next frame, after the widget that had it went away with the panel's form.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum FocusNext {
+    /// The filter field of the open panel.
+    Filter,
+    /// The open button at the foot of the rail.
+    RailFoot,
+    /// The hidden panel's edge tab.
+    EdgeTab,
+}
+
+pub(crate) fn focus_next(ui: &Ui, id: Id, next: FocusNext) {
+    ui.data_mut(|d| d.insert_temp(id.with("focus next"), next));
+}
+
+/// Whether the focus should move to `here` now; once.
+pub(crate) fn take_focus(ui: &Ui, id: Id, here: FocusNext) -> bool {
+    let key = id.with("focus next");
+    if ui.data(|d| d.get_temp::<FocusNext>(key)) == Some(here) {
+        ui.data_mut(|d| d.remove::<FocusNext>(key));
+        return true;
+    }
+    false
+}
+
+/// Whether the keyboard focus is on a widget inside the panel as it was drawn last frame.
+pub(crate) fn focus_inside(ui: &Ui, id: Id) -> bool {
+    let Some(panel) = ui.data(|d| d.get_temp::<Rect>(id.with("rect"))) else {
+        return false;
+    };
+    ui.memory(|m| m.focused())
+        .and_then(|f| ui.ctx().read_response(f))
+        .is_some_and(|f| panel.expand(1.0).contains_rect(f.rect))
 }
 
 /// What of a docked panel fits the room `bounds` leaves, without changing what the person chose: open needs

@@ -467,10 +467,11 @@ fn row_ui<K: RowKey>(
     let rect = ui
         .allocate_space(vec2(ui.available_width(), t.chrome.row))
         .1;
+    // A disabled row is still a Tab stop, so a keyboard user can read why it is disabled.
     let sense = if enabled {
         Sense::click()
     } else {
-        Sense::hover()
+        Sense::hover() | Sense::focusable_noninteractive()
     };
     let r = ui.interact(rect, row.id(cx.id), sense);
     let mut elided = false;
@@ -506,8 +507,13 @@ fn row_ui<K: RowKey>(
         (None, Some(tip)) => Some(format!("{}\n{tip}", row.label)),
         (None, None) => elided.then(|| row.label.clone()),
     };
-    // A disabled row senses hover only, so its tooltip is an ordinary one.
+    // A disabled row senses hover only, so its tooltip is an ordinary one; with the keyboard focus it shows
+    // without a pointer.
     match tip {
+        Some(tip) if !enabled && r.has_focus() && !r.hovered() => {
+            r.show_tooltip_text(&tip);
+            r
+        }
         Some(tip) => r.on_hover_text(tip),
         None => r,
     }
