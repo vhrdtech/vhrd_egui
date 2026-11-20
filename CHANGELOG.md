@@ -5,6 +5,8 @@ versions follow [Semantic Versioning](https://semver.org/). Feature IDs refer to
 
 ## [Unreleased]
 
+## [0.38.0] - 2026-11-20
+
 ### Added
 
 - `ve_theme`: `topbar::TopBar`, the app's top bar: slots, menus from actions, field, badge, window controls, collapse ladder (CHR-8).

@@ -14,7 +14,7 @@ erased-serde.workspace = true
 typetag.workspace = true
 inventory.workspace = true
 ve_macro = { path = "../ve_macro" }
-ve_frame = { path = "../ve_frame", version = "0.37" }
+ve_frame = { path = "../ve_frame", version = "0.38" }
 tokio = { workspace = true }
 
 [lints]
