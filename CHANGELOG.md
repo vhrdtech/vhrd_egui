@@ -5,6 +5,8 @@ versions follow [Semantic Versioning](https://semver.org/). Feature IDs refer to
 
 ## [Unreleased]
 
+## [0.36.1] - 2026-11-20
+
 ### Fixed
 
 - `ve_theme`: icons refuse more than 16 layers or 4 MiB of texture per raster with a typed error (CHR-7).

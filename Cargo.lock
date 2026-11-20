@@ -3809,11 +3809,11 @@ dependencies = [
 
 [[package]]
 name = "ve_alloc_count"
-version = "0.36.0"
+version = "0.36.1"
 
 [[package]]
 name = "ve_app"
-version = "0.36.0"
+version = "0.36.1"
 dependencies = [
  "eframe",
  "egui",
@@ -3833,7 +3833,7 @@ dependencies = [
 
 [[package]]
 name = "ve_backdrop"
-version = "0.36.0"
+version = "0.36.1"
 dependencies = [
  "bytemuck",
  "eframe",
@@ -3849,7 +3849,7 @@ dependencies = [
 
 [[package]]
 name = "ve_basics"
-version = "0.36.0"
+version = "0.36.1"
 dependencies = [
  "egui",
  "egui_kittest",
@@ -3862,7 +3862,7 @@ dependencies = [
 
 [[package]]
 name = "ve_basics_benchmarks"
-version = "0.36.0"
+version = "0.36.1"
 dependencies = [
  "ve_alloc_count",
  "ve_basics",
@@ -3870,7 +3870,7 @@ dependencies = [
 
 [[package]]
 name = "ve_dash"
-version = "0.36.0"
+version = "0.36.1"
 dependencies = [
  "eframe",
  "egui",
@@ -3882,7 +3882,7 @@ dependencies = [
 
 [[package]]
 name = "ve_frame"
-version = "0.36.0"
+version = "0.36.1"
 dependencies = [
  "eframe",
  "egui",
@@ -3897,7 +3897,7 @@ dependencies = [
 
 [[package]]
 name = "ve_macro"
-version = "0.36.0"
+version = "0.36.1"
 dependencies = [
  "proc-macro2",
  "quote",
@@ -3905,7 +3905,7 @@ dependencies = [
 
 [[package]]
 name = "ve_phosphor"
-version = "0.36.0"
+version = "0.36.1"
 dependencies = [
  "bytemuck",
  "clap",
@@ -3924,7 +3924,7 @@ dependencies = [
 
 [[package]]
 name = "ve_settle"
-version = "0.36.0"
+version = "0.36.1"
 dependencies = [
  "eframe",
  "egui",
@@ -3941,7 +3941,7 @@ dependencies = [
 
 [[package]]
 name = "ve_spacemouse"
-version = "0.36.0"
+version = "0.36.1"
 dependencies = [
  "eframe",
  "egui",
@@ -3955,7 +3955,7 @@ dependencies = [
 
 [[package]]
 name = "ve_template"
-version = "0.36.0"
+version = "0.36.1"
 dependencies = [
  "clap",
  "include_dir",
@@ -3968,7 +3968,7 @@ dependencies = [
 
 [[package]]
 name = "ve_theme"
-version = "0.36.0"
+version = "0.36.1"
 dependencies = [
  "eframe",
  "egui",
@@ -3983,14 +3983,14 @@ dependencies = [
 
 [[package]]
 name = "ve_theme_benchmarks"
-version = "0.36.0"
+version = "0.36.1"
 dependencies = [
  "ve_theme",
 ]
 
 [[package]]
 name = "ve_view3d"
-version = "0.36.0"
+version = "0.36.1"
 dependencies = [
  "bytemuck",
  "eframe",
@@ -4006,7 +4006,7 @@ dependencies = [
 
 [[package]]
 name = "ve_widget"
-version = "0.36.0"
+version = "0.36.1"
 dependencies = [
  "eframe",
  "egui",
