@@ -5,6 +5,16 @@ versions follow [Semantic Versioning](https://semver.org/). Feature IDs refer to
 
 ## [Unreleased]
 
+### Added
+
+- `ve_theme`: a floating side panel resizes by its right edge; `SidePanelState::hide` and `unhide` (CHR-6).
+
+### Fixed
+
+- `ve_theme`: side panel keyboard: focus follows collapse and hide, Tab in screen order, disabled rows reachable (CHR-6).
+- `ve_theme`: side panel resize keeps the grab offset, ignores a `NaN` width, reads the width out on the footer (CHR-6).
+- `ve_theme`: a side panel hidden from its rail comes back on its rail (CHR-6).
+
 ## [0.37.0] - 2026-11-20
 
 ### Added

@@ -12,11 +12,15 @@ use ve_theme::panel::{Shown, Side};
 
 use crate::panel::{LOOKS, each_look, harness, settle};
 
-/// The label of the widget with the keyboard focus.
+/// The label of the widget with the keyboard focus; "filter" for the filter field.
 fn focused(h: &Harness<'_, PanelGallery>) -> Option<String> {
-    h.query_all(By::new().predicate(|n| n.is_focused()))
-        .next()
-        .and_then(|n| n.accesskit_node().label())
+    let n = h
+        .query_all(By::new().predicate(|n| n.is_focused()))
+        .next()?;
+    if n.accesskit_node().role() == Role::TextInput {
+        return Some("filter".to_owned());
+    }
+    n.accesskit_node().label()
 }
 
 fn press(h: &mut Harness<'_, PanelGallery>, mods: Modifiers, key: Key) {
@@ -55,23 +59,27 @@ fn the_focus_follows_the_panel() {
     each_look(|theme, density| {
         let mut h = harness(theme, density, one_panel());
         press(&mut h, Modifiers::NONE, Key::Slash);
-        assert_eq!(focused(&h).as_deref(), Some("Filter tracks"));
+        assert_eq!(focused(&h).as_deref(), Some("filter"));
         press(&mut h, Modifiers::COMMAND, Key::B);
-        assert_eq!(focused(&h).as_deref(), Some("Open Tracks"), "{theme:?} {density:?}");
+        assert_eq!(
+            focused(&h).as_deref(),
+            Some("Open Tracks"),
+            "{theme:?} {density:?}"
+        );
         press(&mut h, Modifiers::COMMAND, Key::B);
-        assert_eq!(focused(&h).as_deref(), Some("Filter tracks"));
+        assert_eq!(focused(&h).as_deref(), Some("filter"));
         press(&mut h, Modifiers::COMMAND | Modifiers::SHIFT, Key::B);
         assert_eq!(focused(&h).as_deref(), Some("Show Tracks"));
         press(&mut h, Modifiers::NONE, Key::Enter);
         assert_eq!(h.state().tracks.shown, Shown::Open);
-        assert_eq!(focused(&h).as_deref(), Some("Filter tracks"));
+        assert_eq!(focused(&h).as_deref(), Some("filter"));
 
-        h.get_by_label("Filter tracks").type_text("ph");
+        h.get_by_role(Role::TextInput).type_text("ph");
         settle(&mut h);
         h.get_by_label("Clear the filter").click();
         settle(&mut h);
         assert!(h.state().tracks.filter.is_empty());
-        assert_eq!(focused(&h).as_deref(), Some("Filter tracks"), "after clear");
+        assert_eq!(focused(&h).as_deref(), Some("filter"), "after clear");
     });
 }
 
@@ -110,11 +118,13 @@ fn tab_reaches_the_header_in_screen_order_and_disabled_rows() {
     };
     assert!(at("+") < at("Tracks menu"), "{order:?}");
     assert!(at("Tracks menu") < at("Collapse Tracks"), "{order:?}");
-    at("disabled: offline");
 
-    let mut h = harness(Theme::Dark, Density::Comfortable, one_panel());
+    let mut h = harness(Theme::Dark, Density::Comfortable, PanelGallery::default());
+    let mut n = 0;
     while focused(&h).as_deref() != Some("disabled: offline") {
         press(&mut h, Modifiers::NONE, Key::Tab);
+        n += 1;
+        assert!(n < 120, "a disabled row is a Tab stop");
     }
     h.get_by_label_contains("Plug it in or press Rescan (F5)");
 
@@ -138,7 +148,11 @@ fn arrows_on_the_focused_handle_resize() {
     press(&mut h, Modifiers::NONE, Key::ArrowLeft);
     press(&mut h, Modifiers::NONE, Key::ArrowLeft);
     assert_eq!(h.state().tracks.width, Some(248.0));
-    assert_eq!(focused(&h).as_deref(), Some("Resize Tracks"), "the arrows keep the focus");
+    assert_eq!(
+        focused(&h).as_deref(),
+        Some("Resize Tracks"),
+        "the arrows keep the focus"
+    );
 }
 
 /// ↓ and ↑ move the focus between rows; Enter picks the focused row.
@@ -179,12 +193,16 @@ fn a_grab_off_the_edge_keeps_its_distance() {
             let mut h = harness(theme, density, one_panel());
             let edge = h.get_by_label("Resize Tracks").rect().center().x;
             drag(&mut h, egui::pos2(edge + off, 300.0), 40.0);
-            assert_eq!(h.state().tracks.width, Some(304.0), "{theme:?} {density:?} {off}");
+            assert_eq!(
+                h.state().tracks.width,
+                Some(304.0),
+                "{theme:?} {density:?} {off}"
+            );
         }
     }
 }
 
-/// A floating panel resizes by its right edge, and stays where it is.
+/// A floating panel resizes by its right edge, and stays where it is; it never snaps to the rail.
 #[test]
 fn a_floating_panel_resizes() {
     for side in [Side::Left, Side::Right] {
@@ -194,12 +212,16 @@ fn a_floating_panel_resizes() {
         let mut h = harness(Theme::Light, Density::Comfortable, g);
         let left = h.get_by_label("Tracks drag head").rect().left();
         let edge = h.get_by_label("Resize Tracks").rect().center();
-        drag(&mut h, edge, 48.0);
-        assert_eq!(h.state().tracks.width, Some(312.0), "{side:?}");
+        drag(&mut h, edge, 24.0);
+        assert_eq!(h.state().tracks.width, Some(288.0), "{side:?}");
         let head = h.get_by_label("Tracks drag head").rect();
         assert_eq!(head.left(), left, "{side:?}: the left edge stays");
-        drag(&mut h, h.get_by_label("Resize Tracks").rect().center(), -400.0);
-        assert!(h.state().tracks.floating, "no snap to the rail while floating");
+        let edge = h.get_by_label("Resize Tracks").rect().center();
+        drag(&mut h, edge, -400.0);
+        assert!(
+            h.state().tracks.floating,
+            "no snap to the rail while floating"
+        );
         assert_eq!(h.state().tracks.shown, Shown::Open);
     }
 }
@@ -211,5 +233,7 @@ fn a_nan_width_draws_the_default() {
     g.tracks.width = Some(f32::NAN);
     let h = harness(Theme::Dark, Density::Comfortable, g);
     let edge = h.get_by_label("Resize Tracks").rect().center().x;
-    assert!((edge - 264.0).abs() <= 1.0, "edge at {edge}");
+    let plain = harness(Theme::Dark, Density::Comfortable, one_panel());
+    let default = plain.get_by_label("Resize Tracks").rect().center().x;
+    assert_eq!(edge, default);
 }

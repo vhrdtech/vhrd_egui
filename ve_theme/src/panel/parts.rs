@@ -230,7 +230,8 @@ fn header<K: RowKey>(
         let took = bar.min_rect().width().max(0.0);
         if (took - actions_w).abs() > 0.5 {
             ui.data_mut(|d| d.insert_temp(width_id, took));
-            ui.ctx().request_discard("the side panel's actions changed width");
+            ui.ctx()
+                .request_discard("the side panel's actions changed width");
         }
     }
     let mut bar = ui.new_child(
@@ -463,8 +464,9 @@ fn filter_field<K>(
         x.widget_info(|| WidgetInfo::labeled(WidgetType::Button, true, "Clear the filter"));
         if x.clicked() {
             state.filter.clear();
-            // The button goes with the text: the focus goes back to the field.
-            r.request_focus();
+            // The button goes with the text: the focus goes back to the field, next frame (this one's click
+            // took it away).
+            super::focus_next(ui, panel.id, super::FocusNext::Filter);
         }
     }
 }
@@ -533,6 +535,9 @@ pub(crate) fn resize(
             Order::Middle
         })
         .fixed_pos(hit.min)
+        // Kept where the edge is: pushed inside the screen, its area would reach from there to the handle
+        // and cover what lies between.
+        .constrain(false)
         .show(ui.ctx(), |ui| {
             ui.allocate_rect(hit, Sense::click_and_drag())
         })
@@ -540,6 +545,12 @@ pub(crate) fn resize(
         .on_hover_cursor(CursorIcon::ResizeColumn)
         .on_hover_text("Drag to resize; double click resets; ← → step");
     let (min, max) = limits(t, bounds);
+    // A floating panel grows only into the room right of it.
+    let max = if floating {
+        (bounds.right() - rect.left()).floor().clamp(min, max)
+    } else {
+        max
+    };
     let current = width(t, state, bounds);
     let name = format!("Resize {title}");
     r.widget_info(|| WidgetInfo::slider(true, f64::from(current), &name));
@@ -551,7 +562,10 @@ pub(crate) fn resize(
             state.float_at = Some([rect.left(), rect.top()]);
         }
         ui.data_mut(|d| d.insert_temp(rid, current));
-        let grab = r.interact_pointer_pos().map_or(0.0, |p| p.x - edge);
+        // Where the press was, not where the pointer is now: egui starts a drag only after it moved.
+        let grab = ui
+            .input(|i| i.pointer.press_origin())
+            .map_or(0.0, |p| p.x - edge);
         ui.data_mut(|d| d.insert_temp(grab_id, grab));
     }
     // The width before the drag: only a real drag (not a click) resizes.

@@ -156,7 +156,8 @@ fn a_drop_on_the_right_edge_docks_right() {
     assert_eq!(h.state().tracks.side, Side::Right);
 }
 
-/// Ctrl+B collapses a floating panel to its docked rail; Ctrl+Shift+B hides a panel and brings it back.
+/// Ctrl+B collapses a floating panel to its docked rail; Ctrl+Shift+B hides a panel and brings it back as it
+/// was, on its rail.
 #[test]
 fn keys_collapse_a_floating_panel_and_bring_a_hidden_one_back() {
     let mut g = no_states();
@@ -171,7 +172,7 @@ fn keys_collapse_a_floating_panel_and_bring_a_hidden_one_back() {
     assert_eq!(h.state().tracks.shown, Shown::Hidden);
     h.key_press_modifiers(Modifiers::COMMAND | Modifiers::SHIFT, Key::B);
     settle(&mut h);
-    assert_eq!(h.state().tracks.shown, Shown::Open);
+    assert_eq!(h.state().tracks.shown, Shown::Rail);
 }
 
 /// S29: the app-wide `Tokens::chrome.lights` draws what a panel's own override draws, and differs from the
