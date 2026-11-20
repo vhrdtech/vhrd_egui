@@ -5,6 +5,8 @@ versions follow [Semantic Versioning](https://semver.org/). Feature IDs refer to
 
 ## [Unreleased]
 
+## [0.37.1] - 2026-11-20
+
 ### Added
 
 - `ve_theme`: a floating side panel resizes by its right edge; `SidePanelState::hide` and `unhide` (CHR-6).

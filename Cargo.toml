@@ -3,7 +3,7 @@ authors = ["Roman Isaikin <romix.lab@gmail.com>"]
 edition = "2024"
 license = "MIT OR Apache-2.0"
 repository = "https://github.com/vhrdtech/vhrd_egui"
-version = "0.37.0"
+version = "0.37.1"
 rust-version = "1.88"
 
 [workspace]
