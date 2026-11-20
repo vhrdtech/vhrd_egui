@@ -17,7 +17,7 @@ icons = ["ve_theme/phosphor"]
 egui.workspace = true
 serde.workspace = true
 log.workspace = true
-ve_theme = { path = "../ve_theme", version = "0.35", default-features = false }
+ve_theme = { path = "../ve_theme", version = "0.36", default-features = false }
 # spacemouse.toml: the shared settings files (SPM-5)
 toml = { version = "1", default-features = false, features = ["std", "serde", "parse", "display"] }
 
@@ -30,7 +30,7 @@ required-features = ["icons"]
 tempfile = "3"
 eframe = { workspace = true, features = ["persistence", "wgpu"] }
 egui_kittest = { workspace = true, features = ["snapshot", "wgpu"] }
-ve_theme = { path = "../ve_theme", version = "0.35" }
+ve_theme = { path = "../ve_theme", version = "0.36" }
 
 [lints]
 workspace = true

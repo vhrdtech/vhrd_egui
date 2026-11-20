@@ -20,7 +20,7 @@ image = { version = "0.25", default-features = false, features = ["png"] }
 inventory.workspace = true
 # the keymap file, with spans for file:line problems (CHR-1)
 toml = { workspace = true, features = ["std", "parse"] }
-ve_alloc_count = { path = "../ve_alloc_count", version = "0.35", optional = true }
+ve_alloc_count = { path = "../ve_alloc_count", version = "0.36", optional = true }
 
 [features]
 # perf records allocations per frame (alloc.count, alloc.bytes) when the app installs ve_alloc_count::CountingAlloc

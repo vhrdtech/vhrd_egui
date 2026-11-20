@@ -5,6 +5,8 @@ versions follow [Semantic Versioning](https://semver.org/). Feature IDs refer to
 
 ## [Unreleased]
 
+## [0.36.0] - 2026-11-20
+
 ### Added
 
 - `ve_theme`: Phosphor icon font and SVG icons with colour slots bound to tokens, drawn by `IconImage` (CHR-7).
