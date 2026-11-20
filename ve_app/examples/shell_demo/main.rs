@@ -16,7 +16,7 @@ pub fn options() -> ShellOptions {
                 Box::new(widgets::Level::default()),
             ]
         })
-        .side_panel(|ui, _cx| {
+        .side_panel("Navigation", |ui, _cx| {
             ui.heading("Side panel");
             ui.label("Apps put navigation or a device list here.");
         })

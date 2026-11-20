@@ -11,6 +11,12 @@ versions follow [Semantic Versioning](https://semver.org/). Feature IDs refer to
 - `ve_theme`: `panel::RevealLink` reveals a tree row in its linked view, and a view's row in the tree (CHR-6).
 - `ve_theme`: `LightStyle` (S29), app-wide as `Tokens::chrome.lights`, overridden per panel (CHR-6).
 - `ve_theme`: `DebugBadge` is exported (CHR-4).
+- `ve_theme`: `SidePanel::show_ui` for free content and `SidePanel::icon` (CHR-6).
+
+### Changed
+
+- **Breaking:** `ve_app`: `ShellOptions::side_panel(title, ui)` takes a title, kept in the new field `side_panel_title` (CHR-6).
+- `ve_app`: the side panel is `ve_theme`'s `SidePanel`, saved with the layout; it takes Ctrl+B and Ctrl+Shift+B (CHR-6).
 
 ## [0.36.1] - 2026-11-20
 

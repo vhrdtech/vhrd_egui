@@ -89,8 +89,11 @@ pub struct ShellOptions {
     pub default_widgets: fn() -> Vec<Box<dyn Widget>>,
     /// Which registered widgets the open-widget menus offer, e.g. by [`ve_widget::WidgetInfo::tags`].
     pub widget_filter: fn(&ve_widget::WidgetInfo) -> bool,
-    /// Contents of the collapsible left side panel; no panel (and no toggle) when `None`.
+    /// Contents of the side panel (`ve_theme::panel::SidePanel`: docks left or right, floats, collapses to
+    /// its rail, hides behind an edge tab, resizes); no panel (and no toggle) when `None`.
     pub side_panel: Option<UiFn>,
+    /// The side panel's title, in its header and on its edge tab.
+    pub side_panel_title: String,
     /// The app's part of the Settings window, below the theme switch.
     pub settings: Option<UiFn>,
     /// The app's transport to other machines: with it the widgets' menus offer *Send to another machine*;
@@ -120,6 +123,7 @@ impl ShellOptions {
             default_widgets: Vec::new,
             widget_filter: |_| true,
             side_panel: None,
+            side_panel_title: String::new(),
             settings: None,
             remote: None,
             desktop_theme: ve_theme::omarchy_colors_path(),
@@ -164,8 +168,13 @@ impl ShellOptions {
         self
     }
 
-    /// See [`Self::side_panel`].
-    pub fn side_panel(mut self, ui: impl FnMut(&mut Ui, &Context) + 'static) -> Self {
+    /// See [`Self::side_panel`]: a panel titled `title` holding what `ui` draws.
+    pub fn side_panel(
+        mut self,
+        title: impl Into<String>,
+        ui: impl FnMut(&mut Ui, &Context) + 'static,
+    ) -> Self {
+        self.side_panel_title = title.into();
         self.side_panel = Some(Box::new(ui));
         self
     }
@@ -313,9 +322,12 @@ impl Shell {
 
         if let Some(side_panel) = &mut self.options.side_panel {
             let cx = &self.cx;
-            Panel::left("ve_app_side_panel")
-                .resizable(true)
-                .show_collapsible(ui, &mut self.state.side_panel_open, |ui| side_panel(ui, cx));
+            // spirit-level: allow(egui-panel-api) ve_theme's own SidePanel, not egui's old one
+            ve_theme::panel::SidePanel::<()>::new(
+                "ve_app_side_panel",
+                &self.options.side_panel_title,
+            )
+            .show_ui(ui, &mut self.state.side_panel, |ui| side_panel(ui, cx));
         }
 
         windows::show(
@@ -457,16 +469,33 @@ impl Shell {
     /// following the system, egui's memory forgotten; the next save writes these over the stored state.
     fn reset_storage(&mut self, ctx: &egui::Context) {
         self.reset_layout();
-        self.state.side_panel_open = self.options.side_panel.is_some();
+        self.state.side_panel = state::side_panel_state(&self.options);
         self.state.windows = Default::default();
         ve_basics::reset_egui_memory(ctx);
         ctx.set_theme(egui::ThemePreference::System);
     }
 
+    /// A toggle that shows the side panel (open) or hides it behind its edge tab.
+    fn side_panel_toggle(&mut self, ui: &mut Ui, text: &str, tip: &str) {
+        use ve_theme::panel::Shown as PanelShown;
+        let panel = &mut self.state.side_panel;
+        let mut open = panel.shown != PanelShown::Hidden;
+        if ui
+            .toggle_value(&mut open, text)
+            .on_hover_text(tip)
+            .changed()
+        {
+            panel.shown = if open {
+                PanelShown::Open
+            } else {
+                PanelShown::Hidden
+            };
+        }
+    }
+
     fn menu_bar(&mut self, ui: &mut Ui) {
         if self.options.side_panel.is_some() {
-            ui.toggle_value(&mut self.state.side_panel_open, "☰")
-                .on_hover_text("Show or hide the side panel");
+            self.side_panel_toggle(ui, "☰", "Show or hide the side panel");
             ui.separator();
         }
         ui.menu_button("File", |ui| {
@@ -496,8 +525,7 @@ impl Shell {
             .response
             .on_hover_text("Open a new widget as a tab in the main area");
             if self.options.side_panel.is_some() {
-                ui.toggle_value(&mut self.state.side_panel_open, "Side panel")
-                    .on_hover_text("Show or hide the side panel on the left");
+                self.side_panel_toggle(ui, "Side panel", "Show or hide the side panel");
             }
             ui.separator();
             if ui

@@ -677,3 +677,75 @@ fn repaint_causes_are_recorded() {
     assert!(causes.iter().any(|c| &*c.label == "input"), "{causes:?}");
     assert!(causes.iter().all(|c| c.frames > 0));
 }
+
+/// The shell's side panel (CHR-6): its « collapses it to the rail, » opens it, the ☰ toggle hides it behind
+/// its edge tab and the tab brings it back; the rail survives a restart, and a save from before the panel
+/// (`side_panel_open`) still loads.
+#[test]
+fn side_panel_collapses_hides_and_is_restored() {
+    let mut h = harness(options());
+    h.state_mut()
+        .open_widget(Box::new(demo::widgets::Note::default()));
+    assert!(
+        h.query_by_label("Navigation menu").is_some(),
+        "open at start"
+    );
+    h.get_by_label("Collapse Navigation").click();
+    h.run();
+    assert!(h.query_by_label("Navigation menu").is_none());
+    h.get_by_label("Open Navigation").click();
+    h.run();
+    assert!(h.query_by_label("Navigation menu").is_some());
+
+    h.get_all_by_label("☰")
+        .min_by(|a, b| a.rect().top().total_cmp(&b.rect().top()))
+        .expect("the menu bar's toggle")
+        .click();
+    h.run();
+    h.get_by_label("Show Navigation").click();
+    h.run();
+    assert!(
+        h.query_by_label("Navigation menu").is_some(),
+        "the tab brings it back"
+    );
+
+    h.get_by_label("Collapse Navigation").click();
+    h.run();
+    let mut storage = MemStorage::default();
+    eframe::App::save(h.state_mut(), &mut storage);
+    let saved = storage.0.values().next().expect("saved").clone();
+    let storage: &'static MemStorage = Box::leak(Box::new(storage));
+    let mut h = restored(storage, options());
+    h.run();
+    assert!(
+        h.query_by_label("Open Navigation").is_some(),
+        "still the rail after a restart"
+    );
+
+    let old = saved.replace(
+        "\"side_panel\":",
+        "\"side_panel_open\":true,\"side_panel_was\":",
+    );
+    let mut storage = MemStorage::default();
+    storage.0.insert(storage_key(), old);
+    let storage: &'static MemStorage = Box::leak(Box::new(storage));
+    let mut h = restored(storage, options());
+    h.run();
+    assert_eq!(
+        h.state().widgets().count(),
+        3,
+        "an old save loads, its widgets kept"
+    );
+    assert!(
+        h.query_by_label("Navigation menu").is_some(),
+        "the panel open"
+    );
+}
+
+/// The key the shell saves its state under.
+fn storage_key() -> String {
+    let mut storage = MemStorage::default();
+    let mut fresh = harness(options());
+    eframe::App::save(fresh.state_mut(), &mut storage);
+    storage.0.into_keys().next().expect("one key")
+}

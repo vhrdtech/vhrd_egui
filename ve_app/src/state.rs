@@ -33,8 +33,9 @@ pub(crate) struct State {
     /// The tiles of each extra OS window, by its `ViewportSlot` number.
     #[serde(default)]
     pub(crate) extra: BTreeMap<u32, Tree>,
+    /// The side panel's place, width and whether it shows (CHR-6).
     #[serde(default)]
-    pub(crate) side_panel_open: bool,
+    pub(crate) side_panel: ve_theme::panel::SidePanelState,
     #[serde(default)]
     pub(crate) windows: OpenWindows,
     /// Where the colours come from: the desktop theme, the brand, or a fixed accent (THM-18).
@@ -50,6 +51,19 @@ pub(crate) struct OpenWindows {
     pub(crate) debug: bool,
 }
 
+/// A fresh side panel: docked left, open when the app has one.
+pub(crate) fn side_panel_state(options: &ShellOptions) -> ve_theme::panel::SidePanelState {
+    use ve_theme::panel::{Shown, Side, SidePanelState};
+    SidePanelState {
+        shown: if options.side_panel.is_some() {
+            Shown::Open
+        } else {
+            Shown::Hidden
+        },
+        ..SidePanelState::docked(Side::Left)
+    }
+}
+
 impl State {
     pub(crate) fn new(options: &ShellOptions) -> Self {
         let (widgets, tree) = default_layout(options);
@@ -58,7 +72,7 @@ impl State {
             widgets,
             tree,
             extra: BTreeMap::new(),
-            side_panel_open: options.side_panel.is_some(),
+            side_panel: side_panel_state(options),
             windows: OpenWindows::default(),
             colors: ve_theme::ColorSource::default(),
         }

@@ -7,7 +7,8 @@ use std::sync::Arc;
 use egui::epaint::TextShape;
 use egui::{
     Align, Area, Button, CursorIcon, Frame, Id, Key, LayerId, Layout, Margin, Modifiers, Order,
-    Rect, RichText, Sense, TextEdit, Theme, Ui, UiBuilder, WidgetInfo, WidgetType, pos2, vec2,
+    Rect, RichText, ScrollArea, Sense, TextEdit, Theme, Ui, UiBuilder, WidgetInfo, WidgetType,
+    pos2, vec2,
 };
 
 use super::list::{self, ListCx};
@@ -67,6 +68,31 @@ pub(crate) fn body<K: RowKey>(
     let rect = ui.max_rect();
     let head = Rect::from_min_size(rect.min, vec2(rect.width(), c.panel_header));
     header(panel, ui, t, state, head, float_bounds);
+    if let Some(add) = panel.custom.take() {
+        let body = Rect::from_min_max(pos2(rect.left(), head.bottom()), rect.max);
+        let mut child = ui.new_child(
+            UiBuilder::new()
+                .max_rect(body)
+                .layout(Layout::top_down(Align::Min)),
+        );
+        child.set_clip_rect(body.intersect(ui.clip_rect()));
+        // Framed in the panel's ground, so the scroll fade blends toward it.
+        Frame::new().fill(t.colors.surface).show(&mut child, |ui| {
+            ui.set_min_size(ui.available_size());
+            ScrollArea::vertical()
+                .id_salt(panel.id.with("body"))
+                .auto_shrink([false, false])
+                .show(ui, |ui| {
+                    Frame::new()
+                        .inner_margin(Margin::symmetric(t.space.l as i8, t.space.s as i8))
+                        .show(ui, |ui| {
+                            ui.set_min_width(ui.available_width());
+                            add(ui);
+                        });
+                });
+        });
+        return;
+    }
     let mut top = head.bottom();
     if panel.filter {
         let r = Rect::from_min_size(

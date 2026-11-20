@@ -131,6 +131,8 @@ pub struct SidePanel<'a, K> {
     actions: Option<Actions<'a>>,
     link: Option<&'a mut RevealLink<K>>,
     row_menu: Option<RowMenu<'a, K>>,
+    icon: Option<Icon>,
+    custom: Option<Actions<'a>>,
     collapse_key: Option<KeyboardShortcut>,
     hide_key: Option<KeyboardShortcut>,
 }
@@ -150,6 +152,8 @@ impl<'a, K: RowKey> SidePanel<'a, K> {
             actions: None,
             link: None,
             row_menu: None,
+            icon: None,
+            custom: None,
             collapse_key: Some(KeyboardShortcut::new(Modifiers::COMMAND, Key::B)),
             hide_key: Some(KeyboardShortcut::new(
                 Modifiers::COMMAND | Modifiers::SHIFT,
@@ -222,6 +226,24 @@ impl<'a, K: RowKey> SidePanel<'a, K> {
         self.collapse_key = collapse;
         self.hide_key = hide;
         self
+    }
+
+    /// The panel's icon on its rail when it holds free content ([`Self::show_ui`]).
+    pub fn icon(mut self, icon: impl Into<Icon>) -> Self {
+        self.icon = Some(icon.into());
+        self
+    }
+
+    /// Draw the panel with free content under its header instead of rows: an inspector of property parts,
+    /// an app's own controls. It scrolls; collapsed, its rail holds one item, the panel's [`Self::icon`].
+    pub fn show_ui(
+        mut self,
+        ui: &mut Ui,
+        state: &mut SidePanelState,
+        add: impl FnOnce(&mut Ui) + 'a,
+    ) -> PanelResponse<K> {
+        self.custom = Some(Box::new(add));
+        self.show(ui, state, |_| {})
     }
 
     /// Draw the panel at its place in `ui` (the window's root `Ui`, or the part of it the panel may take),
@@ -382,6 +404,32 @@ impl<'a, K: RowKey> SidePanel<'a, K> {
                 parts::edge_line(ui, t, full, side);
                 if form == PanelForm::RailAndList && !self.views.is_empty() {
                     self.views_rail(ui, t, state);
+                } else if self.custom.is_some() {
+                    let own = [RailItem {
+                        icon: self.icon.as_ref(),
+                        name: &self.title,
+                        summary: None,
+                        key: None,
+                        light: None,
+                        unread: 0,
+                        active: false,
+                    }];
+                    if rail::items(
+                        ui,
+                        t,
+                        self.id.with("own"),
+                        self.settings.lights.unwrap_or(t.chrome.lights),
+                        side,
+                        &own,
+                    )
+                    .is_some()
+                    {
+                        if form == PanelForm::RailOnly {
+                            out.rail_clicked = Some(0);
+                        } else {
+                            state.shown = Shown::Open;
+                        }
+                    }
                 } else {
                     let items: Vec<RailItem<'_>> = groups
                         .iter()
