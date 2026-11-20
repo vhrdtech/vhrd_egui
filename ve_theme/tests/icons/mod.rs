@@ -260,3 +260,16 @@ fn masks_are_sampled_nearest() {
         assert_eq!(meta.options, egui::TextureOptions::NEAREST);
     }
 }
+
+/// The cache counts what it holds: can-frame at 24 px is 3 layers of 24 by 24 RGBA texels.
+#[test]
+fn the_cache_counts_an_icons_texture_bytes() {
+    let mut h = Harness::builder()
+        .with_size(vec2(60.0, 40.0))
+        .build_ui(|ui| {
+            ui.add(IconImage::new(&own::CAN_FRAME).size(24.0));
+        });
+    ve_theme::setup(&h.ctx);
+    h.run();
+    assert_eq!(ve_theme::icons::cache_bytes(&h.ctx), 3 * 24 * 24 * 4);
+}
