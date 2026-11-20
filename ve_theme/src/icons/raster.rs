@@ -24,6 +24,13 @@ pub const SVG_BYTES_MAX: usize = 64 * 1024;
 /// The most elements an icon may have.
 pub const ELEMENTS_MAX: usize = 512;
 
+/// The most masks (runs of shapes of one slot) an icon may have.
+pub const LAYERS_MAX: usize = 16;
+
+/// The most texture bytes one raster may give (`layers * size_px * size_px * 4`), well below the cache's
+/// bound; while rendering, one supersampled layer of up to `(ICON_PX_MAX * SUPERSAMPLE)^2` bytes is alive.
+pub const RASTER_BYTES_MAX: usize = 4 * 1024 * 1024;
+
 /// Each mask is rendered at this many times its side and box-filtered down: tiny-skia's own anti-aliasing
 /// misses a thin stroke's area by up to 17 % at 12 px, 4 times over by 3 % at most.
 pub const SUPERSAMPLE: u32 = 4;
@@ -57,6 +64,10 @@ pub enum IconError {
     TooLarge,
     /// The size is 0 or more than [`ICON_PX_MAX`].
     Size(u32),
+    /// More masks than [`LAYERS_MAX`]: the count.
+    Layers(usize),
+    /// Layers at a size that give more than [`RASTER_BYTES_MAX`] of texture: the layers and the size in pixels.
+    RasterTooLarge(usize, u32),
     /// The text is not XML.
     Xml(roxmltree::Error),
     /// usvg refuses the SVG.
@@ -78,6 +89,14 @@ impl fmt::Display for IconError {
                 "more than {SVG_BYTES_MAX} bytes or {ELEMENTS_MAX} elements"
             ),
             Self::Size(px) => write!(f, "icon size {px} px is outside 1 to {ICON_PX_MAX}"),
+            Self::Layers(n) => write!(
+                f,
+                "{n} layers; an icon has at most {LAYERS_MAX} runs of one slot"
+            ),
+            Self::RasterTooLarge(layers, px) => write!(
+                f,
+                "{layers} layers at {px} px exceed {RASTER_BYTES_MAX} bytes of texture"
+            ),
             Self::Xml(e) => write!(f, "not XML: {e}"),
             Self::Parse(e) => write!(f, "SVG does not parse: {e}"),
         }
@@ -183,6 +202,7 @@ struct Shape {
 pub struct Shapes {
     side: f32,
     shapes: Vec<Shape>,
+    layers: usize,
 }
 
 impl Shapes {
@@ -213,47 +233,69 @@ impl Shapes {
             px_per_unit_max: ICON_PX_MAX as f32 / size.width(),
         };
         walk.group(tree.root(), &mut shapes)?;
+        let layers = shapes
+            .iter()
+            .enumerate()
+            .filter(|(i, sh)| *i == 0 || shapes[i - 1].slot != sh.slot)
+            .count();
+        if layers > LAYERS_MAX {
+            return Err(IconError::Layers(layers));
+        }
         Ok(Self {
             side: size.width(),
             shapes,
+            layers,
         })
+    }
+
+    /// How many masks a raster gives.
+    pub fn layers(&self) -> usize {
+        self.layers
     }
 
     /// Rasterise at `size_px` by `size_px`: one mask per run of shapes of one slot, in paint order.
     ///
     /// # Errors
     ///
-    /// [`IconError::Size`] for a size outside 1 to [`ICON_PX_MAX`].
+    /// [`IconError::Size`] for a size outside 1 to [`ICON_PX_MAX`], [`IconError::RasterTooLarge`] past
+    /// [`RASTER_BYTES_MAX`].
     pub fn render(&self, size_px: u32) -> Result<Vec<SlotMask>, IconError> {
         if size_px == 0 || size_px > ICON_PX_MAX {
             return Err(IconError::Size(size_px));
         }
-        Ok(self
-            .render_at(size_px * SUPERSAMPLE)?
-            .into_iter()
-            .map(|(slot, mask)| SlotMask {
+        let side = size_px as usize;
+        if self.layers * side * side * 4 > RASTER_BYTES_MAX {
+            return Err(IconError::RasterTooLarge(self.layers, size_px));
+        }
+        let mut out = Vec::with_capacity(self.layers);
+        self.each_layer(size_px * SUPERSAMPLE, |slot, mask| {
+            out.push(SlotMask {
                 slot,
                 size_px,
                 alpha: box_filter(mask.data(), size_px, SUPERSAMPLE),
-            })
-            .collect())
+            });
+        })?;
+        Ok(out)
     }
 
-    /// The layers as tiny-skia masks of `side` by `side` pixels.
-    fn render_at(&self, side: u32) -> Result<Vec<(Slot, Mask)>, IconError> {
+    /// Each layer as a tiny-skia mask of `side` by `side` pixels, one at a time, in paint order.
+    fn each_layer(&self, side: u32, mut f: impl FnMut(Slot, &Mask)) -> Result<(), IconError> {
         let scale = side as f32 / self.side;
-        let mut out: Vec<(Slot, Mask)> = Vec::new();
-        for shape in &self.shapes {
-            if out.last().is_none_or(|(s, _)| *s != shape.slot) {
-                let mask = Mask::new(side, side).ok_or(IconError::Size(side))?;
-                out.push((shape.slot, mask));
-            }
-            if let Some((_, mask)) = out.last_mut() {
+        let mut shapes = self.shapes.iter().peekable();
+        while let Some(first) = shapes.next() {
+            let mut mask = Mask::new(side, side).ok_or(IconError::Size(side))?;
+            let mut shape = first;
+            loop {
                 let ts = shape.transform.post_scale(scale, scale);
                 mask.fill_path(&shape.outline, shape.rule, shape.anti_alias, ts);
+                match shapes.next_if(|next| next.slot == first.slot) {
+                    Some(next) => shape = next,
+                    None => break,
+                }
             }
+            f(first.slot, &mask);
         }
-        Ok(out)
+        Ok(())
     }
 }
 
@@ -390,15 +432,14 @@ mod tests {
 
     /// Each layer's ink at `k` times the size per pixel of `px`: its area, all but exactly.
     fn reference(shapes: &Shapes, px: u32, k: u32) -> Vec<f64> {
+        let mut out = Vec::new();
         shapes
-            .render_at(px * k)
-            .unwrap()
-            .iter()
-            .map(|(_, m)| {
+            .each_layer(px * k, |_, m| {
                 let sum: u64 = m.data().iter().map(|&a| u64::from(a)).sum();
-                sum as f64 / f64::from(k * k)
+                out.push(sum as f64 / f64::from(k * k));
             })
-            .collect()
+            .unwrap();
+        out
     }
 
     /// Strokes are drawn as wide as they are at every size, also where a stroke is exactly one device pixel
@@ -524,6 +565,46 @@ mod tests {
             rasterise(wide, 4),
             Err(IconError::NotSquare(w, h)) if w == 4.0 && h == 2.0
         ));
+    }
+
+    /// Layers are bounded at parse, texture bytes at render: 200 alternating shapes at 256 px took 209 MB
+    /// while rendering and 52 MB of textures before these limits.
+    #[test]
+    fn layers_and_raster_bytes_are_bounded() {
+        let alternate = |n: usize| {
+            svg(&(0..n)
+                .map(|i| {
+                    let slot = if i % 2 == 0 { "ink" } else { "accent" };
+                    format!(
+                        r#"<rect class="f-{slot}" x="{}" width="1" height="24"/>"#,
+                        i % 24
+                    )
+                })
+                .collect::<String>())
+        };
+        let at_limit = Shapes::parse(&alternate(LAYERS_MAX)).unwrap();
+        assert_eq!(at_limit.layers(), LAYERS_MAX);
+        assert_eq!(
+            at_limit.render(256).unwrap().len(),
+            LAYERS_MAX,
+            "16 layers at 256 px is 4 MiB"
+        );
+        assert!(matches!(
+            at_limit.render(257),
+            Err(IconError::RasterTooLarge(16, 257))
+        ));
+        assert!(matches!(
+            Shapes::parse(&alternate(200)),
+            Err(IconError::Layers(200))
+        ));
+        let tape = Shapes::parse(own::TAPE.svg).unwrap();
+        assert!(matches!(
+            tape.render(ICON_PX_MAX),
+            Err(IconError::RasterTooLarge(3, ICON_PX_MAX))
+        ));
+        let one = svg(r#"<rect class="f-ink" width="24" height="24"/>"#);
+        let full = rasterise(&one, ICON_PX_MAX).unwrap();
+        assert_eq!(full[0].alpha.len(), (ICON_PX_MAX * ICON_PX_MAX) as usize);
     }
 
     #[test]

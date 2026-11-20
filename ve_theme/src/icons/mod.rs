@@ -17,6 +17,8 @@
 //!   An SVG without slot classes is drawn whole in ink, whatever its colours.
 //! - Shapes paint in document order: consecutive shapes of one slot share a mask, and a slot that comes back
 //!   after another gets a new one, so the z-order holds.
+//!   An icon has at most `raster::LAYERS_MAX` such masks, and one raster at most `raster::RASTER_BYTES_MAX`
+//!   of texture.
 //! - Not drawn, each an error at load: text, images, `<style>`, gradients and patterns, opacity below 1, clip
 //!   paths, masks and filters.
 //!
@@ -52,7 +54,9 @@ pub use cache::{CACHE_BYTES_MAX, CACHE_IDLE_PASSES_MAX, cache_bytes, raster_coun
 /// The Phosphor regular glyphs: `ph::GEAR_SIX`, `ph::ICONS` (every name with its glyph).
 pub use egui_phosphor::regular as ph;
 #[cfg(feature = "icons")]
-pub use raster::{ICON_PX_MAX, IconError, Shapes, SlotMask, rasterise};
+pub use raster::{
+    ICON_PX_MAX, IconError, LAYERS_MAX, RASTER_BYTES_MAX, Shapes, SlotMask, rasterise,
+};
 
 /// Name of the font family that holds only the Phosphor icons.
 pub const ICON_FAMILY: &str = "ve-icons";
