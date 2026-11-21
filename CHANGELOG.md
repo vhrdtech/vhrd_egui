@@ -5,6 +5,10 @@ versions follow [Semantic Versioning](https://semver.org/). Feature IDs refer to
 
 ## [Unreleased]
 
+### Added
+
+- `ve_basics`: the build label shows the commit's age, "28 h ago"; `BuildInfo::commit_unix` from `GIT_COMMIT_UNIX` (BAS-1).
+
 ## [0.37.1] - 2026-11-20
 
 ### Added

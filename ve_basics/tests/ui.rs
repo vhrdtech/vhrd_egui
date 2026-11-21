@@ -15,6 +15,7 @@ fn info(debug: bool) -> BuildInfo {
         git_sha: "abc1234-dirty",
         build_time: "8 Oct 2026 10:00 UTC",
         debug,
+        commit_unix: None,
     }
 }
 
@@ -46,6 +47,20 @@ fn build_info_label_shows_marker_and_spells_out_on_hover() {
 #[test]
 fn release_marker() {
     assert_eq!(info(false).short(), "1.2.3 · abc1234-dirty · release");
+}
+
+#[test]
+fn short_appends_the_commit_age() {
+    let old = BuildInfo {
+        commit_unix: Some(0),
+        ..info(false)
+    };
+    let short = old.short();
+    assert!(
+        short.starts_with("1.2.3 · abc1234-dirty · release · "),
+        "{short}"
+    );
+    assert!(short.ends_with(" d ago"), "{short}");
 }
 
 #[test]

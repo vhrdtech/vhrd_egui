@@ -1,6 +1,7 @@
 //! Build info: what is running, spelled out on hover.
 
 use egui::{Color32, Response, RichText, Ui};
+use web_time::{SystemTime, UNIX_EPOCH};
 
 /// Identity of a build. Make it in the *app's* crate with [`build_info!`], so the debug / release marker and
 /// the env vars are the app's, not this library's.
@@ -16,10 +17,16 @@ pub struct BuildInfo {
     pub build_time: &'static str,
     /// `cfg!(debug_assertions)` of the app's crate.
     pub debug: bool,
+    /// Commit time in Unix seconds (`GIT_COMMIT_UNIX` from the app's `build.rs`); `None` shows no age.
+    ///
+    /// The age in [`BuildInfo::short`] counts from the commit, not from the compile: `build.rs` reads the
+    /// commit's time on purpose, so its output stays reproducible, and cargo does not rerun it on every build.
+    pub commit_unix: Option<i64>,
 }
 
 /// Capture the calling crate's build info: name and version from Cargo, `GIT_SHA` and `BUILD_TIME` from its
-/// `build.rs` (optional, `unknown` when missing) and `cfg!(debug_assertions)`.
+/// `build.rs` (optional, `unknown` when missing), `GIT_COMMIT_UNIX` (optional, parsed at run time; missing or
+/// unparsable gives `None`) and `cfg!(debug_assertions)`.
 ///
 /// `build.rs` of the app (a copy of the mesh dashboard app's, no extra crates):
 ///
@@ -29,6 +36,7 @@ pub struct BuildInfo {
 ///     println!("cargo:rerun-if-changed=.git/index");
 ///     println!("cargo:rustc-env=GIT_SHA={}", git_sha());     // `git rev-parse --short HEAD`, `-dirty` if
 ///     println!("cargo:rustc-env=BUILD_TIME={}", build_time()); // `git status --porcelain` is not empty
+///     println!("cargo:rustc-env=GIT_COMMIT_UNIX={}", commit_unix()); // `git log -1 --format=%ct`
 /// }
 /// ```
 ///
@@ -48,14 +56,35 @@ macro_rules! build_info {
                 None => "unknown",
             },
             debug: cfg!(debug_assertions),
+            commit_unix: match option_env!("GIT_COMMIT_UNIX") {
+                Some(s) => s.parse::<i64>().ok(),
+                None => None,
+            },
         }
     };
 }
 
 impl BuildInfo {
-    /// `"0.4.2 · a1b2c3d · debug"`.
+    /// `"0.4.2 · a1b2c3d · debug · 28 h ago"`: the age from [`Self::commit_unix`] against the system clock,
+    /// left out when the commit time is unknown.
     pub fn short(&self) -> String {
-        format!("{} · {} · {}", self.version, self.git_sha, self.profile())
+        let base = format!("{} · {} · {}", self.version, self.git_sha, self.profile());
+        #[cfg_attr(
+            not(target_arch = "wasm32"),
+            expect(
+                clippy::disallowed_methods,
+                reason = "web_time::SystemTime is the clock that works on the web"
+            )
+        )]
+        let now = SystemTime::now();
+        let now_unix = now
+            .duration_since(UNIX_EPOCH)
+            .ok()
+            .and_then(|d| i64::try_from(d.as_secs()).ok());
+        match (self.commit_unix, now_unix) {
+            (Some(commit), Some(now)) => format!("{base} · {}", age(commit, now)),
+            _ => base,
+        }
     }
 
     /// `"debug"` or `"release"`.
@@ -74,6 +103,22 @@ impl BuildInfo {
             "{}\nversion: {}\ngit commit: {} (-dirty means uncommitted changes were built in)\nbuilt: {}\nprofile: {}",
             self.name, self.version, self.git_sha, self.build_time, profile
         )
+    }
+}
+
+/// How long ago `commit_unix` was at `now_unix`, both in Unix seconds: under an hour "N min ago", under 48 hours
+/// "N h ago", else "N d ago". A commit in the future reads "0 min ago".
+fn age(commit_unix: i64, now_unix: i64) -> String {
+    const MIN_S: i64 = 60;
+    const HOUR_S: i64 = 60 * MIN_S;
+    const DAY_S: i64 = 24 * HOUR_S;
+    let secs = now_unix.saturating_sub(commit_unix).max(0);
+    if secs < HOUR_S {
+        format!("{} min ago", secs / MIN_S)
+    } else if secs < 48 * HOUR_S {
+        format!("{} h ago", secs / HOUR_S)
+    } else {
+        format!("{} d ago", secs / DAY_S)
     }
 }
 
@@ -96,5 +141,32 @@ pub(crate) fn debug_marker_color(ui: &Ui) -> Color32 {
         Color32::from_rgb(0xff, 0xa2, 0x4d)
     } else {
         Color32::from_rgb(0x9c, 0x43, 0x00)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::age;
+
+    const NOW: i64 = 1_800_000_000;
+
+    #[test]
+    fn age_buckets_and_their_edges() {
+        let cases = [
+            (NOW + 5, "0 min ago"),
+            (NOW, "0 min ago"),
+            (NOW - 59, "0 min ago"),
+            (NOW - 60, "1 min ago"),
+            (NOW - 3599, "59 min ago"),
+            (NOW - 3600, "1 h ago"),
+            (NOW - 28 * 3600, "28 h ago"),
+            (NOW - (48 * 3600 - 1), "47 h ago"),
+            (NOW - 48 * 3600, "2 d ago"),
+            (NOW - 10 * 86400 - 1, "10 d ago"),
+            (i64::MIN, "106751991167300 d ago"),
+        ];
+        for (commit, want) in cases {
+            assert_eq!(age(commit, NOW), want, "commit {commit}");
+        }
     }
 }

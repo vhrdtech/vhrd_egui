@@ -88,6 +88,7 @@ mod tests {
         git_sha: "abc1234",
         build_time: "14 Nov 2026 10:00",
         debug: false,
+        commit_unix: None,
     };
 
     #[test]

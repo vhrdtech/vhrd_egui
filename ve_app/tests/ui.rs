@@ -33,6 +33,7 @@ fn options() -> ShellOptions {
         git_sha: "abc1234",
         build_time: "8 Oct 2026 12:00",
         debug: false,
+        commit_unix: None,
     };
     // The brand colours, whatever this machine's desktop theme.
     options.desktop_theme = None;
