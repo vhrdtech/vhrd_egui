@@ -52,6 +52,7 @@ egui-phosphor = { version = "0.14", default-features = false, features = ["regul
 # Debug builds with many widgets were slow: our code a little optimised and still debuggable, the dependencies
 # (egui, wgpu, ...) near release speed. Tests use it too.
 [profile.dev]
+debug = false
 opt-level = 1
 
 [profile.dev.package."*"]
