@@ -3954,6 +3954,7 @@ dependencies = [
  "naga",
  "pollster",
  "ve_frame",
+ "ve_gpu",
  "ve_native",
  "ve_theme",
  "wgpu",

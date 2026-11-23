@@ -14,10 +14,12 @@
 use std::path::{Path, PathBuf};
 use std::time::Instant;
 
+use std::error::Error;
+
 use egui_wgpu::wgpu;
+use ve_gpu::headless::{AdapterPick, Headless, HeadlessOptions};
 
 use crate::demo::{Demo, SurfaceInfo};
-use crate::paint::{Painter, Target, clear_color};
 use crate::{Output, Phosphor, Scene, Settings, tonemap};
 
 const FORMAT: wgpu::TextureFormat = wgpu::TextureFormat::Rgba16Float;
@@ -46,51 +48,6 @@ impl Default for Options {
             headroom: 8.0,
             sweeps_per_s: 1_500_000.0,
         }
-    }
-}
-
-/// A device without a surface.
-pub struct Gpu {
-    /// The adapter's name and backend, for the log.
-    pub name: String,
-    device: wgpu::Device,
-    queue: wgpu::Queue,
-}
-
-impl Gpu {
-    /// The first adapter there is; an error when there is none (no GPU, no driver).
-    pub fn new() -> Result<Self, String> {
-        let instance =
-            wgpu::Instance::new(wgpu::InstanceDescriptor::new_without_display_handle_from_env());
-        let adapter = pollster::block_on(instance.request_adapter(&wgpu::RequestAdapterOptions {
-            power_preference: wgpu::PowerPreference::HighPerformance,
-            force_fallback_adapter: false,
-            compatible_surface: None,
-            apply_limit_buckets: false,
-        }))
-        .map_err(|e| format!("no GPU adapter: {e}"))?;
-        let info = adapter.get_info();
-        let (device, queue) = pollster::block_on(adapter.request_device(&wgpu::DeviceDescriptor {
-            label: Some("ve_phosphor_headless"),
-            required_limits: adapter.limits(),
-            ..Default::default()
-        }))
-        .map_err(|e| format!("no GPU device: {e}"))?;
-        Ok(Self {
-            name: format!("{} ({:?})", info.name, info.backend),
-            device,
-            queue,
-        })
-    }
-
-    /// The device.
-    pub fn device(&self) -> &wgpu::Device {
-        &self.device
-    }
-
-    /// The queue.
-    pub fn queue(&self) -> &wgpu::Queue {
-        &self.queue
     }
 }
 
@@ -139,74 +96,54 @@ impl Image {
     }
 }
 
-/// An IEEE half float to f32.
-pub fn f16_to_f32(h: u16) -> f32 {
-    let sign = if h & 0x8000 != 0 { -1.0 } else { 1.0 };
-    let exp = ((h >> 10) & 0x1f) as i32;
-    let frac = (h & 0x3ff) as f32;
-    let mag = match exp {
-        0 => frac * 2f32.powi(-24),
-        31 => {
-            if frac == 0.0 {
-                f32::INFINITY
-            } else {
-                f32::NAN
-            }
-        }
-        _ => (1.0 + frac / 1024.0) * 2f32.powi(exp - 15),
-    };
-    sign * mag
-}
-
 /// The demo on the offscreen target.
 pub struct Renderer {
-    gpu: Gpu,
+    headless: Headless,
     ctx: egui::Context,
-    painter: Painter,
     demo: Demo,
-    texture: wgpu::Texture,
-    view: wgpu::TextureView,
     px: [u32; 2],
     ppp: f32,
 }
 
 impl Renderer {
-    /// The demo at `size` points, `ppp` pixels per point, starting from `settings`.
-    pub fn new(gpu: Gpu, size: [u32; 2], ppp: f32, settings: Settings) -> Self {
+    /// The demo at `size` points, `ppp` pixels per point, starting from `settings`, on a hardware GPU.
+    ///
+    /// # Errors
+    ///
+    /// The reason when there is no GPU adapter or device.
+    pub fn new(size: [u32; 2], ppp: f32, settings: Settings) -> Result<Self, String> {
+        let ctx = egui::Context::default();
+        ve_theme::setup(&ctx);
+        ctx.set_theme(egui::Theme::Dark);
         let px = [
             (size[0] as f32 * ppp).round() as u32,
             (size[1] as f32 * ppp).round() as u32,
         ];
-        let texture = gpu.device.create_texture(&wgpu::TextureDescriptor {
-            label: Some("ve_phosphor_headless"),
-            size: wgpu::Extent3d {
-                width: px[0],
-                height: px[1],
-                depth_or_array_layers: 1,
-            },
-            mip_level_count: 1,
-            sample_count: 1,
-            dimension: wgpu::TextureDimension::D2,
-            format: FORMAT,
-            usage: wgpu::TextureUsages::RENDER_ATTACHMENT | wgpu::TextureUsages::COPY_SRC,
-            view_formats: &[],
-        });
-        let view = texture.create_view(&Default::default());
-        let ctx = egui::Context::default();
-        ve_theme::setup(&ctx);
-        ctx.set_theme(egui::Theme::Dark);
-        let painter = Painter::new(&gpu.device, FORMAT);
-        let demo = Demo::new(Phosphor::new(&gpu.device, FORMAT), settings);
-        Self {
-            gpu,
+        let headless = Headless::new(HeadlessOptions {
+            adapter: AdapterPick::Gpu,
+            size_px: px,
+            pixels_per_point: ppp,
+            clear: ctx.global_style().visuals.panel_fill,
+            format: Some(FORMAT),
+            ..HeadlessOptions::default()
+        })
+        .map_err(|e| {
+            format!(
+                "{e}: {}",
+                e.source().map_or_else(String::new, ToString::to_string)
+            )
+        })?;
+        let demo = Demo::new(
+            Phosphor::new(&headless.render_state().device, FORMAT),
+            settings,
+        );
+        Ok(Self {
+            headless,
             ctx,
-            painter,
             demo,
-            texture,
-            view,
             px,
             ppp,
-        }
+        })
     }
 
     /// The demo, to change its settings between frames.
@@ -214,88 +151,32 @@ impl Renderer {
         &mut self.demo
     }
 
-    /// The GPU.
-    pub fn gpu(&self) -> &Gpu {
-        &self.gpu
+    /// The adapter's name, type and backend.
+    pub fn adapter_name(&self) -> String {
+        self.headless.adapter_name()
     }
 
-    /// Draw one frame of `dt` seconds for `info`'s output.
-    pub fn frame(&mut self, dt: f32, info: &SurfaceInfo) {
-        let input = egui::RawInput {
-            screen_rect: Some(egui::Rect::from_min_size(
-                egui::Pos2::ZERO,
-                egui::vec2(self.px[0] as f32, self.px[1] as f32) / self.ppp,
-            )),
-            predicted_dt: dt,
-            ..Default::default()
-        };
+    /// Draw one frame of `dt` seconds for `info`'s output, and wait for the GPU.
+    pub fn frame(&mut self, dt: f32, info: &SurfaceInfo) -> Result<(), String> {
+        let start = Instant::now();
+        let mut input = self.headless.raw_input();
+        input.predicted_dt = dt;
         self.ctx.set_pixels_per_point(self.ppp);
         let demo = &mut self.demo;
         let output = self.ctx.run_ui(input, |ui| demo.ui(ui, dt, info));
-        let clear = clear_color(self.ctx.global_style().visuals.panel_fill);
-        self.painter.paint(
-            &self.gpu.device,
-            &self.gpu.queue,
-            Target {
-                view: &self.view,
-                size: self.px,
-                clear,
-            },
-            &self.ctx,
-            output,
-        );
-    }
-
-    /// Wait for the GPU to finish what was submitted.
-    pub fn wait(&self) {
-        let _ = self.gpu.device.poll(wgpu::PollType::wait_indefinitely());
+        self.headless
+            .paint(&self.ctx, output, start)
+            .map(drop)
+            .map_err(|e| e.to_string())
     }
 
     /// Read the target back.
-    pub fn read(&self) -> Image {
-        let [w, h] = self.px;
-        let row = (w * 8).next_multiple_of(wgpu::COPY_BYTES_PER_ROW_ALIGNMENT);
-        let buffer = self.gpu.device.create_buffer(&wgpu::BufferDescriptor {
-            label: Some("ve_phosphor_readback"),
-            size: row as u64 * h as u64,
-            usage: wgpu::BufferUsages::COPY_DST | wgpu::BufferUsages::MAP_READ,
-            mapped_at_creation: false,
-        });
-        let mut encoder = self
-            .gpu
-            .device
-            .create_command_encoder(&wgpu::CommandEncoderDescriptor::default());
-        encoder.copy_texture_to_buffer(
-            self.texture.as_image_copy(),
-            wgpu::TexelCopyBufferInfo {
-                buffer: &buffer,
-                layout: wgpu::TexelCopyBufferLayout {
-                    offset: 0,
-                    bytes_per_row: Some(row),
-                    rows_per_image: Some(h),
-                },
-            },
-            self.texture.size(),
-        );
-        self.gpu.queue.submit([encoder.finish()]);
-        let slice = buffer.slice(..);
-        slice.map_async(wgpu::MapMode::Read, |_| {});
-        self.wait();
-        let data = slice
-            .get_mapped_range()
-            .expect("mapped: the poll above waited for it");
-        let mut rgba = Vec::with_capacity((w * h) as usize);
-        for y in 0..h {
-            let line = &data[(y * row) as usize..];
-            for x in 0..w as usize {
-                let px = &line[x * 8..x * 8 + 8];
-                let c = |i: usize| f16_to_f32(u16::from_le_bytes([px[i * 2], px[i * 2 + 1]]));
-                rgba.push([c(0), c(1), c(2), c(3)]);
-            }
-        }
-        drop(data);
-        buffer.unmap();
-        Image { size: [w, h], rgba }
+    pub fn read(&self) -> Result<Image, String> {
+        let rgba = self.headless.read_f32().map_err(|e| e.to_string())?;
+        Ok(Image {
+            size: self.px,
+            rgba,
+        })
     }
 }
 
@@ -341,14 +222,13 @@ pub fn render_all(
     log: &mut dyn FnMut(&str),
 ) -> Result<Vec<PathBuf>, String> {
     std::fs::create_dir_all(dir).map_err(|e| format!("{}: {e}", dir.display()))?;
-    let gpu = Gpu::new()?;
-    log(&format!("GPU: {}", gpu.name));
     let settings = Settings {
         sweeps_per_s: opts.sweeps_per_s,
         persistence_s: 2.0,
         ..Settings::default()
     };
-    let mut r = Renderer::new(gpu, opts.size, opts.ppp, settings);
+    let mut r = Renderer::new(opts.size, opts.ppp, settings)?;
+    log(&format!("GPU: {}", r.adapter_name()));
     r.demo().follow_display = true;
     let dt = 1.0 / 60.0;
     let frames = (opts.seconds / dt).round().max(1.0) as u32;
@@ -358,9 +238,8 @@ pub fn render_all(
         r.demo().settings.scene = scene;
         let start = Instant::now();
         for _ in 0..frames {
-            r.frame(dt, &hdr);
+            r.frame(dt, &hdr)?;
         }
-        r.wait();
         let took = start.elapsed().as_secs_f32();
         let stats = r.demo().phosphor().stats();
         log(&format!(
@@ -371,12 +250,12 @@ pub fn render_all(
         ));
         // the last frame again, without time passing, for each output
         let hdr_img = {
-            r.frame(0.0, &hdr);
-            r.read()
+            r.frame(0.0, &hdr)?;
+            r.read()?
         };
         let sdr_img = {
-            r.frame(0.0, &sdr_info());
-            r.read()
+            r.frame(0.0, &sdr_info())?;
+            r.read()?
         };
         for (suffix, img, scale) in [
             ("sdr-screen", &sdr_img, 1.0),
@@ -394,26 +273,23 @@ pub fn render_all(
 /// Waveforms per second the GPU sustains: `frames` frames of the most sweeps a frame draws, timed after a
 /// warm-up, for `scene`.
 pub fn bench(scene: Scene, frames: u32, opts: &Options) -> Result<(String, f32), String> {
-    let gpu = Gpu::new()?;
-    let name = gpu.name.clone();
     let settings = Settings {
         scene,
         sweeps_per_s: Settings::MAX_SWEEPS_PER_FRAME as f32 * 60.0,
         ..Settings::default()
     };
-    let mut r = Renderer::new(gpu, opts.size, opts.ppp, settings);
+    let mut r = Renderer::new(opts.size, opts.ppp, settings)?;
+    let name = r.adapter_name();
     let info = hdr_info(opts.headroom);
     let dt = 1.0 / 60.0;
     for _ in 0..5 {
-        r.frame(dt, &info);
+        r.frame(dt, &info)?;
     }
-    r.wait();
     let start = Instant::now();
     let before = r.demo().phosphor().stats().total_sweeps;
     for _ in 0..frames {
-        r.frame(dt, &info);
+        r.frame(dt, &info)?;
     }
-    r.wait();
     let sweeps = r.demo().phosphor().stats().total_sweeps - before;
     Ok((name, sweeps as f32 / start.elapsed().as_secs_f32()))
 }
@@ -421,17 +297,6 @@ pub fn bench(scene: Scene, frames: u32, opts: &Options) -> Result<(String, f32),
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    #[test]
-    fn halves_decode() {
-        assert_eq!(f16_to_f32(0x3c00), 1.0);
-        assert_eq!(f16_to_f32(0x4800), 8.0);
-        assert_eq!(f16_to_f32(0xc000), -2.0);
-        assert_eq!(f16_to_f32(0x0000), 0.0);
-        assert_eq!(f16_to_f32(0x3555), 0.333_251_95);
-        assert_eq!(f16_to_f32(0x0001), 2f32.powi(-24));
-        assert!(f16_to_f32(0x7c00).is_infinite());
-    }
 
     #[test]
     fn the_png_cuts_at_white_and_scales_in_linear_light() {

@@ -26,6 +26,7 @@ host = [
 [dependencies]
 egui.workspace = true
 egui-wgpu.workspace = true
+ve_gpu = { path = "../ve_gpu", version = "0.37" }
 bytemuck = { version = "1.25", features = ["derive"] }
 # The backends for the host: Metal (macOS EDR), Vulkan (Linux), DX12 (Windows). egui-wgpu comes without defaults.
 wgpu = { version = "30", default-features = false, features = ["std", "parking_lot", "wgsl", "metal", "vulkan", "dx12"] }

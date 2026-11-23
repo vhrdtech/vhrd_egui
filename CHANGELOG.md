@@ -18,6 +18,7 @@ versions follow [Semantic Versioning](https://semver.org/). Feature IDs refer to
 
 ### Changed
 
+- **Breaking:** `ve_phosphor::headless`: `Gpu` is gone; `Renderer::new(size, ppp, settings)` makes its own device on `ve_gpu::headless`, `frame` and `read` return `Result` (PHOS-1).
 - **Breaking:** `ve_backdrop`: `ShaderTarget` is replaced by `ve_gpu::Target`, which `with_wgpu_target` takes with the pass's colour format (BACK-3).
 
 ### Fixed

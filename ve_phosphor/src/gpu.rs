@@ -3,6 +3,7 @@
 use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
 
 use egui_wgpu::wgpu;
+use ve_gpu::GrowBuffer;
 
 use crate::settings::{Mode, Scene, Settings};
 use crate::tonemap;
@@ -215,7 +216,7 @@ struct Sized {
 struct State {
     pipes: Pipelines,
     params: wgpu::Buffer,
-    stream: wgpu::Buffer,
+    stream: GrowBuffer,
     /// Sweeps waiting to be drawn: (samples per sweep, samples).
     pending: Option<(u32, Vec<f32>)>,
     sized: Option<Sized>,
@@ -507,12 +508,7 @@ impl Phosphor {
             size_of::<Params>() as u64,
             wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
         );
-        let stream = buffer(
-            device,
-            "ve_phosphor_stream",
-            16,
-            wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_DST,
-        );
+        let stream = GrowBuffer::new(device, "ve_phosphor_stream", wgpu::BufferUsages::STORAGE);
         Self(Arc::new(Mutex::new(State {
             pipes,
             params,
@@ -580,17 +576,10 @@ impl Phosphor {
         if let Some((len, data)) = st.pending.take()
             && s.scene == Scene::Stream
         {
-            let bytes = (data.len() * 4) as u64;
-            if bytes > st.stream.size() {
-                st.stream = buffer(
-                    device,
-                    "ve_phosphor_stream",
-                    bytes.next_power_of_two(),
-                    wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_DST,
-                );
+            if st.stream.write(device, queue, bytemuck::cast_slice(&data)) {
+                // the bind groups hold the old buffer
                 st.sized = None;
             }
-            queue.write_buffer(&st.stream, 0, bytemuck::cast_slice(&data));
             stream_len = len;
             stream_sweeps = data.len() as u32 / len;
         }
@@ -599,7 +588,13 @@ impl Phosphor {
             .as_ref()
             .is_none_or(|z| (z.rect.w, z.rect.h) != (rect.w, rect.h))
         {
-            st.sized = Some(Sized::new(device, &st.pipes, &st.params, &st.stream, rect));
+            st.sized = Some(Sized::new(
+                device,
+                &st.pipes,
+                &st.params,
+                st.stream.buffer(),
+                rect,
+            ));
             st.clock = Clock::default();
             st.stats = Stats::default();
         }
