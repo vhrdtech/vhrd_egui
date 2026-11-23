@@ -1,0 +1,36 @@
+[package]
+name = "ve_gpu"
+description = "wgpu building blocks for egui widgets: paint-callback plumbing, an instanced 2D shape batch, range columns drawn in the shader, and a headless harness for tests and benches"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+
+[features]
+# Count the allocations of the callback's own CPU work per frame (`FrameStats::allocations`) when the app installs
+# `ve_alloc_count::CountingAlloc`.
+alloc-count = ["dep:ve_alloc_count"]
+
+[dependencies]
+egui.workspace = true
+egui-wgpu.workspace = true
+bytemuck = { version = "1.25", features = ["derive"] }
+ve_alloc_count = { path = "../ve_alloc_count", version = "0.37", optional = true }
+
+# The headless harness blocks on wgpu's adapter and device requests; native only.
+[target.'cfg(not(target_arch = "wasm32"))'.dependencies]
+pollster = "1"
+
+[dev-dependencies]
+egui_kittest = { workspace = true, features = ["snapshot", "wgpu"] }
+egui-wgpu.workspace = true
+ve_theme = { path = "../ve_theme", version = "0.37" }
+naga = { version = "30", default-features = false, features = [
+  "wgsl-in",
+  "glsl-out",
+] }
+
+[lints]
+workspace = true

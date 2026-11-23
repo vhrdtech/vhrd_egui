@@ -1,0 +1,27 @@
+[package]
+name = "ve_gpu_benchmarks"
+description = "Benchmarks of ve_gpu: frames of 50 batches of about 1000 shapes and of dense range columns, per step and on the GPU, and the allocations of a warm frame"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+publish = false
+
+[lints]
+workspace = true
+
+[dependencies]
+egui.workspace = true
+ve_gpu = { path = "../ve_gpu" }
+
+[dev-dependencies]
+ve_alloc_count = { path = "../ve_alloc_count" }
+ve_gpu = { path = "../ve_gpu", features = ["alloc-count"] }
+# wgpu's native backends for the headless device (an app gets them from eframe)
+egui-wgpu = { workspace = true, features = ["default"] }
+
+[[bench]]
+name = "batches"
+harness = false

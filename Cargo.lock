@@ -3901,6 +3901,30 @@ dependencies = [
 ]
 
 [[package]]
+name = "ve_gpu"
+version = "0.37.1"
+dependencies = [
+ "bytemuck",
+ "egui",
+ "egui-wgpu",
+ "egui_kittest",
+ "naga",
+ "pollster",
+ "ve_alloc_count",
+ "ve_theme",
+]
+
+[[package]]
+name = "ve_gpu_benchmarks"
+version = "0.37.1"
+dependencies = [
+ "egui",
+ "egui-wgpu",
+ "ve_alloc_count",
+ "ve_gpu",
+]
+
+[[package]]
 name = "ve_macro"
 version = "0.37.1"
 dependencies = [

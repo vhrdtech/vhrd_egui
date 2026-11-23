@@ -87,6 +87,11 @@ Cargo workspace, edition 2024, one shared version (`[workspace.package]`).
   (`camera.rs`), CPU picking with a BVH (`pick.rs`), the offscreen wgpu renderer with depth and 4x MSAA
   (`gpu.rs`, `view3d.wgsl`), the `View3d` widget (`view.rs`), procedural `shapes`, the `view3d_demo` example.
   Rendering needs eframe's wgpu renderer; without it the view says so and picking still works.
+- `ve_gpu/` — wgpu building blocks for egui widgets: `plumbing/` (`Target`, `ScreenUniform` with `COMMON_WGSL`,
+  `GrowBuffer`, `RetainedCallback`), `Batch` (`batch/`: shapes and range columns, drawn in order through one
+  callback), the GPU side in egui_wgpu's callback resources (`renderer.rs`, `shaders/`: within WebGL2's limits),
+  `headless.rs` (offscreen frames, readback, timings). `ve_gpu_benchmarks/` times 50 batches of 1000 shapes and
+  checks that a warm frame allocates nothing.
 - `ve_basics/` — build info, non-selectable labels, hover cross-reference highlight, the fold for the rest of a
   cut list (`FoldRest`), startup crash guard, the frame recorder (`perf/`: the `FrameRecorder` trait, the ring
   behind it in `ring/`, its reads in `ring/read.rs`). `ve_basics_benchmarks/` measures what the recorder costs;
@@ -135,7 +140,8 @@ with a short reason; a new one needs the same conscious annotation, not a blanke
 
 Not web crates, and why: `ve_widget` (eframe with default features, tokio, `typetag` and `inventory`, which need
 `ctor` support on wasm), `ve_app` (egui_tiles, eframe persistence), `ve_spacemouse` (a Unix socket and a thread),
-`ve_view3d` (on `ve_spacemouse`; not checked on wasm yet).
+`ve_view3d` (on `ve_spacemouse`; not checked on wasm yet), `ve_gpu` (its shaders keep WebGL2's limits and
+`headless` is cfg'd off on wasm32, but the crate is not checked on wasm yet).
 
 ## UI guide rules
 
