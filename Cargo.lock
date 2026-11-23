@@ -4041,6 +4041,7 @@ dependencies = [
  "glam",
  "image",
  "serde",
+ "ve_gpu",
  "ve_native",
  "ve_spacemouse",
  "ve_theme",

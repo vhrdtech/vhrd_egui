@@ -10,6 +10,7 @@ repository.workspace = true
 [dependencies]
 egui.workspace = true
 egui-wgpu.workspace = true
+ve_gpu = { path = "../ve_gpu", version = "0.37" }
 bytemuck = { version = "1.25", features = ["derive"] }
 glam = { version = "0.34", default-features = false, features = ["std", "serde", "bytemuck"] }
 serde.workspace = true

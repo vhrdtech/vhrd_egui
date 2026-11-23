@@ -11,7 +11,8 @@ use bytemuck::{Pod, Zeroable};
 use egui::Color32;
 use egui_wgpu::wgpu;
 use glam::Vec3;
-use wgpu::util::DeviceExt;
+
+use ve_gpu::GrowBuffer;
 
 use crate::scene::Scene;
 
@@ -133,8 +134,8 @@ pub struct Gpu {
     hidden_pipeline: wgpu::RenderPipeline,
     uniforms: wgpu::Buffer,
     bind_group: wgpu::BindGroup,
-    meshes: Option<(wgpu::Buffer, u32)>,
-    edges: Option<(wgpu::Buffer, u32)>,
+    meshes: (GrowBuffer, u32),
+    edges: (GrowBuffer, u32),
     target: Option<Target>,
     texture: Option<egui::TextureId>,
     max_size: u32,
@@ -284,6 +285,8 @@ impl Gpu {
                 ..OPAQUE
             },
         );
+        let meshes = GrowBuffer::new(&device, "ve_view3d mesh", wgpu::BufferUsages::VERTEX);
+        let edges = GrowBuffer::new(&device, "ve_view3d edges", wgpu::BufferUsages::VERTEX);
         Self {
             max_size: device.limits().max_texture_dimension_2d,
             device,
@@ -296,8 +299,8 @@ impl Gpu {
             hidden_pipeline,
             uniforms,
             bind_group,
-            meshes: None,
-            edges: None,
+            meshes: (meshes, 0),
+            edges: (edges, 0),
             target: None,
             texture: None,
         }
@@ -337,26 +340,14 @@ impl Gpu {
                 });
             }
         }
-        let buffer = |label, data: &[u8]| {
-            self.device
-                .create_buffer_init(&wgpu::util::BufferInitDescriptor {
-                    label: Some(label),
-                    contents: data,
-                    usage: wgpu::BufferUsages::VERTEX,
-                })
-        };
-        self.meshes = (!verts.is_empty()).then(|| {
-            (
-                buffer("ve_view3d mesh", bytemuck::cast_slice(&verts)),
-                verts.len() as u32,
-            )
-        });
-        self.edges = (!edges.is_empty()).then(|| {
-            (
-                buffer("ve_view3d edges", bytemuck::cast_slice(&edges)),
-                edges.len() as u32,
-            )
-        });
+        self.meshes.1 = verts.len() as u32;
+        self.meshes
+            .0
+            .write(&self.device, &self.queue, bytemuck::cast_slice(&verts));
+        self.edges.1 = edges.len() as u32;
+        self.edges
+            .0
+            .write(&self.device, &self.queue, bytemuck::cast_slice(&edges));
     }
 
     /// Render the scene into a target of `size` pixels and return the egui texture showing it.
@@ -405,8 +396,12 @@ impl Gpu {
             });
             pass.set_bind_group(0, &self.bind_group, &[]);
             let xray = uniforms.xray[0] < 1.0;
-            if let Some((buf, n)) = &self.meshes {
-                pass.set_vertex_buffer(0, buf.slice(..));
+            if let (buf, n @ 1..) = &self.meshes {
+                pass.set_vertex_buffer(
+                    0,
+                    buf.buffer()
+                        .slice(..u64::from(*n) * size_of::<MeshVertex>() as u64),
+                );
                 if xray {
                     pass.set_pipeline(&self.depth_pipeline);
                     pass.draw(0..*n, 0..1);
@@ -416,8 +411,12 @@ impl Gpu {
                 }
                 pass.draw(0..*n, 0..1);
             }
-            if let Some((buf, n)) = &self.edges {
-                pass.set_vertex_buffer(0, buf.slice(..));
+            if let (buf, n @ 1..) = &self.edges {
+                pass.set_vertex_buffer(
+                    0,
+                    buf.buffer()
+                        .slice(..u64::from(*n) * size_of::<EdgeInstance>() as u64),
+                );
                 pass.set_pipeline(&self.edge_pipeline);
                 pass.draw(0..6, 0..*n);
                 if xray {
