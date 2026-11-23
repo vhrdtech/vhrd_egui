@@ -313,3 +313,27 @@ fn every_scene_draws(h: &mut Headless) {
         assert!(lit > 100, "{name}: {lit} pixels drawn");
     }
 }
+
+#[test]
+fn a_float_target_reads_back_values_past_white() {
+    let mut h = headless(HeadlessOptions {
+        format: Some(egui_wgpu::wgpu::TextureFormat::Rgba16Float),
+        clear: Color32::from_rgb(255, 128, 0),
+        ..small()
+    });
+    let ctx = Context::default();
+    h.frame(&ctx, |_| {}).expect("renders");
+    let px = h.read_f32().expect("reads back");
+    assert_eq!(px.len(), 64 * 48);
+    assert_eq!(
+        px[0],
+        [1.0, 128.0 / 255.0, 0.0, 1.0].map(|v: f32| f16_round(v))
+    );
+}
+
+/// `v` as an `f16` would hold it.
+fn f16_round(v: f32) -> f32 {
+    let bits = v.to_bits();
+    // round the mantissa to 10 bits, enough for values in 0..=1
+    f32::from_bits((bits + 0x1000) & !0x1fff)
+}

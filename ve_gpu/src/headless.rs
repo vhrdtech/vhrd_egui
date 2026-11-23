@@ -44,6 +44,9 @@ pub struct HeadlessOptions {
     /// Ask the device for wgpu's downlevel WebGL2 limits only, so a pipeline past them fails as it would on the
     /// web or an old GPU.
     pub webgl2_limits: bool,
+    /// The target's colour format, when not the one egui's render state starts with (`Rgba8Unorm`): an HDR
+    /// scope draws into `Rgba16Float`. Read it back with [`Headless::read_f32`] when it holds floats.
+    pub format: Option<wgpu::TextureFormat>,
 }
 
 impl Default for HeadlessOptions {
@@ -54,6 +57,7 @@ impl Default for HeadlessOptions {
             pixels_per_point: 1.0,
             clear: Color32::BLACK,
             webgl2_limits: false,
+            format: None,
         }
     }
 }
@@ -192,13 +196,21 @@ impl Headless {
             wgpu_setup: setup,
             ..Default::default()
         };
-        let render_state = pollster::block_on(RenderState::create(
+        let mut render_state = pollster::block_on(RenderState::create(
             &config,
             &instance,
             None,
             RendererOptions::PREDICTABLE,
         ))
         .map_err(HeadlessError::Setup)?;
+        if let Some(format) = options.format.filter(|f| *f != render_state.target_format) {
+            render_state.target_format = format;
+            *render_state.renderer.write() = egui_wgpu::Renderer::new(
+                &render_state.device,
+                format,
+                RendererOptions::PREDICTABLE,
+            );
+        }
         crate::install_with(&render_state, Target::new(render_state.target_format));
         let device = &render_state.device;
         let timestamps = device
@@ -393,15 +405,53 @@ impl Headless {
         Ok(Some(Duration::from_nanos(ns as u64)))
     }
 
-    /// The target's pixels as egui's image, premultiplied as rendered.
+    /// The target's pixels as egui's image, premultiplied as rendered. For a 4-byte format.
     ///
     /// # Errors
     ///
     /// [`HeadlessError::Poll`] or [`HeadlessError::Map`] when the copy cannot be read.
     pub fn read(&self) -> Result<ColorImage, HeadlessError> {
         let [w, h] = self.options.size_px;
+        let mut pixels = Vec::with_capacity((w * h) as usize);
+        self.read_rows(|row| {
+            pixels.extend(
+                row.as_chunks::<4>()
+                    .0
+                    .iter()
+                    .map(|&[r, g, b, a]| Color32::from_rgba_premultiplied(r, g, b, a)),
+            );
+        })?;
+        Ok(ColorImage::new([w as usize, h as usize], pixels))
+    }
+
+    /// The target's pixels as RGBA floats, row by row, as the target held them (values past 1.0 survive). For a
+    /// target of `Rgba16Float` ([`HeadlessOptions::format`]); [`Headless::read`] reads the 8-bit formats.
+    ///
+    /// # Errors
+    ///
+    /// See [`Headless::read`].
+    pub fn read_f32(&self) -> Result<Vec<[f32; 4]>, HeadlessError> {
+        let [w, h] = self.options.size_px;
+        let mut pixels = Vec::with_capacity((w * h) as usize);
+        self.read_rows(|row| {
+            pixels.extend(row.as_chunks::<8>().0.iter().map(|px| {
+                let c = |i: usize| f16_to_f32(u16::from_le_bytes([px[i * 2], px[i * 2 + 1]]));
+                [c(0), c(1), c(2), c(3)]
+            }));
+        })?;
+        Ok(pixels)
+    }
+
+    /// Copies the target to a buffer and hands each row's pixel bytes (without the padding) to `each`.
+    fn read_rows(&self, mut each: impl FnMut(&[u8])) -> Result<(), HeadlessError> {
+        let [w, h] = self.options.size_px;
         let device = &self.render_state.device;
-        let row = w * 4;
+        let px_bytes = self
+            .render_state
+            .target_format
+            .block_copy_size(None)
+            .unwrap_or(4);
+        let row = w * px_bytes;
         let padded =
             row.div_ceil(wgpu::COPY_BYTES_PER_ROW_ALIGNMENT) * wgpu::COPY_BYTES_PER_ROW_ALIGNMENT;
         let buffer = device.create_buffer(&wgpu::BufferDescriptor {
@@ -432,18 +482,25 @@ impl Headless {
         slice.map_async(wgpu::MapMode::Read, |_| {});
         wait(device)?;
         let view = slice.get_mapped_range().map_err(HeadlessError::Map)?;
-        let mut pixels = Vec::with_capacity((w * h) as usize);
         for r in view.chunks(padded as usize) {
-            let r = r.get(..row as usize).unwrap_or(r);
-            pixels.extend(
-                r.as_chunks::<4>()
-                    .0
-                    .iter()
-                    .map(|&[r, g, b, a]| Color32::from_rgba_premultiplied(r, g, b, a)),
-            );
+            each(r.get(..row as usize).unwrap_or(r));
         }
-        Ok(ColorImage::new([w as usize, h as usize], pixels))
+        Ok(())
     }
+}
+
+/// An IEEE half float to f32.
+pub fn f16_to_f32(h: u16) -> f32 {
+    let sign = if h & 0x8000 != 0 { -1.0 } else { 1.0 };
+    let exp = i32::from((h >> 10) & 0x1f);
+    let frac = f32::from(h & 0x3ff);
+    let mag = match exp {
+        0 => frac * 2f32.powi(-24),
+        31 if frac == 0.0 => f32::INFINITY,
+        31 => f32::NAN,
+        _ => (1.0 + frac / 1024.0) * 2f32.powi(exp - 15),
+    };
+    sign * mag
 }
 
 fn wait(device: &wgpu::Device) -> Result<(), HeadlessError> {
