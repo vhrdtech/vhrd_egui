@@ -8,6 +8,13 @@ versions follow [Semantic Versioning](https://semver.org/). Feature IDs refer to
 ### Added
 
 - `ve_basics`: the build label shows the commit's age, "28 h ago"; `BuildInfo::commit_unix` from `GIT_COMMIT_UNIX` (BAS-1).
+- New crate `ve_native`: `native_options()` turns vsync off on Wayland, so a hidden window no longer hangs (PLT-11).
+- Template (PLT-2, PLT-11): `main.rs` starts from `ve_native::native_options()`. **Upgrade notes:** add `ve_native = { git = "...", default-features = false, features = ["wgpu"] }` (the app's renderer) and replace `..Default::default()` in `NativeOptions` with `..ve_native::native_options()`.
+
+### Fixed
+
+- `ve_phosphor`: the host presents without vsync on Wayland, so it no longer hangs on a hidden workspace (PLT-11).
+- Examples start from `ve_native::native_options()`, so none hangs on a hidden Wayland workspace (PLT-11).
 
 ## [0.37.1] - 2026-11-20
 

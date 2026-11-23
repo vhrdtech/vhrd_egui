@@ -25,6 +25,7 @@ members = [
     "ve_app",
     "ve_spacemouse",
     "ve_view3d",
+    "ve_native",
 ]
 
 # Crates that opt in with `[lints] workspace = true`; ve_alloc_count holds the only unsafe code, with its own table.

@@ -31,7 +31,7 @@ fn main() -> eframe::Result {
         viewport: egui::ViewportBuilder::default()
             .with_inner_size([800.0, 500.0])
             .with_min_inner_size([300.0, 220.0]),
-        ..Default::default()
+        ..ve_native::native_options()
     };
     eframe::run_native(
         "ve_app shell demo",

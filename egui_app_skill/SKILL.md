@@ -59,8 +59,9 @@ Run it from a vhrd_egui checkout (`~/git/vhrd_egui`, or `cargo install --path ve
   Cargo.toml  build.rs  justfile  README.md  AGENTS.md  CLAUDE.md  FEATURES.md  CHANGELOG.md  .gitignore
   ve_app.json                  # template name/version/commit, answers, adopted, upgrades, rejected, nuances
   src/lib.rs                   # APP_ID, DISPLAY_NAME, pub use App
-  src/main.rs                  # --version (Windows: AttachConsole), tracing, StartupGuard, NativeOptions with
-                               # app id + icon, ve_theme::setup, setup_labels, run_native
+  src/main.rs                  # --version (Windows: AttachConsole), tracing, StartupGuard, NativeOptions from
+                               # ve_native::native_options (vsync off on Wayland), app id + icon,
+                               # ve_theme::setup, setup_labels, run_native
   src/app.rs                   # App: persisted Settings, top bar with the app menu badge, content with tooltip and
                                # hover_link examples, save()
   tests/ui.rs                  # egui_kittest: AccessKit queries, a click test, a wgpu snapshot of the window

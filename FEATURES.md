@@ -34,6 +34,7 @@ in our internal tracker. Statuses were checked against the code.
 | `ve_widget` | `Widget` trait (with its frame hooks), `WidgetInfo` registry, shared `Context`. |
 | `ve_macro` | Proc macros for widget implementations (`svt!`). |
 | `ve_basics` | Small basics every app wants: build info, the app menu on the version badge, label selectability, hover cross-reference highlight. |
+| `ve_native` | The eframe `NativeOptions` every app starts from: vsync off on Wayland, where a hidden window would block the event loop. |
 | `ve_theme` | The design system: brand tokens, dark and light egui styles, fonts and type scale, icons, `UiExt` helpers, gallery. |
 | `ve_app` | The application shell: menu bar, tiles of framed widgets that can float or move to other OS windows, the app menu, Settings / Debug windows, persisted layout, quit dialog. |
 | `ve_dash` | btop-style dashboard building blocks: theme, sparkline, meter, status light, stat tile, titled panel. |
@@ -112,6 +113,15 @@ in our internal tracker. Statuses were checked against the code.
   it passes again. `justfile`, `clippy.toml` in each of the five crates, `AGENTS.md` ("Web crates"),
   `ve_frame/README.md` ("On the web": `Dock::show_viewports` falls back to embedded windows there,
   `ViewportCommand::CursorPosition` is a silent no-op).
+- 🚧 **PLT-11 Wayland-safe native options**: `ve_native::native_options()`, the eframe options every app starts
+  from: on Wayland (`WAYLAND_DISPLAY` or `WAYLAND_SOCKET` set, the way winit picks) glow `vsync` off and wgpu
+  `PresentMode::AutoNoVsync`; X11, Windows and macOS keep vsync. Hyprland and other wlroots compositors send no
+  frame callbacks to a window on a hidden workspace, so a vsync swap blocked the event loop and tripped the
+  compositor's "not responding" dialog. Features `glow` and `wgpu` pick the renderers it sets; `Session` alone
+  serves hosts that drive wgpu themselves (`ve_phosphor`). Used by every example, the template (`main.rs.j2`) and
+  `ve_phosphor`'s host. `ve_native/src/lib.rs`; unit tests per session, and `tests/env.rs` reruns itself with
+  `WAYLAND_DISPLAY` set and unset. Missing: a headless test that the loop keeps running without frame callbacks
+  (needs a test compositor that withholds them).
 
 ## Widgets (`WID`)
 

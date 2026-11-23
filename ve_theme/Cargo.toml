@@ -38,6 +38,8 @@ name = "gallery"
 required-features = ["icons"]
 
 [dev-dependencies]
+# the eframe options the example starts from (vsync off on Wayland, PLT-11)
+ve_native = { path = "../ve_native", default-features = false, features = ["wgpu"] }
 eframe = { workspace = true, features = ["wgpu"] }
 egui_kittest = { workspace = true, features = ["snapshot", "wgpu"] }
 serde_json = "1"

@@ -16,6 +16,8 @@ serde.workspace = true
 ve_spacemouse = { path = "../ve_spacemouse", version = "0.37", default-features = false }
 
 [dev-dependencies]
+# the eframe options the example starts from (vsync off on Wayland, PLT-11)
+ve_native = { path = "../ve_native", default-features = false, features = ["wgpu"] }
 eframe = { workspace = true, features = ["persistence", "wgpu"] }
 egui_kittest = { workspace = true, features = ["snapshot", "wgpu"] }
 ve_theme = { path = "../ve_theme", version = "0.37" }

@@ -55,7 +55,7 @@ fn main() -> eframe::Result {
             .with_inner_size([1280.0, 800.0])
             .with_title("SpaceMouse demo"),
         renderer: eframe::Renderer::Wgpu,
-        ..Default::default()
+        ..ve_native::native_options()
     };
     eframe::run_native(
         "ve_spacemouse demo",

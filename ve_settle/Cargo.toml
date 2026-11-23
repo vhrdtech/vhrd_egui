@@ -20,6 +20,8 @@ ve_frame = { path = "../ve_frame", version = "0.37", optional = true }
 serde = { workspace = true, optional = true }
 
 [dev-dependencies]
+# the eframe options the example starts from (vsync off on Wayland, PLT-11)
+ve_native = { path = "../ve_native", default-features = false, features = ["wgpu"] }
 # the sandbox and its tests use the `frame` feature
 ve_settle = { path = ".", features = ["frame", "serde"] }
 egui.workspace = true

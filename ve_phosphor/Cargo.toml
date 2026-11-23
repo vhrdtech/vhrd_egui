@@ -20,6 +20,7 @@ host = [
     "dep:ve_frame",
     "dep:clap",
     "dep:clap_complete",
+    "dep:ve_native",
 ]
 
 [dependencies]
@@ -34,6 +35,8 @@ pollster = { version = "1", optional = true }
 image = { version = "0.25", default-features = false, features = ["png"], optional = true }
 ve_theme = { path = "../ve_theme", version = "0.37", optional = true }
 ve_frame = { path = "../ve_frame", version = "0.37", optional = true }
+# Session only (no eframe): whether the host may present with vsync (PLT-11)
+ve_native = { path = "../ve_native", version = "0.37", default-features = false, optional = true }
 clap = { version = "4", features = ["derive"], optional = true }
 clap_complete = { version = "4", features = ["unstable-dynamic"], optional = true }
 

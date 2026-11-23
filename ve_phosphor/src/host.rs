@@ -260,7 +260,12 @@ impl<A: App> Host<A> {
             color_space: pick.color_space,
             width: size.width.max(1),
             height: size.height.max(1),
-            present_mode: wgpu::PresentMode::AutoVsync,
+            // a hidden window on Wayland gets no frame callbacks, so vsync there would block the loop (PLT-11)
+            present_mode: if ve_native::Session::detect().vsync() {
+                wgpu::PresentMode::AutoVsync
+            } else {
+                wgpu::PresentMode::AutoNoVsync
+            },
             desired_maximum_frame_latency: 2,
             alpha_mode: caps
                 .alpha_modes

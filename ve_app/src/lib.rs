@@ -5,7 +5,7 @@
 //! ```ignore
 //! fn main() -> eframe::Result {
 //!     let cx = ve_widget::context::Context::new(Box::new(MyAppState::default()));
-//!     eframe::run_native("My app", Default::default(), Box::new(|cc| {
+//!     eframe::run_native("My app", ve_native::native_options(), Box::new(|cc| {
 //!         let options = ve_app::ShellOptions::new("My app", ve_basics::build_info!())
 //!             .default_widgets(|| vec![Box::new(MyWidget::default())]);
 //!         Ok(Box::new(ve_app::Shell::new(cc, cx, options)))

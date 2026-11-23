@@ -91,6 +91,9 @@ Cargo workspace, edition 2024, one shared version (`[workspace.package]`).
   cut list (`FoldRest`), startup crash guard, the frame recorder (`perf/`: the `FrameRecorder` trait, the ring
   behind it in `ring/`, its reads in `ring/read.rs`). `ve_basics_benchmarks/` measures what the recorder costs;
   `ve_alloc_count/` is the counting allocator, the only crate with unsafe code (the workspace forbids it).
+- `ve_native/` — the eframe `NativeOptions` every app starts from (`native_options()`: vsync off on Wayland, where
+  a hidden window gets no frame callbacks and a vsync swap would block the loop; `Session` for hosts on raw wgpu).
+  Apps and examples build their options on it, never on `NativeOptions::default()`.
 - `ve_template/` — the app template as a command (`new`, `check-answers`, `compare`); the files it renders and the
   agent skill around it live in `egui_app_skill/` (`SKILL.md`, `templates/`, `references/`). A change to what gets
   generated gets a CHANGELOG entry marked `(PLT-2)` with upgrade notes; `cargo test -p ve_template` renders every

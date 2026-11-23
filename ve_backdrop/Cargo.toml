@@ -37,6 +37,8 @@ wgpu = { version = "30", default-features = false, features = [
 ], optional = true }
 
 [dev-dependencies]
+# the eframe options the example starts from (vsync off on Wayland, PLT-11)
+ve_native = { path = "../ve_native", default-features = false, features = ["wgpu"] }
 eframe = { workspace = true, features = ["wgpu"] }
 egui_kittest = { workspace = true, features = ["snapshot", "wgpu"] }
 ve_theme = { path = "../ve_theme", version = "0.37" }

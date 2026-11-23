@@ -967,6 +967,7 @@ dependencies = [
  "egui-wgpu",
  "egui-winit",
  "egui_glow",
+ "glow",
  "glutin",
  "glutin-winit",
  "image",
@@ -3827,6 +3828,7 @@ dependencies = [
  "ve_alloc_count",
  "ve_basics",
  "ve_frame",
+ "ve_native",
  "ve_theme",
  "ve_widget",
 ]
@@ -3843,6 +3845,7 @@ dependencies = [
  "image",
  "serde",
  "serde_json",
+ "ve_native",
  "ve_theme",
  "wgpu",
 ]
@@ -3876,6 +3879,7 @@ dependencies = [
  "egui",
  "egui_kittest",
  "ve_frame",
+ "ve_native",
  "ve_theme",
  "web-time",
 ]
@@ -3892,6 +3896,7 @@ dependencies = [
  "serde_json",
  "ve_backdrop",
  "ve_dash",
+ "ve_native",
  "ve_theme",
 ]
 
@@ -3901,6 +3906,13 @@ version = "0.37.1"
 dependencies = [
  "proc-macro2",
  "quote",
+]
+
+[[package]]
+name = "ve_native"
+version = "0.37.1"
+dependencies = [
+ "eframe",
 ]
 
 [[package]]
@@ -3917,6 +3929,7 @@ dependencies = [
  "naga",
  "pollster",
  "ve_frame",
+ "ve_native",
  "ve_theme",
  "wgpu",
  "winit",
@@ -3935,6 +3948,7 @@ dependencies = [
  "ve_basics",
  "ve_dash",
  "ve_frame",
+ "ve_native",
  "ve_settle",
  "ve_theme",
 ]
@@ -3950,6 +3964,7 @@ dependencies = [
  "serde",
  "tempfile",
  "toml",
+ "ve_native",
  "ve_theme",
 ]
 
@@ -3979,6 +3994,7 @@ dependencies = [
  "serde",
  "serde_json",
  "ve_basics",
+ "ve_native",
 ]
 
 [[package]]
@@ -4000,6 +4016,7 @@ dependencies = [
  "glam",
  "image",
  "serde",
+ "ve_native",
  "ve_spacemouse",
  "ve_theme",
 ]

@@ -22,6 +22,8 @@ ve_theme = { path = "../ve_theme", version = "0.37", features = ["serde"] }
 ve_widget = { path = "../ve_widget", version = "0.37" }
 
 [dev-dependencies]
+# the eframe options the example starts from (vsync off on Wayland, PLT-11)
+ve_native = { path = "../ve_native", default-features = false, features = ["wgpu"] }
 eframe = { workspace = true, features = ["persistence", "wgpu"] }
 egui_kittest = { workspace = true, features = ["eframe", "snapshot", "wgpu"] }
 ve_alloc_count = { path = "../ve_alloc_count" }

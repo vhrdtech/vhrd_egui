@@ -13,7 +13,7 @@ fn main() -> eframe::Result {
             .with_inner_size([1000.0, 860.0])
             .with_title("ve_theme gallery"),
         renderer: eframe::Renderer::Wgpu,
-        ..Default::default()
+        ..ve_native::native_options()
     };
     eframe::run_native(
         "ve_theme gallery",

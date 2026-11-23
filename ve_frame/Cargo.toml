@@ -16,6 +16,8 @@ ve_dash = { path = "../ve_dash", version = "0.37", default-features = false }
 ve_theme = { path = "../ve_theme", version = "0.37", default-features = false }
 
 [dev-dependencies]
+# the eframe options the example starts from (vsync off on Wayland, PLT-11)
+ve_native = { path = "../ve_native", default-features = false, features = ["wgpu"] }
 eframe = { workspace = true, features = ["wgpu"] }
 egui_kittest = { workspace = true, features = ["snapshot", "wgpu"] }
 image = { version = "0.25", default-features = false }

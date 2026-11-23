@@ -20,6 +20,8 @@ tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 # vhrd_egui: one egui version for the whole stack (vhrd_egui FEATURES.md PLT-1); bump egui here and there together
 ve_basics = { {{ dep("ve_basics") }} }
+# eframe options safe on Wayland: vsync off there, where a hidden window would block the event loop (vhrd_egui PLT-11)
+ve_native = { {{ dep("ve_native") }}, default-features = false, features = ["{{ renderer_feature }}"] }
 {% if theme -%}
 ve_theme = { {{ dep("ve_theme") }} }
 {% endif %}

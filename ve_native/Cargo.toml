@@ -1,0 +1,28 @@
+[package]
+name = "ve_native"
+description = "The eframe NativeOptions every vhrd egui app starts from: vsync off on Wayland, where a hidden window would block the event loop"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+
+[lints]
+workspace = true
+
+[features]
+default = ["glow", "wgpu"]
+# native_options sets the glow renderer's vsync (turns on eframe's glow renderer)
+glow = ["dep:eframe", "eframe/glow"]
+# native_options sets the wgpu renderer's present mode (turns on eframe's wgpu renderer; the app picks the wgpu backends)
+wgpu = ["dep:eframe", "eframe/wgpu_no_default_features"]
+
+[dependencies]
+# Not the workspace's eframe: that one has default features on, which a member cannot turn off. Same version (PLT-1).
+# Wayland support on, since the options exist for it; X11 and the rest stay the app's choice.
+eframe = { version = "0.36", default-features = false, features = ["wayland"], optional = true }
+
+[dev-dependencies]
+# the wgpu re-export the env test compares present modes with
+eframe = { version = "0.36", default-features = false, features = ["glow", "wgpu_no_default_features", "wayland"] }

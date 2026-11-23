@@ -15,7 +15,7 @@ fn main() -> eframe::Result {
             .with_inner_size([1600.0, 1000.0])
             .with_title("ve_settle sandbox"),
         renderer: eframe::Renderer::Wgpu,
-        ..Default::default()
+        ..ve_native::native_options()
     };
     eframe::run_native(
         "ve_settle sandbox",

@@ -21,7 +21,7 @@ fn main() -> eframe::Result {
             .with_transparent(true)
             .with_title("ve_backdrop playground"),
         renderer: eframe::Renderer::Wgpu,
-        ..Default::default()
+        ..ve_native::native_options()
     };
     eframe::run_native(
         "ve_backdrop playground",
