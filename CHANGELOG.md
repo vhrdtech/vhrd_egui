@@ -16,6 +16,10 @@ versions follow [Semantic Versioning](https://semver.org/). Feature IDs refer to
 - New crate `ve_native`: `native_options()` turns vsync off on Wayland, so a hidden window no longer hangs (PLT-11).
 - Template (PLT-2, PLT-11): `main.rs` starts from `ve_native::native_options()`. **Upgrade notes:** add `ve_native = { git = "...", default-features = false, features = ["wgpu"] }` (the app's renderer) and replace `..Default::default()` in `NativeOptions` with `..ve_native::native_options()`.
 
+### Changed
+
+- **Breaking:** `ve_backdrop`: `ShaderTarget` is replaced by `ve_gpu::Target`, which `with_wgpu_target` takes with the pass's colour format (BACK-3).
+
 ### Fixed
 
 - `ve_phosphor`: the host presents without vsync on Wayland, so it no longer hangs on a hidden workspace (PLT-11).

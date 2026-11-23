@@ -3845,6 +3845,7 @@ dependencies = [
  "image",
  "serde",
  "serde_json",
+ "ve_gpu",
  "ve_native",
  "ve_theme",
  "wgpu",

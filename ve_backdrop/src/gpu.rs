@@ -4,33 +4,13 @@ use std::sync::Arc;
 
 use egui::{Rect, Shape};
 use egui_wgpu::wgpu;
+use ve_gpu::Target;
 
 use crate::field::{MAX_LIT, MAX_RINGS, Scene, rgba};
 use crate::settings::Mark;
 
 /// The peak of `q * exp(-q²)`, see `field.rs`.
 const PUSH_PEAK: f32 = 0.428_881_94;
-
-/// What the render pass egui draws into looks like, when it is not eframe's default.
-///
-/// The backdrop's pipeline has to match the pass: give the values the app passes to eframe
-/// (`NativeOptions::multisampling`, `depth_buffer`) or to `egui_wgpu::RendererOptions`.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub struct ShaderTarget {
-    /// Samples per pixel of the pass (1 = no multisampling).
-    pub msaa_samples: u32,
-    /// The depth-stencil format of the pass, if it has one.
-    pub depth_stencil_format: Option<wgpu::TextureFormat>,
-}
-
-impl Default for ShaderTarget {
-    fn default() -> Self {
-        Self {
-            msaa_samples: 1,
-            depth_stencil_format: None,
-        }
-    }
-}
 
 /// The uniform block of `backdrop.wgsl`: all `vec4<f32>`, so the layout is the same on both sides.
 #[repr(C)]
@@ -132,11 +112,7 @@ struct Inner {
 pub(crate) struct Gpu(Arc<Inner>);
 
 impl Gpu {
-    pub(crate) fn new(
-        device: &wgpu::Device,
-        format: wgpu::TextureFormat,
-        target: ShaderTarget,
-    ) -> Self {
+    pub(crate) fn new(device: &wgpu::Device, target: Target) -> Self {
         let module = device.create_shader_module(wgpu::ShaderModuleDescriptor {
             label: Some("ve_backdrop"),
             source: wgpu::ShaderSource::Wgsl(include_str!("backdrop.wgsl").into()),
@@ -174,16 +150,6 @@ impl Gpu {
             bind_group_layouts: &[Some(&layout)],
             immediate_size: 0,
         });
-        // The same depth and blend state as egui's own pipeline: premultiplied alpha, depth untouched.
-        let depth_stencil = target
-            .depth_stencil_format
-            .map(|format| wgpu::DepthStencilState {
-                format,
-                depth_write_enabled: Some(false),
-                depth_compare: Some(wgpu::CompareFunction::Always),
-                stencil: wgpu::StencilState::default(),
-                bias: wgpu::DepthBiasState::default(),
-            });
         let pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
             label: Some("ve_backdrop_pipeline"),
             layout: Some(&pipeline_layout),
@@ -194,31 +160,12 @@ impl Gpu {
                 compilation_options: wgpu::PipelineCompilationOptions::default(),
             },
             primitive: wgpu::PrimitiveState::default(),
-            depth_stencil,
-            multisample: wgpu::MultisampleState {
-                count: target.msaa_samples.max(1),
-                mask: !0,
-                alpha_to_coverage_enabled: false,
-            },
+            depth_stencil: target.depth_stencil(),
+            multisample: target.multisample(),
             fragment: Some(wgpu::FragmentState {
                 module: &module,
                 entry_point: Some("fs_main"),
-                targets: &[Some(wgpu::ColorTargetState {
-                    format,
-                    blend: Some(wgpu::BlendState {
-                        color: wgpu::BlendComponent {
-                            src_factor: wgpu::BlendFactor::One,
-                            dst_factor: wgpu::BlendFactor::OneMinusSrcAlpha,
-                            operation: wgpu::BlendOperation::Add,
-                        },
-                        alpha: wgpu::BlendComponent {
-                            src_factor: wgpu::BlendFactor::OneMinusDstAlpha,
-                            dst_factor: wgpu::BlendFactor::One,
-                            operation: wgpu::BlendOperation::Add,
-                        },
-                    }),
-                    write_mask: wgpu::ColorWrites::ALL,
-                })],
+                targets: &[Some(target.color_target())],
                 compilation_options: wgpu::PipelineCompilationOptions::default(),
             }),
             multiview_mask: None,
@@ -228,7 +175,7 @@ impl Gpu {
             pipeline,
             buffer,
             bind_group,
-            linear_framebuffer: format.is_srgb(),
+            linear_framebuffer: target.is_linear(),
         }))
     }
 

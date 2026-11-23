@@ -1468,7 +1468,7 @@ The app background as its own piece. Playground:
   click) and to widget frames (`Lit`: rectangle, corner radius, strength, `focused`, `floating`, an optional id
   so changes fade): light gathers under and around frames, more under the focused or floating one. Two renderers
   with the same math (`field.rs`, mirrored in `backdrop.wgsl`): the wgpu shader as an `egui_wgpu` paint callback
-  (`Backdrop::with_wgpu(render_state)`, `with_wgpu_target` for multisampling or a depth buffer) and a CPU painter
+  (`Backdrop::with_wgpu(render_state)`, `with_wgpu_target(render_state, ve_gpu::Target)` for multisampling or a depth buffer) and a CPU painter
   of plain egui shapes for glow and wasm (`Backdrop::new()`, also `--no-default-features`); `set_renderer`
   switches at run time. Colours from the `ve_theme` tokens of the current theme (`Colors::from_tokens`: marks
   `line_strong` on `bg`, frames gather `accent`, the pointer `text_muted`), every number a field of `Settings`

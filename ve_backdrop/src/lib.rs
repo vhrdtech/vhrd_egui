@@ -104,8 +104,6 @@ use egui::{Context, Id, LayerId, Painter, Pos2, Rect, Shape};
 
 pub use field::{Colors, MAX_LIT, MAX_NOTICE_RINGS, MAX_RIPPLES};
 pub use glass::GlassStatus;
-#[cfg(feature = "wgpu")]
-pub use gpu::ShaderTarget;
 #[cfg(all(feature = "glass", unix))]
 pub use hyprland::Hyprland;
 pub use notice::{Notice, Severity, go_to, notices, notify, take_go_to};
@@ -296,19 +294,19 @@ impl Backdrop {
     /// (`cc.wgpu_render_state`) without multisampling or a depth buffer (eframe's defaults).
     #[cfg(feature = "wgpu")]
     pub fn with_wgpu(render_state: &egui_wgpu::RenderState) -> Self {
-        Self::with_wgpu_target(render_state, ShaderTarget::default())
+        Self::with_wgpu_target(
+            render_state,
+            ve_gpu::Target::new(render_state.target_format),
+        )
     }
 
-    /// Like [`Backdrop::with_wgpu`], for a render pass with multisampling or a depth buffer.
+    /// Like [`Backdrop::with_wgpu`], for a render pass with multisampling or a depth buffer: `target` is the pass
+    /// the app gives eframe.
     #[cfg(feature = "wgpu")]
-    pub fn with_wgpu_target(render_state: &egui_wgpu::RenderState, target: ShaderTarget) -> Self {
+    pub fn with_wgpu_target(render_state: &egui_wgpu::RenderState, target: ve_gpu::Target) -> Self {
         Self {
             renderer: Renderer::Shader,
-            gpu: Some(gpu::Gpu::new(
-                &render_state.device,
-                render_state.target_format,
-                target,
-            )),
+            gpu: Some(gpu::Gpu::new(&render_state.device, target)),
             ..Self::new()
         }
     }

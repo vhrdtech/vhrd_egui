@@ -11,7 +11,7 @@ repository.workspace = true
 default = ["wgpu", "glass"]
 # The shader path: an egui_wgpu paint callback. Without it (glow, a WebGL2 web build) only the CPU painter exists.
 # On wasm32 it also gives wgpu its WebGPU backend (BACK-3).
-wgpu = ["dep:egui-wgpu", "dep:bytemuck", "dep:wgpu"]
+wgpu = ["dep:egui-wgpu", "dep:bytemuck", "dep:wgpu", "dep:ve_gpu"]
 # Emulated transparency: find, decode and blur the desktop wallpaper, ask Hyprland where the window is.
 glass = ["dep:image", "dep:serde_json"]
 # Serialize `Settings` (persisted app settings).
@@ -21,6 +21,7 @@ serde = ["dep:serde"]
 egui.workspace = true
 ve_theme = { path = "../ve_theme", version = "0.37", default-features = false }
 egui-wgpu = { workspace = true, optional = true }
+ve_gpu = { path = "../ve_gpu", version = "0.37", optional = true }
 bytemuck = { version = "1.25", features = ["derive"], optional = true }
 serde = { workspace = true, optional = true }
 serde_json = { version = "1", optional = true }
