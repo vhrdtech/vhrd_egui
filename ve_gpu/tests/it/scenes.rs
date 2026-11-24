@@ -1,7 +1,7 @@
 //! One scene per primitive, filled into a batch over a rect, in the theme's colours.
 
 use egui::{Color32, Pos2, Rect, Stroke, vec2};
-use ve_gpu::{Batch, Column, ColumnStyle, Dash, Hatch, LineStyle, RectStyle};
+use ve_gpu::{Axis, Batch, Column, ColumnStyle, Dash, Hatch, LineStyle, RectStyle};
 use ve_theme::Palette;
 
 /// A scene: its name and what it fills.
@@ -145,7 +145,7 @@ pub fn wave(n: usize, x0: f32, step: f32) -> impl Iterator<Item = Column> {
         let mid = t.sin() * 0.6 + (t * 3.7).sin() * 0.2;
         let spread = 0.1 + 0.25 * (t * 0.7).cos().abs();
         Column {
-            x: x0 + i as f32 * step,
+            along: x0 + i as f32 * step,
             min: mid - spread,
             max: mid + spread * 0.7,
             mean: mid,
@@ -157,11 +157,12 @@ pub fn columns(b: &mut Batch, r: Rect, c: &Palette, ppp: f32) {
     let lane = Rect::from_min_size(at(r, 4.0, 4.0), vec2(r.width() - 8.0, r.height() - 8.0));
     b.rect(lane, &RectStyle::stroked(Stroke::new(1.0, c.line)));
     let style = ColumnStyle {
+        axis: Axis::X,
         clip: lane.shrink(1.0),
         value_lo: -1.0,
         value_hi: 1.0,
-        y_lo: lane.bottom() - 4.0,
-        y_hi: lane.top() + 4.0,
+        across_lo: lane.bottom() - 4.0,
+        across_hi: lane.top() + 4.0,
         band: c.accent.gamma_multiply(0.45),
         edge: c.accent.gamma_multiply(0.8),
         mean: Stroke::new(1.2, c.accent),
@@ -173,8 +174,8 @@ pub fn columns(b: &mut Batch, r: Rect, c: &Palette, ppp: f32) {
     let strip = ColumnStyle {
         value_lo: 0.0,
         value_hi: 0.0,
-        y_lo: lane.bottom() - 6.0,
-        y_hi: lane.bottom() - 2.0,
+        across_lo: lane.bottom() - 6.0,
+        across_hi: lane.bottom() - 2.0,
         band: c.warn,
         edge: Color32::TRANSPARENT,
         mean: Stroke::NONE,
@@ -184,7 +185,7 @@ pub fn columns(b: &mut Batch, r: Rect, c: &Palette, ppp: f32) {
         &strip,
         ppp,
         (0..40).map(|i| Column {
-            x: lane.left() + 10.0 + i as f32,
+            along: lane.left() + 10.0 + i as f32,
             ..Column::default()
         }),
     );

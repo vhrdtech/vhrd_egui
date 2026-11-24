@@ -196,10 +196,10 @@ impl Batch {
         self.push(shapes::hatch(rect, hatch, self.clip));
     }
 
-    /// A run of range columns, left to right, one per pixel column or more: the band folds the columns of one pixel
-    /// into one, at `pixels_per_point` (egui's `Context::pixels_per_point` of the frame); the edges and the mean
-    /// line pass through every column. The batch's clip and `style.clip` both apply. Nothing is drawn for an empty
-    /// run.
+    /// A run of range columns in order along the style's axis, one per pixel column or more: the band folds the
+    /// columns of one pixel into one, at `pixels_per_point` (egui's `Context::pixels_per_point` of the frame); the
+    /// edges and the mean line pass through every column. The batch's clip and `style.clip` both apply. Nothing is
+    /// drawn for an empty run.
     pub fn columns(
         &mut self,
         style: &ColumnStyle,

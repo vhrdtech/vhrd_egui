@@ -3,7 +3,7 @@
 
 use egui::{Color32, ColorImage, Context, Rect, Stroke, pos2, vec2};
 use ve_gpu::headless::{AdapterPick, Headless, HeadlessOptions};
-use ve_gpu::{Batch, Column, ColumnStyle, LineStyle, RectStyle};
+use ve_gpu::{Axis, Batch, Column, ColumnStyle, LineStyle, RectStyle};
 
 use crate::scenes::ALL;
 
@@ -214,11 +214,12 @@ fn a_band_spans_the_mapped_values_in_whole_pixels() {
     let mut h = headless(small());
     let (ctx, mut batch) = (Context::default(), Batch::new());
     let style = ColumnStyle {
+        axis: Axis::X,
         clip: Rect::EVERYTHING,
         value_lo: 0.0,
         value_hi: 10.0,
-        y_lo: 40.0,
-        y_hi: 0.0,
+        across_lo: 40.0,
+        across_hi: 0.0,
         band: RED,
         edge: Color32::TRANSPARENT,
         mean: Stroke::NONE,
@@ -226,7 +227,7 @@ fn a_band_spans_the_mapped_values_in_whole_pixels() {
     let img = draw(&mut h, &ctx, &mut batch, |b| {
         // two columns a pixel, folded into one band column each: values 2..5 are y 20..32
         let cols = (0..20).map(|i| Column {
-            x: 10.0 + i as f32 * 0.5,
+            along: 10.0 + i as f32 * 0.5,
             min: 2.0,
             max: if i % 2 == 0 { 4.0 } else { 5.0 },
             mean: 3.0,
@@ -240,23 +241,89 @@ fn a_band_spans_the_mapped_values_in_whole_pixels() {
     assert_eq!(px(&img, 20, 25), Color32::BLACK);
 }
 
+/// The band of [a_band_spans_the_mapped_values_in_whole_pixels] turned: columns down y, values across x.
+#[test]
+fn a_band_down_y_spans_the_mapped_values_across_x() {
+    let mut h = headless(small());
+    let (ctx, mut batch) = (Context::default(), Batch::new());
+    let style = ColumnStyle {
+        axis: Axis::Y,
+        clip: Rect::EVERYTHING,
+        value_lo: 0.0,
+        value_hi: 10.0,
+        across_lo: 0.0,
+        across_hi: 40.0,
+        band: RED,
+        edge: Color32::TRANSPARENT,
+        mean: Stroke::NONE,
+    };
+    let img = draw(&mut h, &ctx, &mut batch, |b| {
+        // values 2..5 are x 8..20, rows 10..20
+        let cols = (0..20).map(|i| Column {
+            along: 10.0 + i as f32 * 0.5,
+            min: 2.0,
+            max: if i % 2 == 0 { 4.0 } else { 5.0 },
+            mean: 3.0,
+        });
+        b.columns(&style, 1.0, cols);
+    });
+    assert_eq!(count(&img, RED), 10 * 12);
+    assert_eq!(px(&img, 8, 10), RED);
+    assert_eq!(px(&img, 19, 19), RED);
+    assert_eq!(px(&img, 7, 10), Color32::BLACK);
+    assert_eq!(px(&img, 12, 20), Color32::BLACK);
+}
+
+#[test]
+fn edges_and_mean_follow_columns_down_y() {
+    let mut h = headless(small());
+    let (ctx, mut batch) = (Context::default(), Batch::new());
+    let style = ColumnStyle {
+        axis: Axis::Y,
+        clip: Rect::EVERYTHING,
+        value_lo: 0.0,
+        value_hi: 10.0,
+        across_lo: 0.0,
+        across_hi: 40.0,
+        band: Color32::TRANSPARENT,
+        edge: BLUE,
+        mean: Stroke::new(1.0, RED),
+    };
+    let img = draw(&mut h, &ctx, &mut batch, |b| {
+        let cols = (0..30).map(|i| Column {
+            along: 10.0 + i as f32,
+            min: 1.0,
+            max: 9.0,
+            mean: 5.0,
+        });
+        b.columns(&style, 1.0, cols);
+    });
+    // upright lines at x 4 (min), 36 (max) and 20 (mean)
+    let row: Vec<u8> = (0..64).map(|x| px(&img, x, 25).b()).collect();
+    assert!(row[3] > 50 && row[4] > 50, "{row:?}");
+    assert!(row[35] > 50 && row[36] > 50, "{row:?}");
+    assert!(px(&img, 19, 25).r() > 50 || px(&img, 20, 25).r() > 50);
+    assert_eq!(px(&img, 28, 25), Color32::BLACK);
+}
+
 #[test]
 fn edges_and_mean_follow_the_columns() {
     let mut h = headless(small());
     let (ctx, mut batch) = (Context::default(), Batch::new());
     let style = ColumnStyle {
+        axis: Axis::X,
         clip: Rect::EVERYTHING,
         value_lo: 0.0,
         value_hi: 10.0,
-        y_lo: 40.0,
-        y_hi: 0.0,
+        across_lo: 40.0,
+        across_hi: 0.0,
         band: Color32::TRANSPARENT,
         edge: BLUE,
         mean: Stroke::new(1.0, RED),
     };
     let img = draw(&mut h, &ctx, &mut batch, |b| {
         let cols = (0..40).map(|i| Column {
-            x: 10.0 + i as f32,
+            along: 10.0 + i as f32,
             min: 1.0,
             max: 9.0,
             mean: 5.0,

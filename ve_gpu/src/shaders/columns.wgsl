@@ -1,4 +1,5 @@
-// Range columns: per column of pixels a value's lowest, highest and mean, mapped to the screen here. Three parts,
+// Range columns: per column of pixels a value's lowest, highest and mean, mapped to the screen here. The columns
+// follow x or y (`run.axis.x`); along and across below are pixels along that axis and across it. Three parts,
 // each optional: the band of whole pixels from the lowest to the highest, the two edges along the lowest and the
 // highest values (egui's one pixel line with feathering, mitred at joins), and the mean line.
 
@@ -6,17 +7,26 @@
 struct Run {
     // the run's clip rect, points
     clip: vec4<f32>,
-    // y = map.z + (value - map.x) * map.y, points; map.w: the mean line's width, points
+    // across = map.z + (value - map.x) * map.y, points; map.w: the mean line's width, points
     map: vec4<f32>,
     // band, mean and edge colours, the run's column count
     colours: vec4<u32>,
-    spare: vec4<f32>,
+    // x: 1 when the columns follow y
+    axis: vec4<f32>,
 };
 @group(1) @binding(0) var<uniform> run: Run;
 
-// A value's y in pixels.
+// Where a value lands across the axis, pixels.
 fn across(v: f32) -> f32 {
     return (run.map.z + (v - run.map.x) * run.map.y) * screen.pixels_per_point;
+}
+
+// The pixel at `along` and `across` the run's axis.
+fn place(along: f32, across: f32) -> vec2<f32> {
+    if run.axis.x > 0.5 {
+        return vec2<f32>(across, along);
+    }
+    return vec2<f32>(along, across);
 }
 
 fn outside(p: vec2<f32>) -> bool {
@@ -28,8 +38,8 @@ struct BandOut {
     @builtin(position) pos: vec4<f32>,
 };
 
-// A pixel column of the band, (x, top, bottom, width) in points as the CPU folded it: whole pixels from the one the
-// top falls in to the one the bottom does, at least one pixel high.
+// A pixel column of the band, (along, across from, across to, width) in points as the CPU folded it: whole pixels
+// from the one the first end falls in to the one the second does, at least one pixel long.
 @vertex
 fn vs_band(@builtin(vertex_index) vi: u32, @location(0) col: vec4<f32>) -> BandOut {
     let k = screen.pixels_per_point;
@@ -39,7 +49,7 @@ fn vs_band(@builtin(vertex_index) vi: u32, @location(0) col: vec4<f32>) -> BandO
     let y1 = max(ceil(col.z * k), y0 + 1.0);
     let c = corner(vi);
     var o: BandOut;
-    o.pos = ndc(vec2<f32>(mix(x0, x1, c.x), mix(y0, y1, c.y)));
+    o.pos = ndc(place(mix(x0, x1, c.x), mix(y0, y1, c.y)));
     return o;
 }
 
@@ -58,7 +68,7 @@ struct MeanOut {
 };
 
 fn point(c: vec4<f32>, v: f32) -> vec2<f32> {
-    return vec2<f32>(c.x * screen.pixels_per_point, across(v));
+    return place(c.x * screen.pixels_per_point, across(v));
 }
 
 // A piece of the mean line between a column and the next.

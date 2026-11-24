@@ -2,7 +2,7 @@
 //! every run.
 
 use egui::{Color32, Pos2, Rect, Stroke, pos2, vec2};
-use ve_gpu::{Batch, Column, ColumnStyle, Dash, Hatch, LineStyle, RectStyle};
+use ve_gpu::{Axis, Batch, Column, ColumnStyle, Dash, Hatch, LineStyle, RectStyle};
 
 /// Shapes a dense batch holds, about.
 pub const SHAPES_PER_BATCH: usize = 1000;
@@ -86,11 +86,12 @@ pub fn dense(batch: &mut Batch, rect: Rect, k: usize) {
 /// Run `k` of a series frame in `rect`: two columns a point, band, edges and mean.
 pub fn series(batch: &mut Batch, rect: Rect, k: usize, pixels_per_point: f32) {
     let style = ColumnStyle {
+        axis: Axis::X,
         clip: rect,
         value_lo: -1.0,
         value_hi: 1.0,
-        y_lo: rect.bottom() - 2.0,
-        y_hi: rect.top() + 2.0,
+        across_lo: rect.bottom() - 2.0,
+        across_hi: rect.top() + 2.0,
         band: COLOURS[k % COLOURS.len()].gamma_multiply(0.45),
         edge: COLOURS[k % COLOURS.len()].gamma_multiply(0.8),
         mean: Stroke::new(1.2, COLOURS[k % COLOURS.len()]),
@@ -102,7 +103,7 @@ pub fn series(batch: &mut Batch, rect: Rect, k: usize, pixels_per_point: f32) {
         let mid = t.sin() * 0.5 + (t * 7.3).sin() * 0.2;
         let spread = 0.05 + 0.2 * (t * 1.7).cos().abs();
         Column {
-            x: rect.left() + i as f32 * 0.5,
+            along: rect.left() + i as f32 * 0.5,
             min: mid - spread,
             max: mid + spread,
             mean: mid,

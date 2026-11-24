@@ -23,7 +23,7 @@ pub mod plumbing;
 mod renderer;
 
 pub use batch::Batch;
-pub use batch::columns::{Column, ColumnStyle};
+pub use batch::columns::{Axis, Column, ColumnStyle};
 pub use batch::shapes::{Dash, Hatch, LineStyle, RectStyle};
 pub use plumbing::{COMMON_WGSL, GrowBuffer, RetainedCallback, ScreenUniform, Target};
 pub use renderer::FrameStats;

@@ -18,6 +18,7 @@ versions follow [Semantic Versioning](https://semver.org/). Feature IDs refer to
 
 ### Changed
 
+- **Breaking:** `ve_gpu`: range columns run along x or y (`ColumnStyle::axis`); `Column::x` is `along`, `ColumnStyle::y_lo`/`y_hi`/`y()` are `across_lo`/`across_hi`/`across()` (GPU-5).
 - **Breaking:** `ve_phosphor::headless`: `Gpu` is gone; `Renderer::new(size, ppp, settings)` makes its own device on `ve_gpu::headless`, `frame` and `read` return `Result` (PHOS-1).
 - **Breaking:** `ve_backdrop`: `ShaderTarget` is replaced by `ve_gpu::Target`, which `with_wgpu_target` takes with the pass's colour format (BACK-3).
 
