@@ -3,10 +3,13 @@
 use bytemuck::{Pod, Zeroable};
 use egui::{Color32, Pos2, Rect, Stroke};
 
+use super::columns::Axis;
+
 pub(crate) const KIND_RECT: u32 = 0;
 pub(crate) const KIND_SEGMENT: u32 = 1;
 pub(crate) const KIND_DIAMOND: u32 = 2;
 pub(crate) const KIND_HATCH: u32 = 3;
+pub(crate) const KIND_GRADIENT: u32 = 4;
 pub(crate) const FLAG_SNAP: u32 = 256;
 
 /// One shape as `shapes.wgsl` reads it: see `ShapeIn` there.
@@ -233,6 +236,28 @@ pub(crate) fn hatch(r: Rect, h: &Hatch, clip: [f32; 4]) -> Option<ShapeInstance>
         clip,
         p: [h.stroke.width, h.period, h.anchor.x, h.anchor.y],
         c: [KIND_HATCH, 0, rgba(h.stroke.color), h.slant.to_bits()],
+    })
+}
+
+pub(crate) fn gradient(
+    r: Rect,
+    axis: Axis,
+    [from, to]: [Color32; 2],
+    clip: [f32; 4],
+) -> Option<ShapeInstance> {
+    if from == Color32::TRANSPARENT && to == Color32::TRANSPARENT || !r.is_finite() {
+        return None;
+    }
+    Some(ShapeInstance {
+        a: rect4(r),
+        clip,
+        p: [0.0; 4],
+        c: [
+            KIND_GRADIENT | FLAG_SNAP,
+            rgba(from),
+            rgba(to),
+            u32::from(axis == Axis::Y),
+        ],
     })
 }
 

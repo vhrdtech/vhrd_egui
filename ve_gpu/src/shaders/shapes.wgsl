@@ -1,23 +1,25 @@
-// The shape batch: rects with corners and an inner stroke, segments with dashes, diamonds and hatching, one
+// The shape batch: rects with corners and an inner stroke, segments with dashes, diamonds, hatching and rects
+// filled with a gradient, one
 // instance each, antialiased by a one pixel box filter of each edge (what egui's feathering gives).
 
 const KIND_RECT: u32 = 0u;
 const KIND_SEGMENT: u32 = 1u;
 const KIND_DIAMOND: u32 = 2u;
 const KIND_HATCH: u32 = 3u;
+const KIND_GRADIENT: u32 = 4u;
 const KIND_MASK: u32 = 255u;
 // Round to pixels as egui's tessellator does.
 const FLAG_SNAP: u32 = 256u;
 
 struct ShapeIn {
-    // rect, segment: x0 y0 x1 y1; diamond: centre x, y, half size; hatch: the hatched rect
+    // rect, segment, gradient: x0 y0 x1 y1; diamond: centre x, y, half size; hatch: the hatched rect
     @location(0) a: vec4<f32>,
     // the shape's clip rect
     @location(1) clip: vec4<f32>,
     // rect: stroke width, corner radius; segment: width, 0, dash, gap; diamond: stroke width;
     // hatch: line width, period, anchor x, anchor y
     @location(2) p: vec4<f32>,
-    // kind and flags, fill, stroke, hatch slant (f32 bits)
+    // kind and flags, fill (a gradient's start), stroke (its end), hatch slant (f32 bits) or a gradient's axis (1: y)
     @location(3) c: vec4<u32>,
 };
 
@@ -72,7 +74,7 @@ fn vs_shape(@builtin(vertex_index) vi: u32, s: ShapeIn) -> ShapeOut {
     var lo: vec2<f32>;
     var hi: vec2<f32>;
     switch kind {
-        case KIND_RECT: {
+        case KIND_RECT, KIND_GRADIENT: {
             if snap {
                 a = round4(a);
             }
@@ -152,6 +154,15 @@ fn fs_shape(i: ShapeOut) -> @location(0) vec4<f32> {
         }
         case KIND_SEGMENT: {
             out = stroke * segment_cover(p, i.a.xy, i.a.zw, i.p.x, i.p.z, i.p.w);
+        }
+        case KIND_GRADIENT: {
+            // from the fill at the rect's start to the stroke colour at its end, along x or y
+            let t = select(
+                clamp((p.x - i.a.x) / max(i.a.z - i.a.x, 1e-6), 0.0, 1.0),
+                clamp((p.y - i.a.y) / max(i.a.w - i.a.y, 1e-6), 0.0, 1.0),
+                i.c.w == 1u,
+            );
+            out = mix(fill, stroke, t) * box_cover(p, i.a.xy, i.a.zw, 0.0);
         }
         case KIND_DIAMOND: {
             let q = abs(p - i.a.xy);

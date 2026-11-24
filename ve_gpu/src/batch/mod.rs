@@ -11,7 +11,7 @@ use egui::{Color32, Pos2, Rect, Stroke};
 
 use crate::plumbing::RetainedCallback;
 use crate::renderer::BatchCallback;
-use columns::{Column, ColumnStyle, RunUniform, fold};
+use columns::{Axis, Column, ColumnStyle, RunUniform, fold};
 use shapes::{CLIP_NONE, Hatch, LineStyle, RectStyle, ShapeInstance, rect4};
 
 /// One draw of a batch, in paint order.
@@ -194,6 +194,12 @@ impl Batch {
     /// Hatching across `rect`, clipped to it.
     pub fn hatch(&mut self, rect: Rect, hatch: &Hatch) {
         self.push(shapes::hatch(rect, hatch, self.clip));
+    }
+
+    /// A rect filled from `from` at its start to `to` at its end along `axis` (left to right, or top to bottom),
+    /// corners on whole pixels.
+    pub fn gradient(&mut self, rect: Rect, axis: Axis, from: Color32, to: Color32) {
+        self.push(shapes::gradient(rect, axis, [from, to], self.clip));
     }
 
     /// A run of range columns in order along the style's axis, one per pixel column or more: the band folds the

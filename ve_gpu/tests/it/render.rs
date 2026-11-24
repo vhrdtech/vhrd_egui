@@ -307,6 +307,28 @@ fn edges_and_mean_follow_columns_down_y() {
 }
 
 #[test]
+fn a_gradient_runs_from_its_start_colour_to_its_end_colour() {
+    let mut h = headless(small());
+    let (ctx, mut batch) = (Context::default(), Batch::new());
+    let r = Rect::from_min_size(pos2(10.0, 5.0), vec2(40.0, 20.0));
+    let img = draw(&mut h, &ctx, &mut batch, |b| {
+        b.gradient(r, Axis::X, RED, BLUE);
+    });
+    let (first, last) = (px(&img, 10, 10), px(&img, 49, 10));
+    assert!(first.r() > 200 && first.b() < 50, "{first:?}");
+    assert!(last.b() > 200 && last.r() < 50, "{last:?}");
+    assert_eq!(px(&img, 9, 10), Color32::BLACK);
+    assert_eq!(px(&img, 50, 10), Color32::BLACK);
+    let img = draw(&mut h, &ctx, &mut batch, |b| {
+        b.gradient(r, Axis::Y, RED, Color32::TRANSPARENT);
+    });
+    let (top, bottom) = (px(&img, 30, 5), px(&img, 30, 24));
+    assert!(top.r() > 200, "{top:?}");
+    assert!(bottom.r() < 30, "{bottom:?}");
+    assert_eq!(px(&img, 30, 4), Color32::BLACK);
+}
+
+#[test]
 fn edges_and_mean_follow_the_columns() {
     let mut h = headless(small());
     let (ctx, mut batch) = (Context::default(), Batch::new());

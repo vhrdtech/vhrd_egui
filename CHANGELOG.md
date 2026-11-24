@@ -12,6 +12,7 @@ versions follow [Semantic Versioning](https://semver.org/). Feature IDs refer to
 - `ve_gpu::Batch::columns`: range columns (band, edges, mean line) mapped and drawn in the shader (GPU-3).
 - `ve_gpu::headless`: offscreen egui frames on a chosen adapter, pixel readback, step and GPU timings (GPU-4).
 - `ve_gpu::headless`: `HeadlessOptions::format` picks the target format (`Rgba16Float` for HDR), `Headless::read_f32` reads it back (GPU-4).
+- `ve_gpu::Batch::gradient`: a rect filled from one colour to another along x or y (GPU-6).
 - **Breaking:** `ve_basics`: the build label shows the commit's age, "28 h ago"; new field `BuildInfo::commit_unix` from `GIT_COMMIT_UNIX`, so a `BuildInfo { .. }` literal needs it (BAS-1).
 - New crate `ve_native`: `native_options()` turns vsync off on Wayland, so a hidden window no longer hangs (PLT-11).
 - Template (PLT-2, PLT-11): `main.rs` starts from `ve_native::native_options()`. **Upgrade notes:** add `ve_native = { git = "...", default-features = false, features = ["wgpu"] }` (the app's renderer) and replace `..Default::default()` in `NativeOptions` with `..ve_native::native_options()`.

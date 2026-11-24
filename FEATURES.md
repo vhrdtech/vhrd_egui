@@ -1621,6 +1621,7 @@ wgpu building blocks for egui widgets that draw more than egui's shapes carry ch
 - ✅ **GPU-3 Range columns**: `Batch::columns` draws a run of `Column`s (x, lowest, highest, mean) mapped by `ColumnStyle` (a linear value map, clip, colours): the band of whole pixels from lowest to highest (columns of one pixel folded into one, at least a pixel high), the two edges as egui's one-pixel line with mitred joins, the mean line; each part optional (`shaders/columns.wgsl`).
 - ✅ **GPU-4 Headless harness**: `headless::Headless` picks an adapter (`AdapterPick`: GPU, software, any), renders egui frames into an offscreen target through egui's renderer with ve_gpu installed, reads the pixels back as a `ColorImage` and times each step (`FrameTimes`: UI, tessellation, prepare, encode, wall, GPU pass from timestamps where the adapter has them); `webgl2_limits` holds the device to WebGL2's limits. `HeadlessOptions::format` picks another target format (`Rgba16Float`), `read_f32` reads float pixels back. Native only.
 - ✅ **GPU-5 Columns down y**: `ColumnStyle::axis` (`Axis::X`, `Axis::Y`) runs a column run along x or y, values across it (`ColumnStyle::across_lo`, `across_hi`, `Column::along`): band, edges and mean turned in `columns.wgsl` (`place`), for timelines with time down.
+- ✅ **GPU-6 Gradient rect**: `Batch::gradient` fills a rect from one colour to another along x or y, antialiased, corners on whole pixels (`KIND_GRADIENT` in `shapes.wgsl`).
 
 ## App chrome (`CHR`)
 
