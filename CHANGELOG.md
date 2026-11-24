@@ -7,6 +7,8 @@ versions follow [Semantic Versioning](https://semver.org/). Feature IDs refer to
 
 ### Added
 
+- New crate `ve_update`: update bar with Restart into the installed release and a menu of kept releases (CHR-9).
+- `ve_basics::ago`: how long ago a Unix time was, as the build label words it (CHR-9).
 - New crate `ve_gpu`: paint-callback plumbing for wgpu widgets: `Target`, `ScreenUniform`, `GrowBuffer`, `RetainedCallback`, `install` (GPU-1).
 - `ve_gpu::Batch`: instanced rects, segments, diamonds and hatching antialiased in the shader, one upload per frame (GPU-2).
 - `ve_gpu::Batch::columns`: range columns (band, edges, mean line) mapped and drawn in the shader (GPU-3).

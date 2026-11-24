@@ -1,0 +1,26 @@
+[package]
+name = "ve_update"
+description = "The update bar of a native app: a newer installed release and Restart, the kept releases to switch to"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+
+[lints]
+workspace = true
+
+[dependencies]
+egui.workspace = true
+ve_theme = { path = "../ve_theme", version = "0.37", default-features = false }
+# the age of a release, as the build label words it
+ve_basics = { path = "../ve_basics", version = "0.37" }
+
+[dev-dependencies]
+egui_kittest = { workspace = true, features = ["snapshot", "wgpu"] }
+ve_theme = { path = "../ve_theme", version = "0.37" }
+
+[[test]]
+name = "it"
+path = "tests/it/main.rs"

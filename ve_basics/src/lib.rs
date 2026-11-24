@@ -29,7 +29,7 @@ mod scroll_strip;
 mod startup_guard;
 
 pub use app_menu::{AppMenu, AppMenuAction, AppMenuResponse, BADGE_HOVER, reset_egui_memory};
-pub use build_info::{BuildInfo, build_info_label};
+pub use build_info::{BuildInfo, ago, build_info_label};
 pub use checklist::{Checklist, checklist_item};
 pub use fold_rest::{FoldRest, fold_rest};
 pub use hover_link::hover_link;

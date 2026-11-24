@@ -96,6 +96,9 @@ Cargo workspace, edition 2024, one shared version (`[workspace.package]`).
   cut list (`FoldRest`), startup crash guard, the frame recorder (`perf/`: the `FrameRecorder` trait, the ring
   behind it in `ring/`, its reads in `ring/read.rs`). `ve_basics_benchmarks/` measures what the recorder costs;
   `ve_alloc_count/` is the counting allocator, the only crate with unsafe code (the workspace forbids it).
+- `ve_update/` — the update bar (`UpdateBar` in `bar.rs`): Restart into a newer installed release, the kept releases to
+  switch to; its data from the `Releases` trait (`model.rs`), the restart in `relaunch.rs` (`Relaunch`, `Placement`).
+  Not a web crate (processes, files).
 - `ve_native/` — the eframe `NativeOptions` every app starts from (`native_options()`: vsync off on Wayland, where
   a hidden window gets no frame callbacks and a vsync swap would block the loop; `Session` for hosts on raw wgpu).
   Apps and examples build their options on it, never on `NativeOptions::default()`.

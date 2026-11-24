@@ -82,7 +82,7 @@ impl BuildInfo {
             .ok()
             .and_then(|d| i64::try_from(d.as_secs()).ok());
         match (self.commit_unix, now_unix) {
-            (Some(commit), Some(now)) => format!("{base} · {}", age(commit, now)),
+            (Some(commit), Some(now)) => format!("{base} · {}", ago(commit, now)),
             _ => base,
         }
     }
@@ -106,9 +106,10 @@ impl BuildInfo {
     }
 }
 
-/// How long ago `commit_unix` was at `now_unix`, both in Unix seconds: under an hour "N min ago", under 48 hours
-/// "N h ago", else "N d ago". A commit in the future reads "0 min ago".
-fn age(commit_unix: i64, now_unix: i64) -> String {
+/// How long ago `commit_unix` was at `now_unix`, both in Unix seconds.
+///
+/// Under an hour "N min ago", under 48 hours "N h ago", else "N d ago". A time in the future reads "0 min ago".
+pub fn ago(commit_unix: i64, now_unix: i64) -> String {
     const MIN_S: i64 = 60;
     const HOUR_S: i64 = 60 * MIN_S;
     const DAY_S: i64 = 24 * HOUR_S;
@@ -146,7 +147,7 @@ pub(crate) fn debug_marker_color(ui: &Ui) -> Color32 {
 
 #[cfg(test)]
 mod tests {
-    use super::age;
+    use super::ago;
 
     const NOW: i64 = 1_800_000_000;
 
@@ -166,7 +167,7 @@ mod tests {
             (i64::MIN, "106751991167300 d ago"),
         ];
         for (commit, want) in cases {
-            assert_eq!(age(commit, NOW), want, "commit {commit}");
+            assert_eq!(ago(commit, NOW), want, "commit {commit}");
         }
     }
 }

@@ -4031,6 +4031,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "ve_update"
+version = "0.37.1"
+dependencies = [
+ "egui",
+ "egui_kittest",
+ "ve_basics",
+ "ve_theme",
+]
+
+[[package]]
 name = "ve_view3d"
 version = "0.37.1"
 dependencies = [

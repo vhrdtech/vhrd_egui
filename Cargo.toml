@@ -28,6 +28,7 @@ members = [
     "ve_native",
     "ve_gpu",
     "ve_gpu_benchmarks",
+    "ve_update",
 ]
 
 # Crates that opt in with `[lints] workspace = true`; ve_alloc_count holds the only unsafe code, with its own table.
