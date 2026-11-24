@@ -367,7 +367,7 @@ impl Renderer {
             }
             for pipe in [&self.edge_max_pipe, &self.edge_min_pipe] {
                 pass.set_pipeline(pipe);
-                pass.draw(0..24, 0..pieces);
+                pass.draw(0..48, 0..pieces);
             }
         }
         if u.has_mean() {

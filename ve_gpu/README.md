@@ -10,7 +10,7 @@ series envelopes. Generic: shapes, columns and a callback, no application types.
   - diamonds with a fill and a stroke,
   - hatching with a width, period, slant and an anchor that keeps it in phase with the caller's axis (`Hatch`),
   - runs of `Column`s (x, lowest, highest, mean), mapped by `ColumnStyle`: a band of whole pixels, the two edges
-    as egui's one-pixel line, the mean line.
+    as egui strokes a line of a width in points, the mean line.
 - `plumbing`: what any wgpu paint callback needs: `Target` (egui's pass and its blend), `ScreenUniform` with
   `COMMON_WGSL` (points to pixels, egui's colours and rounding), `GrowBuffer`, `RetainedCallback`.
 - `headless`: a device without a window; egui frames rendered offscreen on a chosen adapter (GPU, software), read

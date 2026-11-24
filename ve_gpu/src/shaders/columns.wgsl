@@ -1,7 +1,7 @@
 // Range columns: per column of pixels a value's lowest, highest and mean, mapped to the screen here. The columns
 // follow x or y (`run.axis.x`); along and across below are pixels along that axis and across it. Three parts,
 // each optional: the band of whole pixels from the lowest to the highest, the two edges along the lowest and the
-// highest values (egui's one pixel line with feathering, mitred at joins), and the mean line.
+// highest values (egui's line of their width with feathering, mitred at joins), and the mean line.
 
 // One run of columns: its clip, its value map and colours.
 struct Run {
@@ -11,7 +11,7 @@ struct Run {
     map: vec4<f32>,
     // band, mean and edge colours, the run's column count
     colours: vec4<u32>,
-    // x: 1 when the columns follow y
+    // x: 1 when the columns follow y; y: the edges' width, points
     axis: vec4<f32>,
 };
 @group(1) @binding(0) var<uniform> run: Run;
@@ -97,11 +97,12 @@ fn fs_mean(i: MeanOut) -> @location(0) vec4<f32> {
     return output(unpack(run.colours.y) * c);
 }
 
-// An edge as egui tessellates a line one pixel wide with one pixel of feathering (`epaint::tessellator`,
-// `Path::add_open_points` and `stroke_path`): no core, a ridge of the line's colour along the points fading out to
-// a feathering either side, mitred at joins, a corner sharper than a right angle cut in two normals with a wedge
-// between them, and a feathering of fade past each end. An instance is the piece from column k to k + 1, with
-// columns k - 1 and k + 2 for its joins: eight triangles, unused ones empty.
+// An edge as egui tessellates an open line of the run's width with one pixel of feathering (`epaint::tessellator`,
+// `Path::add_open_points` and `stroke_path`), mitred at joins, a corner sharper than a right angle cut in two
+// normals with a strip between them. A line wider than 0.9 pixels has a core of its colour a pixel narrower than
+// it, fading out over a pixel either side, and a pixel of fade past each end. A thinner one is a ridge of its colour
+// times its width in pixels, fading out over a pixel either side, without ends. An instance is the piece from
+// column k to k + 1, with columns k - 1 and k + 2 for its joins: sixteen triangles, unused ones empty.
 struct EdgeOut {
     @builtin(position) pos: vec4<f32>,
     // the share of the line's colour, interpolated as egui interpolates its vertex colours
@@ -159,54 +160,68 @@ fn edge(vi: u32, k: u32, n: u32, a: vec2<f32>, b: vec2<f32>, c: vec2<f32>, d: ve
     if !last {
         jc = join(nb, rot90(normalized(d - c)));
     }
-    let ns = jb.n.zw;
-    let ne = jc.n.xy;
-    // the outer vertices of the ends are pushed a feathering past them
-    var back = vec2<f32>(0.0);
-    if first {
-        back = -along;
+    // egui's radii from the line's middle, pixels: to the end of the fade and to the end of the core; a thin line
+    // is a ridge, its colour scaled down
+    let w = run.axis.y * screen.pixels_per_point;
+    let thin = w <= 0.9;
+    var outer = 1.0;
+    var inner = 0.0;
+    var alpha = w;
+    if !thin {
+        outer = 0.5 * (w + 1.0);
+        inner = 0.5 * (w - 1.0);
+        alpha = 1.0;
     }
-    var on = vec2<f32>(0.0);
-    if last {
-        on = along;
-    }
-    let s_plus = b + ns + back;
-    let s_minus = b - ns + back;
-    let e_plus = c + ne + on;
-    let e_minus = c - ne + on;
-    // eight triangles: the start's fade, the wedge of a cut corner at b on either side, the piece's two sides of two
-    // triangles each, the end's fade
-    var pts = array<vec2<f32>, 24>(
-        s_plus, b, s_minus,
-        b + jb.n.xy, b, b + ns,
-        b - jb.n.xy, b, b - ns,
-        s_plus, b, e_plus,
-        b, e_plus, c,
-        b, s_minus, c,
-        s_minus, c, e_minus,
-        e_plus, c, e_minus,
-    );
-    var ts = array<f32, 24>(
-        0.0, 1.0, 0.0,
-        0.0, 1.0, 0.0,
-        0.0, 1.0, 0.0,
-        0.0, 1.0, 0.0,
-        1.0, 0.0, 1.0,
-        1.0, 0.0, 1.0,
-        0.0, 1.0, 0.0,
-        0.0, 1.0, 0.0,
+    // three rings of four vertices (outer and inner on the normal's side, inner and outer on the other): the strip's
+    // start at b for a cut corner (0), the piece's start at b (1) and its end at c (2); a thick line's outer vertices
+    // at its ends are pushed a pixel past them
+    var tables = array<u32, 48>(
+        // the start's fade
+        4u, 5u, 6u, 4u, 6u, 7u,
+        // the strip of a cut corner at b
+        0u, 1u, 4u, 1u, 4u, 5u, 1u, 2u, 5u, 2u, 5u, 6u, 2u, 3u, 6u, 3u, 6u, 7u,
+        // the piece
+        4u, 5u, 8u, 5u, 8u, 9u, 5u, 6u, 9u, 6u, 9u, 10u, 6u, 7u, 10u, 7u, 10u, 11u,
+        // the end's fade
+        8u, 9u, 10u, 8u, 10u, 11u,
     );
     let tri = vi / 3u;
-    let used = (tri == 0u && first) || ((tri == 1u || tri == 2u) && jb.cut && !first) || (tri >= 3u && tri <= 6u)
-        || (tri == 7u && last);
+    let used = (tri < 2u && first && !thin) || (tri >= 2u && tri < 8u && jb.cut && !first) || (tri >= 8u && tri < 14u)
+        || (tri >= 14u && last && !thin);
     var o: EdgeOut;
-    if used {
-        o.pos = ndc(pts[vi]);
-        o.t = ts[vi];
-    } else {
+    if !used {
         o.pos = vec4<f32>(0.0, 0.0, 0.0, 1.0);
         o.t = 0.0;
+        return o;
     }
+    let v = tables[vi];
+    let ring = v / 4u;
+    let slot = v % 4u;
+    var base = b;
+    var normal = jb.n.zw;
+    var push = vec2<f32>(0.0);
+    if ring == 0u {
+        normal = jb.n.xy;
+    } else if ring == 1u {
+        if first && !thin {
+            push = -along;
+        }
+    } else {
+        base = c;
+        normal = jc.n.xy;
+        if last && !thin {
+            push = along;
+        }
+    }
+    var offsets = array<f32, 4>(outer, inner, -inner, -outer);
+    var p = base + normal * offsets[slot];
+    if slot == 0u || slot == 3u {
+        p += push;
+        o.t = 0.0;
+    } else {
+        o.t = alpha;
+    }
+    o.pos = ndc(p);
     return o;
 }
 

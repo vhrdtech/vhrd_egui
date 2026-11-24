@@ -50,8 +50,9 @@ pub struct ColumnStyle {
     pub across_hi: f32,
     /// The band from the lowest to the highest value, in whole pixels, at least one pixel high.
     pub band: Color32,
-    /// The two edges along the lowest and the highest values: egui's one-pixel line, mitred at joins.
-    pub edge: Color32,
+    /// The two edges along the lowest and the highest values, as egui strokes an open line of this width in points
+    /// with a pixel of feathering, mitred at joins.
+    pub edge: Stroke,
     /// The mean line; width in points.
     pub mean: Stroke,
 }
@@ -89,7 +90,7 @@ pub(crate) struct RunUniform {
     clip: [f32; 4],
     map: [f32; 4],
     colours: [u32; 4],
-    /// x: 1 when the columns follow y.
+    /// x: 1 when the columns follow y; y: the edges' width, points.
     axis: [f32; 4],
 }
 
@@ -101,16 +102,28 @@ pub(crate) const COLUMN_BYTES: u64 = size_of::<Column>() as u64;
 impl RunUniform {
     pub(crate) fn new(style: &ColumnStyle, columns: u32) -> Self {
         let (v0, scale, y0) = style.map();
-        let mean = if style.mean.is_empty() {
-            Color32::TRANSPARENT
-        } else {
-            style.mean.color
+        let shown = |s: &Stroke| {
+            if s.is_empty() {
+                Color32::TRANSPARENT
+            } else {
+                s.color
+            }
         };
         Self {
             clip: rect4(style.clip),
             map: [v0, scale, y0, style.mean.width.max(0.0)],
-            colours: [rgba(style.band), rgba(mean), rgba(style.edge), columns],
-            axis: [f32::from(u8::from(style.axis == Axis::Y)), 0.0, 0.0, 0.0],
+            colours: [
+                rgba(style.band),
+                rgba(shown(&style.mean)),
+                rgba(shown(&style.edge)),
+                columns,
+            ],
+            axis: [
+                f32::from(u8::from(style.axis == Axis::Y)),
+                style.edge.width.max(0.0),
+                0.0,
+                0.0,
+            ],
         }
     }
 

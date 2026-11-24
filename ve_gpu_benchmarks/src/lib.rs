@@ -93,7 +93,7 @@ pub fn series(batch: &mut Batch, rect: Rect, k: usize, pixels_per_point: f32) {
         across_lo: rect.bottom() - 2.0,
         across_hi: rect.top() + 2.0,
         band: COLOURS[k % COLOURS.len()].gamma_multiply(0.45),
-        edge: COLOURS[k % COLOURS.len()].gamma_multiply(0.8),
+        edge: Stroke::new(1.0, COLOURS[k % COLOURS.len()].gamma_multiply(0.8)),
         mean: Stroke::new(1.2, COLOURS[k % COLOURS.len()]),
     };
     let n = (rect.width() * 2.0) as usize;

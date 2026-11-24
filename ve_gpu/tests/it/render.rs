@@ -221,7 +221,7 @@ fn a_band_spans_the_mapped_values_in_whole_pixels() {
         across_lo: 40.0,
         across_hi: 0.0,
         band: RED,
-        edge: Color32::TRANSPARENT,
+        edge: Stroke::NONE,
         mean: Stroke::NONE,
     };
     let img = draw(&mut h, &ctx, &mut batch, |b| {
@@ -254,7 +254,7 @@ fn a_band_down_y_spans_the_mapped_values_across_x() {
         across_lo: 0.0,
         across_hi: 40.0,
         band: RED,
-        edge: Color32::TRANSPARENT,
+        edge: Stroke::NONE,
         mean: Stroke::NONE,
     };
     let img = draw(&mut h, &ctx, &mut batch, |b| {
@@ -286,7 +286,7 @@ fn edges_and_mean_follow_columns_down_y() {
         across_lo: 0.0,
         across_hi: 40.0,
         band: Color32::TRANSPARENT,
-        edge: BLUE,
+        edge: Stroke::new(1.0, BLUE),
         mean: Stroke::new(1.0, RED),
     };
     let img = draw(&mut h, &ctx, &mut batch, |b| {
@@ -340,7 +340,7 @@ fn edges_and_mean_follow_the_columns() {
         across_lo: 40.0,
         across_hi: 0.0,
         band: Color32::TRANSPARENT,
-        edge: BLUE,
+        edge: Stroke::new(1.0, BLUE),
         mean: Stroke::new(1.0, RED),
     };
     let img = draw(&mut h, &ctx, &mut batch, |b| {
@@ -425,4 +425,84 @@ fn f16_round(v: f32) -> f32 {
     let bits = v.to_bits();
     // round the mantissa to 10 bits, enough for values in 0..=1
     f32::from_bits((bits + 0x1000) & !0x1fff)
+}
+
+/// The edges of `width` points over a zigzag with a sharp corner, against egui's own painter of the same two lines
+/// at `ppp`: no pixel differs by more than 8 in a channel.
+fn edges_match_egui(ppp: f32, width: f32) {
+    let mut h = headless(HeadlessOptions {
+        size_px: [160, 120],
+        pixels_per_point: ppp,
+        ..HeadlessOptions::default()
+    });
+    let (ctx, mut batch) = (Context::default(), Batch::new());
+    let style = ColumnStyle {
+        axis: Axis::X,
+        clip: Rect::EVERYTHING,
+        value_lo: 0.0,
+        value_hi: 10.0,
+        across_lo: 100.0 / ppp,
+        across_hi: 10.0 / ppp,
+        band: Color32::TRANSPARENT,
+        edge: Stroke::new(width, BLUE),
+        mean: Stroke::NONE,
+    };
+    let values = [2.0, 3.0, 2.5, 9.0, 1.0, 1.5, 4.0, 4.2, 8.0, 7.5, 3.0];
+    let cols: Vec<Column> = values
+        .iter()
+        .enumerate()
+        .map(|(i, v)| Column {
+            along: (10.0 + 12.0 * i as f32 + 0.3) / ppp,
+            min: v * 0.5,
+            max: *v,
+            mean: 0.0,
+        })
+        .collect();
+    let gpu = draw(&mut h, &ctx, &mut batch, |b| {
+        b.columns(&style, ppp, cols.iter().copied())
+    });
+    let line = |v: fn(&Column) -> f32| -> Vec<egui::Pos2> {
+        cols.iter()
+            .map(|c| pos2(c.along, style.across(v(c))))
+            .collect()
+    };
+    h.frame(&ctx, |ui| {
+        ui.painter().line(line(|c| c.max), Stroke::new(width, BLUE));
+        ui.painter().line(line(|c| c.min), Stroke::new(width, BLUE));
+    })
+    .expect("a frame");
+    let egui = h.read().expect("the pixels");
+    let far = |a: Color32, b: Color32| (0..4).any(|i| a[i].abs_diff(b[i]) > 8);
+    let differ = gpu
+        .pixels
+        .iter()
+        .zip(&egui.pixels)
+        .filter(|(a, b)| far(**a, **b))
+        .count();
+    let lit = egui.pixels.iter().filter(|p| **p != Color32::BLACK).count();
+    assert!(lit > 100, "egui drew {lit} pixels");
+    assert!(
+        differ == 0,
+        "{differ} of {lit} pixels differ from egui's at {ppp} pixels a point, {width} points wide"
+    );
+}
+
+#[test]
+fn edges_one_point_wide_match_egui_at_two_pixels_a_point() {
+    edges_match_egui(2.0, 1.0);
+}
+
+#[test]
+fn thick_edges_match_egui() {
+    edges_match_egui(1.0, 2.5);
+}
+
+#[test]
+fn thin_edges_match_egui() {
+    edges_match_egui(2.0, 0.3);
+}
+
+#[test]
+fn hairline_edges_match_egui() {
+    edges_match_egui(1.0, 1.0);
 }

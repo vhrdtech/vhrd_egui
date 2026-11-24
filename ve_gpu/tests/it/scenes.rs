@@ -164,7 +164,7 @@ pub fn columns(b: &mut Batch, r: Rect, c: &Palette, ppp: f32) {
         across_lo: lane.bottom() - 4.0,
         across_hi: lane.top() + 4.0,
         band: c.accent.gamma_multiply(0.45),
-        edge: c.accent.gamma_multiply(0.8),
+        edge: Stroke::new(1.0, c.accent.gamma_multiply(0.8)),
         mean: Stroke::new(1.2, c.accent),
     };
     // two columns a point, as a zoomed-out series
@@ -177,7 +177,7 @@ pub fn columns(b: &mut Batch, r: Rect, c: &Palette, ppp: f32) {
         across_lo: lane.bottom() - 6.0,
         across_hi: lane.bottom() - 2.0,
         band: c.warn,
-        edge: Color32::TRANSPARENT,
+        edge: Stroke::NONE,
         mean: Stroke::NONE,
         ..style
     };
